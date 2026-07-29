@@ -51,7 +51,11 @@ export function ComponentLibrary() {
                 key={item.id}
                 className="component-card"
                 draggable
-                onDragStart={() => setDragItem(item.id)}
+                onDragStart={(e) => {
+                  setDragItem(item.id);
+                  e.dataTransfer.setData('componentId', item.id);
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
                 onDragEnd={() => setDragItem(null)}
                 id={`component-${item.id}`}
               >
