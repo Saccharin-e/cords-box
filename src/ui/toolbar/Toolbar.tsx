@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { audioEngine, audioPipeline } from '@audio/index';
@@ -10,12 +10,34 @@ export function Toolbar() {
     isSidebarOpen, toggleSidebar,
     isInspectorOpen, toggleInspector,
     isControlsOpen, toggleControls,
+    toggleExportModal,
   } = useCanvasStore();
 
   const { exportJSON, importJSON, reset: resetGraph, graph } = useCircuitStore();
   const [audioActive, setAudioActive] = useState(false);
 
+  // Dropdown Open States
+  const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+  const [isAudioMenuOpen, setIsAudioMenuOpen] = useState(false);
+
+  const fileMenuRef = useRef<HTMLDivElement>(null);
+  const audioMenuRef = useRef<HTMLDivElement>(null);
+
   const diagnostics = lintCircuit(graph);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (fileMenuRef.current && !fileMenuRef.current.contains(e.target as Node)) {
+        setIsFileMenuOpen(false);
+      }
+      if (audioMenuRef.current && !audioMenuRef.current.contains(e.target as Node)) {
+        setIsAudioMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   async function handleAudioToggle() {
     if (!audioActive) {
@@ -70,17 +92,33 @@ export function Toolbar() {
   }
 
   function handleReset() {
-    resetCanvas();
-    resetGraph();
+    if (confirm('Reset entire canvas and remove all placed components?')) {
+      resetCanvas();
+      resetGraph();
+    }
   }
 
   return (
-    <header className="toolbar" id="toolbar" style={{ gridArea: 'toolbar', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px' }}>
+    <header
+      className="toolbar"
+      id="toolbar"
+      style={{
+        gridArea: 'toolbar',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        backgroundColor: '#18181b',
+        borderBottom: '1px solid #27272a',
+      }}
+    >
       {/* Left Section: Brand Logo + Sidebar Toggle */}
       <div className="toolbar__brand" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div className="toolbar__logo">CB</div>
-          <span className="toolbar__title" style={{ fontWeight: 800 }}>Cords Box</span>
+          <span className="toolbar__title" style={{ fontWeight: 800, fontSize: 14, letterSpacing: '0.04em' }}>
+            Cords Box
+          </span>
         </div>
 
         {/* Toggle Component Library Sidebar */}
@@ -95,59 +133,132 @@ export function Toolbar() {
         </button>
       </div>
 
-      {/* Center Section: Core Workbench Actions */}
+      {/* Center Section: Compact Dropdown Navigation */}
       <nav className="toolbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          className={`btn btn--sm ${audioActive ? 'btn--primary' : ''}`}
-          id="btn-audio-power"
-          onClick={handleAudioToggle}
-          title="Toggle Web Audio Engine"
-        >
-          {audioActive ? '🔊 Audio ON' : '🔈 Audio OFF'}
-        </button>
+        {/* 1. File Menu Dropdown */}
+        <div ref={fileMenuRef} style={{ position: 'relative' }}>
+          <button
+            className={`btn btn--sm ${isFileMenuOpen ? 'btn--primary' : ''}`}
+            onClick={() => {
+              setIsFileMenuOpen(!isFileMenuOpen);
+              setIsAudioMenuOpen(false);
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
+          >
+            <span>📁</span>
+            <span>File</span>
+            <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
+          </button>
 
-        <button
-          className="btn btn--sm"
-          id="btn-pluck"
-          onClick={handlePluck}
-          title="Pluck guitar string to test audio DSP pipeline"
-        >
-          🎵 Pluck String
-        </button>
+          {isFileMenuOpen && (
+            <div style={dropdownStyle}>
+              <button
+                style={dropdownItemStyle}
+                onClick={() => {
+                  setIsFileMenuOpen(false);
+                  toggleExportModal();
+                }}
+              >
+                <span style={{ fontSize: 14 }}>📷</span>
+                <span>Export Image / PDF...</span>
+              </button>
 
+              <div style={dropdownDividerStyle} />
+
+              <button
+                style={dropdownItemStyle}
+                onClick={() => {
+                  setIsFileMenuOpen(false);
+                  handleExport();
+                }}
+              >
+                <span style={{ fontSize: 14 }}>💾</span>
+                <span>Save JSON Harness</span>
+              </button>
+
+              <button
+                style={dropdownItemStyle}
+                onClick={() => {
+                  setIsFileMenuOpen(false);
+                  handleImport();
+                }}
+              >
+                <span style={{ fontSize: 14 }}>📂</span>
+                <span>Open JSON Harness...</span>
+              </button>
+
+              <div style={dropdownDividerStyle} />
+
+              <button
+                style={{ ...dropdownItemStyle, color: '#f87171' }}
+                onClick={() => {
+                  setIsFileMenuOpen(false);
+                  handleReset();
+                }}
+              >
+                <span style={{ fontSize: 14 }}>🗑️</span>
+                <span>Clear Canvas</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 2. Audio Engine Dropdown */}
+        <div ref={audioMenuRef} style={{ position: 'relative' }}>
+          <button
+            className={`btn btn--sm ${audioActive ? 'btn--primary' : ''}`}
+            onClick={() => {
+              setIsAudioMenuOpen(!isAudioMenuOpen);
+              setIsFileMenuOpen(false);
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <span>{audioActive ? '🔊' : '🔈'}</span>
+            <span>Audio DSP</span>
+            <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
+          </button>
+
+          {isAudioMenuOpen && (
+            <div style={dropdownStyle}>
+              <button
+                style={dropdownItemStyle}
+                onClick={() => {
+                  handleAudioToggle();
+                }}
+              >
+                <span style={{ fontSize: 14 }}>{audioActive ? '⏹️' : '▶️'}</span>
+                <span>{audioActive ? 'Power OFF Audio DSP' : 'Power ON Audio DSP'}</span>
+              </button>
+
+              <button
+                style={dropdownItemStyle}
+                onClick={() => {
+                  handlePluck();
+                }}
+              >
+                <span style={{ fontSize: 14 }}>🎵</span>
+                <span>Pluck Guitar String</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div style={{ width: 1, height: 16, backgroundColor: '#3f3f46', margin: '0 4px' }} />
+
+        {/* Wire Tool Toggle Button */}
         <button
           className={`btn btn--sm ${wiringMode ? 'btn--primary' : ''}`}
           id="btn-wire"
           onClick={handleWiringToggle}
           title="Click lugs on components to draw wires"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
         >
-          {wiringMode ? '⚡ Wiring…' : '⚡ Wire'}
-        </button>
-
-        <div style={{ width: 1, height: 16, backgroundColor: '#3f3f46', margin: '0 4px' }} />
-
-        <button
-          className="btn btn--sm"
-          id="btn-export-image"
-          onClick={() => useCanvasStore.getState().toggleExportModal()}
-          title="Export Canvas to High-Res PNG Image or PDF Document"
-          style={{ backgroundColor: 'rgba(56, 189, 248, 0.15)', borderColor: '#38bdf8', color: '#38bdf8', fontWeight: 700 }}
-        >
-          📷 Export Image/PDF
-        </button>
-
-        <button className="btn btn--sm" id="btn-import" onClick={handleImport} title="Import JSON Design">
-          JSON Load
-        </button>
-        <button className="btn btn--sm" id="btn-export" onClick={handleExport} title="Save JSON Design">
-          JSON Save
-        </button>
-        <button className="btn btn--sm" id="btn-reset" onClick={handleReset}>
-          Reset
+          <span>⚡</span>
+          <span>{wiringMode ? 'Wiring Active…' : 'Wire Mode'}</span>
         </button>
       </nav>
 
-      {/* Right Section: CAD Controls Toggle & Value Inspector Toggle */}
+      {/* Right Section: Retractable Panel Toggles */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {/* Toggle Floating CAD Controls Bar */}
         <button
@@ -167,7 +278,7 @@ export function Toolbar() {
           title="Toggle Component Inspector Panel"
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
         >
-          <span>️</span>
+          <span>📋</span>
           <span>Inspector</span>
           {diagnostics.length > 0 && (
             <span
@@ -185,3 +296,42 @@ export function Toolbar() {
     </header>
   );
 }
+
+// ─── Dropdown Menu Styles ───────────────────────────────────────────────────
+
+const dropdownStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 'calc(100% + 6px)',
+  left: 0,
+  minWidth: 190,
+  backgroundColor: '#18181b',
+  border: '1px solid #3f3f46',
+  borderRadius: 8,
+  padding: '6px 0',
+  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.7)',
+  zIndex: 100,
+  display: 'flex',
+  flexDirection: 'column',
+};
+
+const dropdownItemStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  padding: '8px 14px',
+  backgroundColor: 'transparent',
+  border: 'none',
+  color: '#e4e4e7',
+  fontSize: 12,
+  fontWeight: 500,
+  textAlign: 'left',
+  cursor: 'pointer',
+  transition: 'background-color 0.15s ease',
+  width: '100%',
+};
+
+const dropdownDividerStyle: React.CSSProperties = {
+  height: 1,
+  backgroundColor: '#27272a',
+  margin: '4px 0',
+};
