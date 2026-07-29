@@ -26,61 +26,70 @@ const COMPONENTS: ComponentItem[] = [
 ];
 
 const GROUPS = [
-  { key: 'pickup' as const, label: 'Pickups', icon: '🎸' },
-  { key: 'switch' as const, label: 'Switches', icon: '🔀' },
-  { key: 'pot' as const, label: 'Potentiometers', icon: '🎛️' },
-  { key: 'passive' as const, label: 'Passive Components', icon: '⚡' },
-  { key: 'output' as const, label: 'Output', icon: '🔌' },
+  { key: 'pickup' as const, label: 'Pickups' },
+  { key: 'switch' as const, label: 'Switches' },
+  { key: 'pot' as const, label: 'Potentiometers' },
+  { key: 'passive' as const, label: 'Passive Components' },
+  { key: 'output' as const, label: 'Output' },
 ];
 
 export function ComponentLibrary() {
   const [_dragItem, setDragItem] = useState<string | null>(null);
   const isSidebarOpen = useCanvasStore((s) => s.isSidebarOpen);
+  const isToolbarOpen = useCanvasStore((s) => s.isToolbarOpen);
   const toggleSidebar = useCanvasStore((s) => s.toggleSidebar);
 
   if (!isSidebarOpen) {
     return (
-      <aside
-        className="sidebar neu-panel"
-        id="component-library"
-        style={{
-          width: 48,
-          minWidth: 48,
-          padding: '12px 6px',
-          alignItems: 'center',
-          gap: 16,
-          transition: 'all 0.25s ease',
-        }}
-      >
+      <>
+        {/* Retracted sidebar container claims 0px in grid layout */}
+        <aside
+          className="sidebar neu-panel"
+          id="component-library"
+          style={{
+            width: 0,
+            minWidth: 0,
+            padding: 0,
+            margin: 0,
+            overflow: 'hidden',
+            border: 'none',
+            opacity: 0,
+            transition: 'all 0.25s ease',
+          }}
+        />
+
+        {/* Floating Expand Tab on Left Canvas Edge */}
         <button
           onClick={toggleSidebar}
-          style={toggleButtonStyle}
+          style={{
+            position: 'absolute',
+            top: isToolbarOpen ? 72 : 12,
+            left: 12,
+            zIndex: 60,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            backgroundColor: 'rgba(24, 24, 27, 0.92)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(63, 63, 70, 0.6)',
+            borderRadius: 12,
+            boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+            color: '#e4e4e7',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
           title="Expand Component Library Panel"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <span style={{ fontSize: 14 }}>🧰</span>
+          <span>Components</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </button>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
-          {GROUPS.map((g) => (
-            <div
-              key={g.key}
-              onClick={toggleSidebar}
-              style={{
-                fontSize: 18,
-                cursor: 'pointer',
-                textAlign: 'center',
-                opacity: 0.8,
-                transition: 'transform 0.15s ease',
-              }}
-              title={`Expand Library: ${g.label}`}
-            >
-              {g.icon}
-            </div>
-          ))}
-        </div>
-      </aside>
+      </>
     );
   }
 

@@ -20,6 +20,7 @@ export function ValueInspector() {
   const selectedId = useCanvasStore((s) => s.selectedId);
   const instances = useCanvasStore((s) => s.instances);
   const isInspectorOpen = useCanvasStore((s) => s.isInspectorOpen);
+  const isToolbarOpen = useCanvasStore((s) => s.isToolbarOpen);
   const toggleInspector = useCanvasStore((s) => s.toggleInspector);
 
   const graph = useCircuitStore((s) => s.graph);
@@ -41,73 +42,73 @@ export function ValueInspector() {
 
   if (!isInspectorOpen) {
     return (
-      <aside
-        className="inspector neu-panel"
-        id="inspector-panel"
-        style={{
-          width: 48,
-          minWidth: 48,
-          padding: '12px 6px',
-          alignItems: 'center',
-          gap: 16,
-          transition: 'all 0.25s ease',
-        }}
-      >
-        {/* Click arrow to expand left into workspace */}
+      <>
+        {/* Retracted inspector container claims 0px in grid layout */}
+        <aside
+          className="inspector neu-panel"
+          id="inspector-panel"
+          style={{
+            width: 0,
+            minWidth: 0,
+            padding: 0,
+            margin: 0,
+            overflow: 'hidden',
+            border: 'none',
+            opacity: 0,
+            transition: 'all 0.25s ease',
+          }}
+        />
+
+        {/* Floating Expand Tab on Right Canvas Edge */}
         <button
           onClick={toggleInspector}
-          style={toggleButtonStyle}
-          title="Expand Inspector Panel"
+          style={{
+            position: 'absolute',
+            top: isToolbarOpen ? 72 : 12,
+            right: 12,
+            zIndex: 60,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            backgroundColor: 'rgba(24, 24, 27, 0.92)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(63, 63, 70, 0.6)',
+            borderRadius: 12,
+            boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+            color: '#e4e4e7',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          title="Expand Value Inspector Panel"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <polyline points="15 18 9 12 15 6" />
           </svg>
-        </button>
-
-        <div
-          onClick={toggleInspector}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 16,
-            marginTop: 8,
-            cursor: 'pointer',
-          }}
-          title="Expand Inspector Panel"
-        >
-          <div style={{ fontSize: 18 }} title="Component Inspector">🎛️</div>
-
-          {/* Corrected orientation: reads naturally top-to-bottom */}
-          <div
-            style={{
-              writingMode: 'vertical-rl',
-              transform: 'rotate(180deg)',
-              textTransform: 'uppercase',
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing: '0.15em',
-              color: '#a1a1aa',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            INSPECTOR {component ? `• ${component.label}` : ''}
-          </div>
-
+          <span style={{ fontSize: 14 }}>🎛️</span>
+          <span>Inspector</span>
+          {component && (
+            <span style={{ color: '#38bdf8', fontSize: 11, fontWeight: 700 }}>
+              ({component.label})
+            </span>
+          )}
           {diagnostics.length > 0 && (
-            <div
+            <span
               style={{
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
                 backgroundColor: '#f59e0b',
                 boxShadow: '0 0 8px #f59e0b',
+                marginLeft: 2,
               }}
               title={`${diagnostics.length} wiring warning(s)`}
             />
           )}
-        </div>
-      </aside>
+        </button>
+      </>
     );
   }
 

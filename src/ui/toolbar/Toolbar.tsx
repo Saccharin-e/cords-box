@@ -67,34 +67,66 @@ export function Toolbar() {
 
   if (!isToolbarOpen) {
     return (
-      <header
-        className="toolbar"
-        id="toolbar"
-        style={{
-          height: 36,
-          minHeight: 36,
-          padding: '0 12px',
-          justifyContent: 'space-between',
-          transition: 'all 0.25s ease',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div className="toolbar__logo" style={{ width: 22, height: 22, fontSize: 10 }}>CB</div>
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: '#f4f4f5' }}>
-            CORDS BOX
-          </span>
-        </div>
+      <>
+        {/* Retracted container claims 0px in grid layout */}
+        <header
+          className="toolbar"
+          id="toolbar"
+          style={{
+            height: 0,
+            minHeight: 0,
+            padding: 0,
+            margin: 0,
+            overflow: 'hidden',
+            border: 'none',
+            opacity: 0,
+            transition: 'all 0.25s ease',
+          }}
+        />
 
+        {/* Floating Handle Tab on Top Edge */}
         <button
           onClick={toggleToolbar}
-          style={toggleButtonStyle}
-          title="Expand Toolbar (Show Actions & Audio Controls)"
+          style={{
+            position: 'absolute',
+            top: 12,
+            left: 12,
+            zIndex: 60,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 10px',
+            backgroundColor: 'rgba(24, 24, 27, 0.92)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(63, 63, 70, 0.6)',
+            borderRadius: 16,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+            color: '#ff8c00',
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+          title="Expand Main Toolbar & Audio Controls"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <div style={{
+            width: 16,
+            height: 16,
+            borderRadius: 4,
+            backgroundColor: '#0a0a0c',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 8,
+            color: '#fff',
+            fontWeight: 800,
+          }}>CB</div>
+          <span>CORDS BOX</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-      </header>
+      </>
     );
   }
 
