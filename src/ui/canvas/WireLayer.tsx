@@ -3,6 +3,7 @@
  *
  * Renders committed wires as colored Bezier curves and the
  * in-progress "pending" wire as a dashed line following the cursor.
+ * Supports clicking to select wire edge for deletion.
  */
 
 import { Layer, Line, Circle } from 'react-konva';
@@ -21,15 +22,18 @@ export interface WireVisual {
 
 interface Props {
   wires: WireVisual[];
+  selectedEdgeId?: string | null;
+  onSelectEdge?: (edgeId: string) => void;
 }
 
-export function WireLayer({ wires }: Props) {
+export function WireLayer({ wires, selectedEdgeId, onSelectEdge }: Props) {
   const { pendingWire } = useCanvasStore();
 
   return (
     <Layer>
       {/* Committed wires */}
       {wires.map((wire) => {
+        const isSelected = selectedEdgeId === wire.id;
         const midX = (wire.x1 + wire.x2) / 2;
         const dy = wire.y2 - wire.y1;
         const cp1X = wire.x1 + (midX - wire.x1) * 0.5;
@@ -37,47 +41,58 @@ export function WireLayer({ wires }: Props) {
         const cp2X = wire.x2 - (wire.x2 - midX) * 0.5;
         const cp2Y = wire.y2 - dy * 0.15;
 
+        const strokeColor = isSelected ? '#ef4444' : wire.isActive ? wire.color : '#52525b';
+        const strokeW = isSelected ? 4 : wire.isActive ? 3 : 2;
+
         return (
           <Line
             key={wire.id}
             points={[wire.x1, wire.y1, cp1X, cp1Y, cp2X, cp2Y, wire.x2, wire.y2]}
             tension={0.4}
-            stroke={wire.isActive ? wire.color : '#2a2a30'}
-            strokeWidth={wire.isActive ? 2.5 : 1.5}
-            shadowColor={wire.color}
-            shadowBlur={wire.isActive ? 10 : 0}
-            shadowOpacity={0.6}
+            stroke={strokeColor}
+            strokeWidth={strokeW}
+            hitStrokeWidth={12}
+            shadowColor={strokeColor}
+            shadowBlur={isSelected || wire.isActive ? 10 : 0}
+            shadowOpacity={0.8}
             lineCap="round"
             lineJoin="round"
+            onClick={(e) => {
+              e.cancelBubble = true;
+              onSelectEdge?.(wire.id);
+            }}
           />
         );
       })}
 
       {/* Solder joint dots at endpoints */}
-      {wires.map((wire) => (
-        <>
-          <Circle
-            key={`${wire.id}-dot1`}
-            x={wire.x1}
-            y={wire.y1}
-            radius={3}
-            fill={wire.isActive ? wire.color : '#3f3f46'}
-            shadowColor={wire.color}
-            shadowBlur={wire.isActive ? 6 : 0}
-            shadowOpacity={0.8}
-          />
-          <Circle
-            key={`${wire.id}-dot2`}
-            x={wire.x2}
-            y={wire.y2}
-            radius={3}
-            fill={wire.isActive ? wire.color : '#3f3f46'}
-            shadowColor={wire.color}
-            shadowBlur={wire.isActive ? 6 : 0}
-            shadowOpacity={0.8}
-          />
-        </>
-      ))}
+      {wires.map((wire) => {
+        const isSelected = selectedEdgeId === wire.id;
+        const dotColor = isSelected ? '#ef4444' : wire.isActive ? wire.color : '#71717a';
+
+        return (
+          <g key={`${wire.id}-dots`}>
+            <Circle
+              x={wire.x1}
+              y={wire.y1}
+              radius={4}
+              fill={dotColor}
+              shadowColor={dotColor}
+              shadowBlur={isSelected || wire.isActive ? 6 : 0}
+              shadowOpacity={0.8}
+            />
+            <Circle
+              x={wire.x2}
+              y={wire.y2}
+              radius={4}
+              fill={dotColor}
+              shadowColor={dotColor}
+              shadowBlur={isSelected || wire.isActive ? 6 : 0}
+              shadowOpacity={0.8}
+            />
+          </g>
+        );
+      })}
 
       {/* Pending wire (in-progress draw) */}
       {pendingWire && (
@@ -89,12 +104,12 @@ export function WireLayer({ wires }: Props) {
             pendingWire.toY,
           ]}
           stroke="#ff8c00"
-          strokeWidth={2}
+          strokeWidth={2.5}
           dash={[8, 4]}
-          opacity={0.8}
+          opacity={0.9}
           shadowColor="#ff8c00"
           shadowBlur={8}
-          shadowOpacity={0.5}
+          shadowOpacity={0.6}
         />
       )}
     </Layer>
@@ -111,8 +126,6 @@ export function buildWireVisuals(
   const visuals: WireVisual[] = [];
 
   for (const edge of edges()) {
-    // Find source and target instance positions from node ids
-    // Node ids are formatted as `${componentId}${lugSuffix}`
     const sourceCompId = edge.source.split('_').slice(0, -1).join('_');
     const targetCompId = edge.target.split('_').slice(0, -1).join('_');
     const srcInst = instanceMap.get(sourceCompId);

@@ -1,9 +1,9 @@
 /**
  * DualCanvas — host element for Physical + Schematic Konva stages.
  *
- * Measures its own DOM size and passes width/height to the active view,
- * keeping the canvas crisp at any panel size. Manages the tab switcher,
- * empty state, and status bar.
+ * Measures its own DOM size and passes width/height to the active view.
+ * Manages tab switching, empty state, status bar, global keyboard shortcuts
+ * (Delete / Backspace to remove components or wires), and view controls.
  */
 
 import { useState, useRef, useEffect } from 'react';
@@ -20,11 +20,17 @@ export function DualCanvas() {
   const containerRef = useRef<HTMLElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
-  const instances = useCanvasStore((s) => s.instances);
-  const wiringMode = useCanvasStore((s) => s.wiringMode);
-  const graph = useCircuitStore((s) => s.graph);
-  const solverResult = useCircuitStore((s) => s.solverResult);
-  // Read stable primitive counts — avoid calling graph methods inside selectors
+  const {
+    instances, wiringMode, selectedId,
+    removeInstance, selectInstance, cancelWiring,
+    setPan, setScale,
+  } = useCanvasStore();
+
+  const {
+    graph, solverResult, selectedEdgeId,
+    removeComponent, removeEdge, selectEdge,
+  } = useCircuitStore();
+
   const nodeCount = useCircuitStore((s) => s.graph.getNodes().length);
   const edgeCount = useCircuitStore((s) => s.graph.getEdges().length);
 
@@ -44,7 +50,47 @@ export function DualCanvas() {
     return () => ro.disconnect();
   }, []);
 
+  // Global Keyboard Shortcuts (Delete, Backspace, Escape)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const activeEl = document.activeElement;
+      if (
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          activeEl.tagName === 'SELECT')
+      ) {
+        return;
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedId) {
+          e.preventDefault();
+          removeInstance(selectedId);
+          removeComponent(selectedId);
+          selectInstance(null);
+        } else if (selectedEdgeId) {
+          e.preventDefault();
+          removeEdge(selectedEdgeId);
+          selectEdge(null);
+        }
+      } else if (e.key === 'Escape') {
+        cancelWiring();
+        selectInstance(null);
+        selectEdge(null);
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, selectedEdgeId, removeInstance, removeComponent, selectInstance, removeEdge, selectEdge, cancelWiring]);
+
   const isEmpty = instances.length === 0;
+
+  function handleResetView() {
+    setScale(1);
+    setPan(0, 0);
+  }
 
   return (
     <section className="canvas-area" ref={containerRef} id="canvas-area">
@@ -72,9 +118,17 @@ export function DualCanvas() {
             ⚡ WIRING
           </span>
         )}
+        <button
+          className="canvas-tab"
+          style={{ marginLeft: 'auto', fontSize: 11 }}
+          onClick={handleResetView}
+          title="Reset Zoom & Pan to 100%"
+        >
+          🎯 Fit View
+        </button>
       </div>
 
-      {/* Konva canvas — shown once we have size */}
+      {/* Konva canvas */}
       {size.width > 0 && (
         <>
           {activeView === 'physical' ? (
@@ -94,7 +148,7 @@ export function DualCanvas() {
           </p>
           <p className="canvas-empty__hint">
             {activeView === 'physical'
-              ? 'Physical — wiring as it looks inside a guitar'
+              ? 'Physical — click & drag canvas to pan · right-click or press Delete to remove'
               : 'Schematic — node-based electrical diagram'}
           </p>
         </div>

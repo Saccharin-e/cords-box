@@ -1,39 +1,40 @@
 /**
  * PhysicalView — Konva Stage for the guitar-body layout view.
  *
- * Handles:
- * - Drag-drop from ComponentLibrary sidebar
- * - Component placement, selection, and drag-to-move
+ * Implements standard canvas interactions:
+ * - Stage Panning: Click & drag background or middle mouse button
+ * - Zoom: Mouse wheel scrolls towards pointer position
+ * - Component Dragging & Selection
  * - Wire drawing via lug click-to-click
- * - Zoom (scroll wheel) and pan (middle mouse / space+drag)
+ * - Right-Click Context Menu for deletion and options
  */
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { Stage, Layer } from 'react-konva';
 import type Konva from 'konva';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { ComponentNode } from './ComponentNode';
 import { WireLayer, buildWireVisuals } from './WireLayer';
+import { ContextMenu, type ContextMenuState } from '@ui/contextmenu/ContextMenu';
 import { getShape } from './shapes';
 import type { ComponentType } from '@graph/types';
 import { generateComponentId } from '@graph/types';
 
-// Map drag-type strings from ComponentLibrary to ComponentType enum
 const DRAG_TYPE_MAP: Record<string, ComponentType> = {
-  pickup_sc:    'pickup_single_coil',
-  pickup_hb:    'pickup_humbucker',
-  switch_3way:  'switch_3way',
-  switch_4way:  'switch_4way',
-  switch_5way:  'switch_5way',
-  switch_dpdt:  'switch_dpdt',
-  pot_volume:   'pot_volume',
-  pot_tone:     'pot_tone',
-  pot_blend:    'pot_blend',
+  pickup_sc:      'pickup_single_coil',
+  pickup_hb:      'pickup_humbucker',
+  switch_3way:    'switch_3way',
+  switch_4way:    'switch_4way',
+  switch_5way:    'switch_5way',
+  switch_dpdt:    'switch_dpdt',
+  pot_volume:     'pot_volume',
+  pot_tone:       'pot_tone',
+  pot_blend:      'pot_blend',
   pot_concentric: 'pot_concentric',
-  capacitor:    'capacitor',
-  resistor:     'resistor',
-  output_jack:  'output_jack',
+  capacitor:      'capacitor',
+  resistor:       'resistor',
+  output_jack:    'output_jack',
 };
 
 interface Props {
@@ -43,23 +44,23 @@ interface Props {
 
 export function PhysicalView({ width, height }: Props) {
   const stageRef = useRef<Konva.Stage>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   const {
     instances, scale, panX, panY,
     selectedId, wiringMode, pendingWire,
     addInstance, moveInstance, selectInstance,
-    setScale, cancelWiring,
+    setScale, setPan, cancelWiring,
     updateWiringCursor,
   } = useCanvasStore();
 
-  const { addComponent, solverResult } = useCircuitStore();
+  const { addComponent, solverResult, selectEdge, selectedEdgeId } = useCircuitStore();
   const graph = useCircuitStore((s) => s.graph);
 
   const activeEdges = solverResult?.activeEdges ?? new Set<string>();
-  // Read edges directly from graph instance — stable per store update
   const wires = buildWireVisuals(() => graph.getEdges(), instances, activeEdges);
 
-  /* ─── Drop from sidebar ────────────────────────────────────────────── */
+  /* ─── Drop from Component Library ──────────────────────────────────── */
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
@@ -76,7 +77,6 @@ export function PhysicalView({ width, height }: Props) {
       const dropY = (e.clientY - stageBox.top  - panY) / scale;
       const id = generateComponentId();
 
-      // Register in Zustand canvas store
       addInstance({
         id,
         type: compType,
@@ -87,31 +87,59 @@ export function PhysicalView({ width, height }: Props) {
         height: shape.height,
       });
 
-      // Register in graph store
       addComponent({ id, type: compType, label: shape.label });
     },
     [scale, panX, panY, addInstance, addComponent],
   );
 
-  /* ─── Zoom ─────────────────────────────────────────────────────────── */
+  /* ─── Zoom towards mouse pointer ────────────────────────────────────── */
   const handleWheel = useCallback(
     (e: Konva.KonvaEventObject<WheelEvent>) => {
       e.evt.preventDefault();
-      const factor = e.evt.deltaY < 0 ? 1.08 : 0.93;
-      setScale(scale * factor);
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      const oldScale = scale;
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const zoomFactor = e.evt.deltaY < 0 ? 1.1 : 0.9;
+      const newScale = Math.min(3, Math.max(0.25, oldScale * zoomFactor));
+
+      const mousePointTo = {
+        x: (pointer.x - panX) / oldScale,
+        y: (pointer.y - panY) / oldScale,
+      };
+
+      const newPanX = pointer.x - mousePointTo.x * newScale;
+      const newPanY = pointer.y - mousePointTo.y * newScale;
+
+      setScale(newScale);
+      setPan(newPanX, newPanY);
     },
-    [scale, setScale],
+    [scale, panX, panY, setScale, setPan],
   );
 
-  /* ─── Canvas click (deselect / cancel wire) ─────────────────────────── */
+  /* ─── Stage Drag/Pan End ───────────────────────────────────────────── */
+  const handleStageDragEnd = useCallback(
+    (e: Konva.KonvaEventObject<DragEvent>) => {
+      if (e.target === stageRef.current) {
+        setPan(e.target.x(), e.target.y());
+      }
+    },
+    [setPan],
+  );
+
+  /* ─── Stage Click ────────────────────────────────────────────────── */
   const handleStageClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       if (e.target === stageRef.current) {
         selectInstance(null);
+        selectEdge(null);
         if (wiringMode) cancelWiring();
       }
     },
-    [selectInstance, wiringMode, cancelWiring],
+    [selectInstance, selectEdge, wiringMode, cancelWiring],
   );
 
   /* ─── Cursor tracking for pending wire ─────────────────────────────── */
@@ -124,9 +152,31 @@ export function PhysicalView({ width, height }: Props) {
     [pendingWire, panX, panY, scale, updateWiringCursor],
   );
 
+  /* ─── Context Menu Handler (Right Click) ────────────────────────────── */
+  const handleContextMenu = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      e.evt.preventDefault();
+      const mouseX = e.evt.clientX;
+      const mouseY = e.evt.clientY;
+
+      if (selectedId) {
+        setContextMenu({ x: mouseX, y: mouseY, targetType: 'component', targetId: selectedId });
+      } else if (selectedEdgeId) {
+        setContextMenu({ x: mouseX, y: mouseY, targetType: 'wire', targetId: selectedEdgeId });
+      } else {
+        setContextMenu({ x: mouseX, y: mouseY, targetType: 'canvas' });
+      }
+    },
+    [selectedId, selectedEdgeId],
+  );
+
   return (
     <div
-      style={{ width, height, cursor: wiringMode ? 'crosshair' : 'default' }}
+      style={{
+        width,
+        height,
+        cursor: wiringMode ? 'crosshair' : 'grab',
+      }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
     >
@@ -138,12 +188,19 @@ export function PhysicalView({ width, height }: Props) {
         scaleY={scale}
         x={panX}
         y={panY}
+        draggable={!wiringMode}
         onWheel={handleWheel}
         onClick={handleStageClick}
         onMouseMove={handleMouseMove}
+        onDragEnd={handleStageDragEnd}
+        onContextMenu={handleContextMenu}
       >
-        {/* Wire layer rendered below components */}
-        <WireLayer wires={wires} />
+        {/* Wire layer */}
+        <WireLayer
+          wires={wires}
+          selectedEdgeId={selectedEdgeId}
+          onSelectEdge={(edgeId) => selectEdge(edgeId)}
+        />
 
         {/* Component layer */}
         <Layer>
@@ -152,12 +209,20 @@ export function PhysicalView({ width, height }: Props) {
               key={inst.id}
               instance={inst}
               isSelected={selectedId === inst.id}
-              onSelect={() => selectInstance(inst.id)}
+              onSelect={() => {
+                selectInstance(inst.id);
+                selectEdge(null);
+              }}
               onDragEnd={(x, y) => moveInstance(inst.id, x, y)}
             />
           ))}
         </Layer>
       </Stage>
+
+      {/* Floating Context Menu */}
+      {contextMenu && (
+        <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
+      )}
     </div>
   );
 }

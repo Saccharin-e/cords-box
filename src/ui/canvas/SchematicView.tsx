@@ -2,17 +2,19 @@
  * SchematicView — Konva Stage for the node-based electrical schematic.
  *
  * Renders the circuit as a formal electrical schematic with:
- * - Standardized component symbols (not physical shapes)
+ * - Standardized component symbols
  * - Net-highlighted signal paths
  * - Active path glow on signal-carrying wires
+ * - Standard stage dragging, zoom-to-cursor, and right-click menu
  */
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { Stage, Layer, Rect, Text, Circle, Group } from 'react-konva';
 import type Konva from 'konva';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { WireLayer, buildWireVisuals } from './WireLayer';
+import { ContextMenu, type ContextMenuState } from '@ui/contextmenu/ContextMenu';
 import { getShape } from './shapes';
 
 interface Props {
@@ -22,11 +24,14 @@ interface Props {
 
 export function SchematicView({ width, height }: Props) {
   const stageRef = useRef<Konva.Stage>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
   const {
     instances, scale, panX, panY,
-    selectedId, selectInstance, setScale,
+    selectedId, selectInstance, setScale, setPan,
   } = useCanvasStore();
 
+  const { selectEdge, selectedEdgeId } = useCircuitStore();
   const graph = useCircuitStore((s) => s.graph);
   const solverResult = useCircuitStore((s) => s.solverResult);
   const activeEdges = solverResult?.activeEdges ?? new Set<string>();
@@ -34,17 +39,64 @@ export function SchematicView({ width, height }: Props) {
 
   const wires = buildWireVisuals(() => graph.getEdges(), instances, activeEdges);
 
+  /* ─── Zoom towards mouse pointer ────────────────────────────────────── */
   const handleWheel = useCallback(
     (e: Konva.KonvaEventObject<WheelEvent>) => {
       e.evt.preventDefault();
-      const factor = e.evt.deltaY < 0 ? 1.08 : 0.93;
-      setScale(scale * factor);
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      const oldScale = scale;
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const zoomFactor = e.evt.deltaY < 0 ? 1.1 : 0.9;
+      const newScale = Math.min(3, Math.max(0.25, oldScale * zoomFactor));
+
+      const mousePointTo = {
+        x: (pointer.x - panX) / oldScale,
+        y: (pointer.y - panY) / oldScale,
+      };
+
+      const newPanX = pointer.x - mousePointTo.x * newScale;
+      const newPanY = pointer.y - mousePointTo.y * newScale;
+
+      setScale(newScale);
+      setPan(newPanX, newPanY);
     },
-    [scale, setScale],
+    [scale, panX, panY, setScale, setPan],
+  );
+
+  /* ─── Stage Drag/Pan End ───────────────────────────────────────────── */
+  const handleStageDragEnd = useCallback(
+    (e: Konva.KonvaEventObject<DragEvent>) => {
+      if (e.target === stageRef.current) {
+        setPan(e.target.x(), e.target.y());
+      }
+    },
+    [setPan],
+  );
+
+  /* ─── Context Menu Handler ─────────────────────────────────────────── */
+  const handleContextMenu = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      e.evt.preventDefault();
+      const mouseX = e.evt.clientX;
+      const mouseY = e.evt.clientY;
+
+      if (selectedId) {
+        setContextMenu({ x: mouseX, y: mouseY, targetType: 'component', targetId: selectedId });
+      } else if (selectedEdgeId) {
+        setContextMenu({ x: mouseX, y: mouseY, targetType: 'wire', targetId: selectedEdgeId });
+      } else {
+        setContextMenu({ x: mouseX, y: mouseY, targetType: 'canvas' });
+      }
+    },
+    [selectedId, selectedEdgeId],
   );
 
   return (
-    <div style={{ width, height }}>
+    <div style={{ width, height, cursor: 'grab' }}>
       <Stage
         ref={stageRef}
         width={width}
@@ -53,13 +105,23 @@ export function SchematicView({ width, height }: Props) {
         scaleY={scale}
         x={panX}
         y={panY}
+        draggable
         onWheel={handleWheel}
+        onDragEnd={handleStageDragEnd}
+        onContextMenu={handleContextMenu}
         onClick={(e) => {
-          if (e.target === stageRef.current) selectInstance(null);
+          if (e.target === stageRef.current) {
+            selectInstance(null);
+            selectEdge(null);
+          }
         }}
       >
         {/* Wires first */}
-        <WireLayer wires={wires} />
+        <WireLayer
+          wires={wires}
+          selectedEdgeId={selectedEdgeId}
+          onSelectEdge={(edgeId) => selectEdge(edgeId)}
+        />
 
         {/* Schematic symbols layer */}
         <Layer>
@@ -73,7 +135,10 @@ export function SchematicView({ width, height }: Props) {
                 key={inst.id}
                 x={inst.x}
                 y={inst.y}
-                onClick={() => selectInstance(inst.id)}
+                onClick={() => {
+                  selectInstance(inst.id);
+                  selectEdge(null);
+                }}
               >
                 {/* Schematic box */}
                 <Rect
@@ -89,7 +154,7 @@ export function SchematicView({ width, height }: Props) {
                   dash={isSelected ? [] : [4, 2]}
                 />
 
-                {/* Node identifier (schematic) */}
+                {/* Node identifier */}
                 <Text
                   x={4}
                   y={4}
@@ -98,7 +163,7 @@ export function SchematicView({ width, height }: Props) {
                   fontSize={9}
                   fontFamily="'JetBrains Mono', monospace"
                   fontStyle="bold"
-                  fill={isActive ? shape.color : '#52525b'}
+                  fill={isActive ? shape.color : '#a1a1aa'}
                   align="center"
                   listening={false}
                 />
@@ -142,6 +207,11 @@ export function SchematicView({ width, height }: Props) {
           })}
         </Layer>
       </Stage>
+
+      {/* Floating Context Menu */}
+      {contextMenu && (
+        <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
+      )}
     </div>
   );
 }

@@ -21,8 +21,19 @@ export function ValueInspector() {
   const graph = useCircuitStore((s) => s.graph);
   const diagnostics = lintCircuit(graph);
 
+  const removeInstance = useCanvasStore((s) => s.removeInstance);
+  const selectInstance = useCanvasStore((s) => s.selectInstance);
+  const removeComponent = useCircuitStore((s) => s.removeComponent);
+
   const inst = instances.find((i) => i.id === selectedId);
   const component = inst ? graph.getComponent(inst.id) : undefined;
+
+  function handleDelete() {
+    if (!selectedId) return;
+    removeInstance(selectedId);
+    removeComponent(selectedId);
+    selectInstance(null);
+  }
 
   return (
     <aside className="inspector neu-panel" id="inspector-panel">
@@ -43,6 +54,26 @@ export function ValueInspector() {
             <InspectorRow label="Label">
               <span className="inspector-mono">{component.label}</span>
             </InspectorRow>
+            <div style={{ marginTop: 12 }}>
+              <button
+                className="neu-btn neu-btn--danger"
+                style={{
+                  width: '100%',
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  color: '#ef4444',
+                  borderColor: 'rgba(239, 68, 68, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  cursor: 'pointer',
+                }}
+                onClick={handleDelete}
+              >
+                <span>🗑️ Delete Component</span>
+              </button>
+            </div>
           </InspectorSection>
 
           {/* Potentiometer controls */}
@@ -50,11 +81,11 @@ export function ValueInspector() {
             component.type === 'pot_tone' ||
             component.type === 'pot_blend' ||
             component.type === 'pot_concentric') && (
-            <PotentiometerInspector
-              compId={component.id}
-              value={component.value as PotentiometerValue | undefined}
-            />
-          )}
+              <PotentiometerInspector
+                compId={component.id}
+                value={component.value as PotentiometerValue | undefined}
+              />
+            )}
 
           {/* Capacitor controls */}
           {component.type === 'capacitor' && (
@@ -115,7 +146,7 @@ function PotentiometerInspector({
             value={Math.round(pos * 100)}
             className="inspector-slider"
             aria-label={`${compId} wiper position`}
-            onChange={() => {/* FR-6 propagation — wired in audio pipeline */}}
+            onChange={() => {/* FR-6 propagation — wired in audio pipeline */ }}
           />
           <span className="inspector-value">{Math.round(pos * 100)}%</span>
         </div>
