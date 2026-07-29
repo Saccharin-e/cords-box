@@ -2,6 +2,7 @@
  * Canvas Store (Zustand)
  *
  * Manages view-level state for the dual canvas:
+ * - Retractable panels (Toolbar, Sidebar Library, Value Inspector, CAD Floating Bar)
  * - Theme modes (Dark, Light, Blueprint, Vintage Paper)
  * - Grid styles (Dots, Grid lines, Crosshatch, Isometric, None)
  * - Snap-to-grid toggle & grid size settings
@@ -52,6 +53,12 @@ export interface CanvasStore {
   pendingWire: PendingWire | null;
   viewMode: 'physical' | 'schematic';
 
+  // Retractable Panel Layout State
+  isToolbarOpen: boolean;
+  isSidebarOpen: boolean;
+  isInspectorOpen: boolean;
+  isControlsOpen: boolean;
+
   // Display & Grid Options
   themeMode: CanvasTheme;
   gridStyle: GridStyle;
@@ -62,6 +69,12 @@ export interface CanvasStore {
   history: CanvasComponentInstance[][];
   historyIndex: number;
   clipboard: CanvasComponentInstance[] | null;
+
+  // Panel Toggles
+  toggleToolbar: () => void;
+  toggleSidebar: () => void;
+  toggleInspector: () => void;
+  toggleControls: () => void;
 
   // Actions
   addInstance: (inst: CanvasComponentInstance) => void;
@@ -118,6 +131,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   pendingWire: null,
   viewMode: 'physical',
 
+  // Default panels expanded
+  isToolbarOpen: true,
+  isSidebarOpen: true,
+  isInspectorOpen: true,
+  isControlsOpen: true,
+
   themeMode: 'dark',
   gridStyle: 'dots',
   gridSize: 20,
@@ -126,6 +145,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   history: [[]],
   historyIndex: 0,
   clipboard: null,
+
+  toggleToolbar: () => set((s) => ({ isToolbarOpen: !s.isToolbarOpen })),
+  toggleSidebar: () => set((s) => ({ isSidebarOpen: !s.isSidebarOpen })),
+  toggleInspector: () => set((s) => ({ isInspectorOpen: !s.isInspectorOpen })),
+  toggleControls: () => set((s) => ({ isControlsOpen: !s.isControlsOpen })),
 
   pushHistory: () => {
     const { instances, history, historyIndex } = get();

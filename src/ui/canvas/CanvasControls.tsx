@@ -1,6 +1,7 @@
 /**
  * CanvasControls — Floating CAD Bar for Themes, Grid Styles, Snap-to-Grid,
  * Rotate, Flip, Group, Copy/Paste, and Undo/Redo.
+ * Supports retractable mini-pill mode.
  */
 
 import { useCanvasStore, type CanvasTheme, type GridStyle } from '@store/canvasStore';
@@ -12,6 +13,8 @@ export function CanvasControls() {
     gridSize,
     snapToGrid,
     selectedIds,
+    isControlsOpen,
+    toggleControls,
     setThemeMode,
     setGridStyle,
     setGridSize,
@@ -31,11 +34,47 @@ export function CanvasControls() {
 
   const hasSelection = selectedIds.length > 0;
 
+  if (!isControlsOpen) {
+    return (
+      <div
+        onClick={toggleControls}
+        style={{
+          position: 'absolute',
+          top: 12,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 50,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px 10px',
+          backgroundColor: 'rgba(24, 24, 27, 0.92)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(63, 63, 70, 0.6)',
+          borderRadius: 20,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          color: '#38bdf8',
+          fontSize: 11,
+          fontWeight: 600,
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+        }}
+        title="Expand Floating CAD Controls"
+      >
+        <IconPalette color="#38bdf8" />
+        <span>CAD Tools</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
         position: 'absolute',
-        top: 16,
+        top: 12,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 50,
@@ -221,6 +260,19 @@ export function CanvasControls() {
           <IconTrash />
         </button>
       </div>
+
+      <div style={dividerStyle} />
+
+      {/* Retract Floating Bar Button */}
+      <button
+        onClick={toggleControls}
+        style={{ ...buttonStyle, color: '#a1a1aa' }}
+        title="Collapse CAD Floating Bar"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <polyline points="18 15 12 9 6 15" />
+        </svg>
+      </button>
     </div>
   );
 }

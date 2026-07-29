@@ -102,6 +102,13 @@ export class Graph {
     this.graph.components.push(component);
   }
 
+  updateComponentValue(componentId: string, value: Component['value']): void {
+    const comp = this.graph.components.find((c) => c.id === componentId);
+    if (comp) {
+      comp.value = value;
+    }
+  }
+
   removeComponent(componentId: string): void {
     this.graph.components = this.graph.components.filter((c) => c.id !== componentId);
     // Remove all nodes belonging to this component

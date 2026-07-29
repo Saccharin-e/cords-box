@@ -7,6 +7,7 @@
  * - Resistor: resistance (Ω / kΩ)
  * - Potentiometer: resistance (kΩ), taper, and position slider
  * - Wiring diagnostics from the linter
+ * - Retractable panel support (48px dock mode)
  */
 
 import { useCanvasStore } from '@store/canvasStore';
@@ -18,6 +19,9 @@ import type { PotentiometerValue, CapacitorValue, ResistorValue } from '@graph/t
 export function ValueInspector() {
   const selectedId = useCanvasStore((s) => s.selectedId);
   const instances = useCanvasStore((s) => s.instances);
+  const isInspectorOpen = useCanvasStore((s) => s.isInspectorOpen);
+  const toggleInspector = useCanvasStore((s) => s.toggleInspector);
+
   const graph = useCircuitStore((s) => s.graph);
   const diagnostics = lintCircuit(graph);
 
@@ -35,10 +39,63 @@ export function ValueInspector() {
     selectInstance(null);
   }
 
+  if (!isInspectorOpen) {
+    return (
+      <aside
+        className="inspector neu-panel"
+        id="inspector-panel"
+        style={{
+          width: 48,
+          minWidth: 48,
+          padding: '12px 6px',
+          alignItems: 'center',
+          gap: 16,
+          transition: 'all 0.25s ease',
+        }}
+      >
+        <button
+          onClick={toggleInspector}
+          style={toggleButtonStyle}
+          title="Expand Value Inspector Panel"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+
+        <div
+          onClick={toggleInspector}
+          style={{
+            writingMode: 'vertical-rl',
+            textTransform: 'uppercase',
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: '0.15em',
+            color: '#a1a1aa',
+            cursor: 'pointer',
+            marginTop: 12,
+          }}
+          title="Expand Inspector"
+        >
+          INSPECTOR {component ? `• ${component.label}` : ''}
+        </div>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="inspector neu-panel" id="inspector-panel">
-      <div className="inspector__header">
+    <aside className="inspector neu-panel" id="inspector-panel" style={{ transition: 'all 0.25s ease' }}>
+      <div className="inspector__header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span className="inspector__title">Inspector</span>
+        <button
+          onClick={toggleInspector}
+          style={toggleButtonStyle}
+          title="Collapse Inspector Panel"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
       </div>
 
       {/* Component details when selected */}
@@ -104,130 +161,46 @@ export function ValueInspector() {
           )}
         </div>
       ) : (
-        <div className="inspector-empty">
-          <span style={{ fontSize: '1.5rem', opacity: 0.2 }}>✦</span>
-          <p className="inspector-empty__text">Select a component</p>
+        <div
+          style={{
+            padding: 'var(--space-4)',
+            color: 'var(--color-text-muted)',
+            fontSize: 'var(--font-size-sm)',
+            textAlign: 'center',
+          }}
+        >
+          Select a component on the canvas to inspect and edit its physical properties.
         </div>
       )}
 
-      {/* Diagnostics */}
-      <DiagnosticsPanel diagnostics={diagnostics} />
+      {/* Diagnostics / Linter Section */}
+      <div
+        style={{
+          borderTop: '1px solid var(--color-bg-inset)',
+          padding: 'var(--space-3) var(--space-4)',
+        }}
+      >
+        <div className="inspector__section-title">Wiring Diagnostics</div>
+        {diagnostics.length === 0 ? (
+          <div style={{ color: 'var(--color-accent-green)', fontSize: 11 }}>
+            ✓ No wiring defects detected.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 120, overflowY: 'auto' }}>
+            {diagnostics.map((d, i) => (
+              <DiagnosticItem key={i} diagnostic={d} />
+            ))}
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
 
-/* ─── Sub-inspectors ─────────────────────────────────────────────────────── */
-
-function PotentiometerInspector({
-  compId,
-  value,
-}: {
-  compId: string;
-  value: PotentiometerValue | undefined;
-}) {
-  const pos = value?.position ?? 1;
-  const resistance = value?.resistance_kohms ?? 250;
-  const taper = value?.taper ?? 'audio';
-
-  return (
-    <InspectorSection title="Potentiometer">
-      <InspectorRow label="Resistance">
-        <span className="inspector-value">{resistance}kΩ</span>
-      </InspectorRow>
-      <InspectorRow label="Taper">
-        <span className="inspector-badge">{taper}</span>
-      </InspectorRow>
-      <InspectorRow label="Position">
-        <div className="inspector-slider-wrap">
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={Math.round(pos * 100)}
-            className="inspector-slider"
-            aria-label={`${compId} wiper position`}
-            onChange={() => {/* FR-6 propagation — wired in audio pipeline */ }}
-          />
-          <span className="inspector-value">{Math.round(pos * 100)}%</span>
-        </div>
-      </InspectorRow>
-    </InspectorSection>
-  );
-}
-
-function CapacitorInspector({
-  value,
-}: {
-  compId: string;
-  value: CapacitorValue | undefined;
-}) {
-  const cap = value?.capacitance_pf ?? 22000;
-  const display = cap >= 1_000_000
-    ? `${(cap / 1_000_000).toFixed(3)} µF`
-    : `${cap.toLocaleString()} pF`;
-
-  return (
-    <InspectorSection title="Capacitor">
-      <InspectorRow label="Capacitance">
-        <span className="inspector-value">{display}</span>
-      </InspectorRow>
-      {value?.voltage_rating && (
-        <InspectorRow label="Voltage">
-          <span className="inspector-value">{value.voltage_rating}V</span>
-        </InspectorRow>
-      )}
-    </InspectorSection>
-  );
-}
-
-function ResistorInspector({
-  value,
-}: {
-  compId: string;
-  value: ResistorValue | undefined;
-}) {
-  const r = value?.resistance_ohms ?? 470;
-  const display = r >= 1000 ? `${(r / 1000).toFixed(1)}kΩ` : `${r}Ω`;
-
-  return (
-    <InspectorSection title="Resistor">
-      <InspectorRow label="Resistance">
-        <span className="inspector-value">{display}</span>
-      </InspectorRow>
-    </InspectorSection>
-  );
-}
-
-/* ─── Diagnostics panel ─────────────────────────────────────────────────── */
-
-function DiagnosticsPanel({ diagnostics }: { diagnostics: LintDiagnostic[] }) {
-  if (diagnostics.length === 0) {
-    return (
-      <div className="diagnostics-panel diagnostics-panel--ok">
-        <span className="diag-dot diag-dot--ok" />
-        <span>No issues</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="diagnostics-panel">
-      {diagnostics.map((d, i) => (
-        <div key={i} className={`diag-item diag-item--${d.severity}`}>
-          <span className="diag-code">{d.code}</span>
-          <span className="diag-msg">{d.message}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ─── Layout helpers ────────────────────────────────────────────────────── */
-
 function InspectorSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="inspector-section">
-      <div className="inspector-section__title">{title}</div>
+    <div style={{ marginBottom: 16 }}>
+      <div className="inspector__section-title">{title}</div>
       {children}
     </div>
   );
@@ -235,9 +208,192 @@ function InspectorSection({ title, children }: { title: string; children: React.
 
 function InspectorRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="inspector-row">
-      <span className="inspector-row__label">{label}</span>
-      <span className="inspector-row__value">{children}</span>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 0',
+        fontSize: 12,
+      }}
+    >
+      <span style={{ color: 'var(--color-text-secondary)' }}>{label}</span>
+      {children}
     </div>
   );
 }
+
+function PotentiometerInspector({
+  compId,
+  value,
+}: {
+  compId: string;
+  value?: PotentiometerValue;
+}) {
+  const updateComponentValue = useCircuitStore((s) => s.updateComponentValue);
+
+  const resistance = value?.resistance_kohms ?? 250;
+  const taper = value?.taper ?? 'audio';
+  const position = value?.position ?? 1.0;
+
+  function handlePositionChange(pos: number) {
+    updateComponentValue(compId, { resistance_kohms: resistance, taper, position: pos });
+  }
+
+  function handleResistanceChange(res: number) {
+    updateComponentValue(compId, { resistance_kohms: res, taper, position });
+  }
+
+  function handleTaperChange(t: 'audio' | 'linear') {
+    updateComponentValue(compId, { resistance_kohms: resistance, taper: t, position });
+  }
+
+  return (
+    <InspectorSection title="Potentiometer Settings">
+      <InspectorRow label="Resistance">
+        <select
+          className="inspector-select"
+          value={resistance}
+          onChange={(e) => handleResistanceChange(Number(e.target.value))}
+        >
+          <option value={250}>250kΩ (Single Coil)</option>
+          <option value={500}>500kΩ (Humbucker)</option>
+          <option value={1000}>1MΩ (Bright)</option>
+          <option value={25}>25kΩ (Active)</option>
+        </select>
+      </InspectorRow>
+
+      <InspectorRow label="Taper">
+        <select
+          className="inspector-select"
+          value={taper}
+          onChange={(e) => handleTaperChange(e.target.value as 'audio' | 'linear')}
+        >
+          <option value="audio">Audio (Log A)</option>
+          <option value="linear">Linear (B)</option>
+        </select>
+      </InspectorRow>
+
+      <div style={{ marginTop: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+          <span>Knob Position</span>
+          <span className="inspector-mono">{Math.round(position * 100)}%</span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={position}
+          onChange={(e) => handlePositionChange(parseFloat(e.target.value))}
+          style={{ width: '100%', accentColor: 'var(--color-accent-amber)' }}
+        />
+      </div>
+    </InspectorSection>
+  );
+}
+
+function CapacitorInspector({
+  compId,
+  value,
+}: {
+  compId: string;
+  value?: CapacitorValue;
+}) {
+  const updateComponentValue = useCircuitStore((s) => s.updateComponentValue);
+
+  const capacitance = value?.capacitance_pf ?? 47000;
+
+  function handleChange(val: number) {
+    updateComponentValue(compId, { capacitance_pf: val });
+  }
+
+  return (
+    <InspectorSection title="Capacitor Settings">
+      <InspectorRow label="Capacitance">
+        <select
+          className="inspector-select"
+          value={capacitance}
+          onChange={(e) => handleChange(Number(e.target.value))}
+        >
+          <option value={47000}>.047 µF (Fender Spec)</option>
+          <option value={22000}>.022 µF (Gibson Spec)</option>
+          <option value={1000}>.001 µF (Treble Bleed)</option>
+          <option value={100000}>.1 µF (Dark Warm)</option>
+        </select>
+      </InspectorRow>
+    </InspectorSection>
+  );
+}
+
+function ResistorInspector({
+  compId,
+  value,
+}: {
+  compId: string;
+  value?: ResistorValue;
+}) {
+  const updateComponentValue = useCircuitStore((s) => s.updateComponentValue);
+  const resistance = value?.resistance_ohms ?? 150000;
+
+  function handleChange(val: number) {
+    updateComponentValue(compId, { resistance_ohms: val });
+  }
+
+  return (
+    <InspectorSection title="Resistor Settings">
+      <InspectorRow label="Resistance">
+        <select
+          className="inspector-select"
+          value={resistance}
+          onChange={(e) => handleChange(Number(e.target.value))}
+        >
+          <option value={150000}>150 kΩ (Treble Bleed)</option>
+          <option value={470000}>470 kΩ (Load Resistor)</option>
+          <option value={1000000}>1 MΩ (Isolation)</option>
+        </select>
+      </InspectorRow>
+    </InspectorSection>
+  );
+}
+
+function DiagnosticItem({ diagnostic }: { diagnostic: LintDiagnostic }) {
+  const colorMap = {
+    error: '#ef4444',
+    warning: '#f59e0b',
+    info: '#3b82f6',
+  };
+
+  return (
+    <div
+      style={{
+        fontSize: 11,
+        padding: '4px 6px',
+        borderRadius: 4,
+        backgroundColor: 'rgba(0,0,0,0.2)',
+        borderLeft: `3px solid ${colorMap[diagnostic.severity]}`,
+      }}
+    >
+      <div style={{ fontWeight: 600, color: colorMap[diagnostic.severity] }}>
+        {diagnostic.severity.toUpperCase()}: {diagnostic.code}
+      </div>
+      <div style={{ color: 'var(--color-text-secondary)', marginTop: 2 }}>
+        {diagnostic.message}
+      </div>
+    </div>
+  );
+}
+
+const toggleButtonStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 26,
+  height: 26,
+  backgroundColor: '#27272a',
+  color: '#a1a1aa',
+  border: '1px solid #3f3f46',
+  borderRadius: 6,
+  cursor: 'pointer',
+  transition: 'all 0.15s ease',
+};

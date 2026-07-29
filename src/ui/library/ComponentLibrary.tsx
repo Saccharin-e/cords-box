@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useCanvasStore } from '@store/canvasStore';
 
 interface ComponentItem {
   id: string;
@@ -25,21 +26,79 @@ const COMPONENTS: ComponentItem[] = [
 ];
 
 const GROUPS = [
-  { key: 'pickup' as const, label: 'Pickups' },
-  { key: 'switch' as const, label: 'Switches' },
-  { key: 'pot' as const, label: 'Potentiometers' },
-  { key: 'passive' as const, label: 'Passive Components' },
-  { key: 'output' as const, label: 'Output' },
+  { key: 'pickup' as const, label: 'Pickups', icon: '🎸' },
+  { key: 'switch' as const, label: 'Switches', icon: '🔀' },
+  { key: 'pot' as const, label: 'Potentiometers', icon: '🎛️' },
+  { key: 'passive' as const, label: 'Passive Components', icon: '⚡' },
+  { key: 'output' as const, label: 'Output', icon: '🔌' },
 ];
 
 export function ComponentLibrary() {
   const [_dragItem, setDragItem] = useState<string | null>(null);
+  const isSidebarOpen = useCanvasStore((s) => s.isSidebarOpen);
+  const toggleSidebar = useCanvasStore((s) => s.toggleSidebar);
+
+  if (!isSidebarOpen) {
+    return (
+      <aside
+        className="sidebar neu-panel"
+        id="component-library"
+        style={{
+          width: 48,
+          minWidth: 48,
+          padding: '12px 6px',
+          alignItems: 'center',
+          gap: 16,
+          transition: 'all 0.25s ease',
+        }}
+      >
+        <button
+          onClick={toggleSidebar}
+          style={toggleButtonStyle}
+          title="Expand Component Library Panel"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
+          {GROUPS.map((g) => (
+            <div
+              key={g.key}
+              onClick={toggleSidebar}
+              style={{
+                fontSize: 18,
+                cursor: 'pointer',
+                textAlign: 'center',
+                opacity: 0.8,
+                transition: 'transform 0.15s ease',
+              }}
+              title={`Expand Library: ${g.label}`}
+            >
+              {g.icon}
+            </div>
+          ))}
+        </div>
+      </aside>
+    );
+  }
 
   return (
-    <aside className="sidebar neu-panel" id="component-library">
-      <div className="sidebar__header">
+    <aside className="sidebar neu-panel" id="component-library" style={{ transition: 'all 0.25s ease' }}>
+      <div className="sidebar__header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span className="sidebar__title">Components</span>
+        <button
+          onClick={toggleSidebar}
+          style={toggleButtonStyle}
+          title="Collapse Component Library Panel"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
       </div>
+
       {GROUPS.map((group) => {
         const items = COMPONENTS.filter((c) => c.category === group.key);
         if (items.length === 0) return null;
@@ -74,3 +133,17 @@ export function ComponentLibrary() {
     </aside>
   );
 }
+
+const toggleButtonStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 26,
+  height: 26,
+  backgroundColor: '#27272a',
+  color: '#a1a1aa',
+  border: '1px solid #3f3f46',
+  borderRadius: 6,
+  cursor: 'pointer',
+  transition: 'all 0.15s ease',
+};

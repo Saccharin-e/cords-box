@@ -25,6 +25,7 @@ export interface CircuitStore {
   addEdge: (edge: CircuitEdge) => void;
   removeEdge: (edgeId: string) => void;
   addComponent: (component: Component) => void;
+  updateComponentValue: (componentId: string, value: Component['value']) => void;
   removeComponent: (componentId: string) => void;
   setSwitchState: (state: SwitchState) => void;
 
@@ -72,6 +73,11 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
   },
   addComponent: (component) => {
     get().graph.addComponent(component);
+    set({});
+  },
+  updateComponentValue: (componentId, value) => {
+    get().graph.updateComponentValue(componentId, value);
+    get().solve();
     set({});
   },
   removeComponent: (componentId: string) => {
