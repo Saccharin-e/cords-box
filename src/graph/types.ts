@@ -45,12 +45,7 @@ export type ComponentType = z.infer<typeof ComponentType>;
 export const PotTaper = z.enum(['linear', 'audio', 'reverse_audio']);
 export type PotTaper = z.infer<typeof PotTaper>;
 
-export const WireType = z.enum([
-  'vintage_cloth_pushback',
-  'modern_vinyl',
-  'shielded',
-  'bare',
-]);
+export const WireType = z.enum(['vintage_cloth_pushback', 'modern_vinyl', 'shielded', 'bare']);
 export type WireType = z.infer<typeof WireType>;
 
 export const ConnectionType = z.enum(['solder', 'quick_connect', 'crimp', 'twist']);
@@ -107,6 +102,8 @@ export const CircuitEdge = z.object({
   connectionType: ConnectionType.default('solder'),
   wireType: WireType.default('modern_vinyl'),
   wireGauge: z.number().positive().optional(),
+  controlPoint: z.object({ x: z.number(), y: z.number() }).optional(),
+  controlPoints: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
 });
 export type CircuitEdge = z.infer<typeof CircuitEdge>;
 

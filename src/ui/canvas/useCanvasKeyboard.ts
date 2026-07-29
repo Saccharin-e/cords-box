@@ -1,10 +1,33 @@
 /**
- * useCanvasKeyboard — Global keyboard shortcut listener for CAD operations.
+ * useCanvasKeyboard — Dynamic, customizable keyboard shortcut listener for CAD operations.
+ * Evaluates key events against configurable keybindings stored in useKeybindingsStore.
  */
 
 import { useEffect } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
+import { useKeybindingsStore, type Keybinding } from '@store/keybindingsStore';
+
+function matchesKeybinding(e: KeyboardEvent, kb?: Keybinding): boolean {
+  if (!kb) return false;
+
+  const ctrl = e.ctrlKey || e.metaKey;
+  const shift = e.shiftKey;
+  const alt = e.altKey;
+
+  const reqCtrl = Boolean(kb.ctrl);
+  const reqShift = Boolean(kb.shift);
+  const reqAlt = Boolean(kb.alt);
+
+  if (ctrl !== reqCtrl || shift !== reqShift || alt !== reqAlt) {
+    return false;
+  }
+
+  let eventKey = e.key;
+  if (eventKey === ' ') eventKey = 'Space';
+
+  return eventKey.toLowerCase() === kb.key.toLowerCase();
+}
 
 export function useCanvasKeyboard() {
   const {
@@ -12,6 +35,8 @@ export function useCanvasKeyboard() {
     pasteSelected,
     duplicateSelected,
     selectAll,
+    clearSelection,
+    cancelWiring,
     rotateSelected,
     flipSelectedH,
     flipSelectedV,
@@ -19,108 +44,75 @@ export function useCanvasKeyboard() {
     ungroupSelected,
     removeSelected,
     toggleSnapToGrid,
+    toggleShowComponentLabels,
+    toggleWiringMode,
+    toggleExportModal,
     nudgeSelected,
     undo,
     redo,
-    selectedId,
   } = useCanvasStore();
 
   const { selectedEdgeId, removeEdge } = useCircuitStore();
+  const { keybindings, openSettings, recordingId } = useKeybindingsStore();
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      // Do not process application shortcuts while recording a new keybinding
+      if (recordingId) return;
+
       // Ignore key events when typing inside text inputs/textareas
       const target = e.target as HTMLElement;
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      ) {
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
       }
 
-      const ctrlOrCmd = e.ctrlKey || e.metaKey;
-
-      // Ctrl + C: Copy
-      if (ctrlOrCmd && e.key.toLowerCase() === 'c') {
+      // ── Open Settings & Shortcuts Modal ──
+      if (matchesKeybinding(e, keybindings.openSettings)) {
         e.preventDefault();
-        copySelected();
+        openSettings();
         return;
       }
 
-      // Ctrl + V: Paste
-      if (ctrlOrCmd && e.key.toLowerCase() === 'v') {
+      // ── Undo / Redo ──
+      if (matchesKeybinding(e, keybindings.undo)) {
         e.preventDefault();
-        pasteSelected();
+        undo();
         return;
       }
-
-      // Ctrl + D: Duplicate
-      if (ctrlOrCmd && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
-        duplicateSelected();
-        return;
-      }
-
-      // Ctrl + A: Select All
-      if (ctrlOrCmd && e.key.toLowerCase() === 'a') {
-        e.preventDefault();
-        selectAll();
-        return;
-      }
-
-      // Ctrl + Z: Undo / Ctrl + Y: Redo
-      if (ctrlOrCmd && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
-        return;
-      }
-
-      if (ctrlOrCmd && e.key.toLowerCase() === 'y') {
+      if (matchesKeybinding(e, keybindings.redo)) {
         e.preventDefault();
         redo();
         return;
       }
 
-      // Ctrl + G: Group / Ctrl + Shift + G: Ungroup
-      if (ctrlOrCmd && e.key.toLowerCase() === 'g') {
+      // ── Editing Operations ──
+      if (matchesKeybinding(e, keybindings.copy)) {
         e.preventDefault();
-        if (e.shiftKey) ungroupSelected();
-        else groupSelected();
+        copySelected();
         return;
       }
-
-      // Shift + S: Toggle Snap-to-Grid
-      if (e.shiftKey && e.key.toLowerCase() === 's') {
+      if (matchesKeybinding(e, keybindings.paste)) {
         e.preventDefault();
-        toggleSnapToGrid();
+        pasteSelected();
         return;
       }
-
-      // R: Rotate 90° CW / Shift + R: Rotate 90° CCW
-      if (!ctrlOrCmd && e.key.toLowerCase() === 'r') {
+      if (matchesKeybinding(e, keybindings.duplicate)) {
         e.preventDefault();
-        rotateSelected(e.shiftKey ? -90 : 90);
+        duplicateSelected();
         return;
       }
-
-      // H: Flip Horizontal
-      if (!ctrlOrCmd && e.key.toLowerCase() === 'h') {
+      if (matchesKeybinding(e, keybindings.selectAll)) {
         e.preventDefault();
-        flipSelectedH();
+        selectAll();
         return;
       }
-
-      // V: Flip Vertical
-      if (!ctrlOrCmd && e.key.toLowerCase() === 'v') {
+      if (matchesKeybinding(e, keybindings.deselect)) {
         e.preventDefault();
-        flipSelectedV();
+        cancelWiring();
+        clearSelection();
         return;
       }
-
-      // Delete / Backspace: Delete selected components or wires
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (matchesKeybinding(e, keybindings.delete) || e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         if (selectedEdgeId) {
           removeEdge(selectedEdgeId);
@@ -130,7 +122,61 @@ export function useCanvasKeyboard() {
         return;
       }
 
-      // Nudge with Arrow Keys
+      // ── Transforms ──
+      if (matchesKeybinding(e, keybindings.rotateCw)) {
+        e.preventDefault();
+        rotateSelected(90);
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.rotateCcw)) {
+        e.preventDefault();
+        rotateSelected(-90);
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.flipH)) {
+        e.preventDefault();
+        flipSelectedH();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.flipV)) {
+        e.preventDefault();
+        flipSelectedV();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.group)) {
+        e.preventDefault();
+        groupSelected();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.ungroup)) {
+        e.preventDefault();
+        ungroupSelected();
+        return;
+      }
+
+      // ── View & Canvas Toggles ──
+      if (matchesKeybinding(e, keybindings.snapGrid)) {
+        e.preventDefault();
+        toggleSnapToGrid();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.toggleLabels)) {
+        e.preventDefault();
+        toggleShowComponentLabels();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.toggleWiring)) {
+        e.preventDefault();
+        toggleWiringMode();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.exportCanvas)) {
+        e.preventDefault();
+        toggleExportModal();
+        return;
+      }
+
+      // ── Arrow Key Nudge ──
       const step = e.shiftKey ? 10 : 1;
       if (e.key === 'ArrowUp') {
         e.preventDefault();
@@ -150,10 +196,15 @@ export function useCanvasKeyboard() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    keybindings,
+    recordingId,
+    openSettings,
     copySelected,
     pasteSelected,
     duplicateSelected,
     selectAll,
+    clearSelection,
+    cancelWiring,
     rotateSelected,
     flipSelectedH,
     flipSelectedV,
@@ -161,10 +212,12 @@ export function useCanvasKeyboard() {
     ungroupSelected,
     removeSelected,
     toggleSnapToGrid,
+    toggleShowComponentLabels,
+    toggleWiringMode,
+    toggleExportModal,
     nudgeSelected,
     undo,
     redo,
-    selectedId,
     selectedEdgeId,
     removeEdge,
   ]);

@@ -4,7 +4,7 @@
  * Supports rotation, horizontal/vertical flipping, group outlines, and multi-selection handles.
  */
 
-import { memo } from 'react';
+import { memo, useRef } from 'react';
 import { Group, Rect, Circle, Text, Line, Path } from 'react-konva';
 import type Konva from 'konva';
 import type { CanvasComponentInstance } from '@store/canvasStore';
@@ -18,19 +18,58 @@ interface Props {
   onDragEnd: (x: number, y: number) => void;
 }
 
-export const ComponentNode = memo(function ComponentNode({ instance, isSelected, onSelect, onDragEnd }: Props) {
+export const ComponentNode = memo(function ComponentNode({
+  instance,
+  isSelected,
+  onSelect,
+  onDragEnd,
+}: Props) {
   const shape = getShape(instance.type);
   const wiringMode = useCanvasStore((s) => s.wiringMode);
   const startWiring = useCanvasStore((s) => s.startWiring);
+  const selectedIds = useCanvasStore((s) => s.selectedIds);
+  const instances = useCanvasStore((s) => s.instances);
+  const moveInstances = useCanvasStore((s) => s.moveInstances);
+  const showComponentLabels = useCanvasStore((s) => s.showComponentLabels);
   const accentColor = shape.color;
+
+  const startPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   function handleDragStart(e: Konva.KonvaEventObject<DragEvent>) {
     e.cancelBubble = true;
+    startPosRef.current.clear();
+
+    const isMulti = selectedIds.includes(instance.id) && selectedIds.length > 1;
+    const targetIds = isMulti ? selectedIds : [instance.id];
+
+    for (const inst of instances) {
+      if (targetIds.includes(inst.id)) {
+        startPosRef.current.set(inst.id, { x: inst.x, y: inst.y });
+      }
+    }
   }
 
   function handleDragEnd(e: Konva.KonvaEventObject<DragEvent>) {
     e.cancelBubble = true;
-    onDragEnd(e.target.x(), e.target.y());
+    const newX = e.target.x();
+    const newY = e.target.y();
+
+    const initialSelfPos = startPosRef.current.get(instance.id) ?? {
+      x: instance.x,
+      y: instance.y,
+    };
+    const dx = newX - initialSelfPos.x;
+    const dy = newY - initialSelfPos.y;
+
+    if (selectedIds.includes(instance.id) && selectedIds.length > 1) {
+      const deltas: { id: string; x: number; y: number }[] = [];
+      startPosRef.current.forEach((start, id) => {
+        deltas.push({ id, x: start.x + dx, y: start.y + dy });
+      });
+      moveInstances(deltas);
+    } else {
+      onDragEnd(newX, newY);
+    }
   }
 
   return (
@@ -92,22 +131,24 @@ export const ComponentNode = memo(function ComponentNode({ instance, isSelected,
       {/* Realistic Component Visual Graphic */}
       {renderPhysicalComponent(instance.type, shape.width, shape.height, instance.label)}
 
-      {/* Component Title Overlay Badge */}
-      <Text
-        x={4}
-        y={4}
-        width={shape.width - 8}
-        text={instance.label.toUpperCase()}
-        fontSize={8}
-        fontFamily="'JetBrains Mono', monospace"
-        fontStyle="bold"
-        fill={isSelected ? accentColor : '#e4e4e7'}
-        align="center"
-        shadowColor="#000"
-        shadowBlur={4}
-        shadowOpacity={0.9}
-        listening={false}
-      />
+      {/* Component Title Overlay Badge (Toggleable) */}
+      {showComponentLabels && (
+        <Text
+          x={4}
+          y={4}
+          width={shape.width - 8}
+          text={instance.label.toUpperCase()}
+          fontSize={8}
+          fontFamily="'JetBrains Mono', monospace"
+          fontStyle="bold"
+          fill={isSelected ? accentColor : '#e4e4e7'}
+          align="center"
+          shadowColor="#000"
+          shadowBlur={4}
+          shadowOpacity={0.9}
+          listening={false}
+        />
+      )}
 
       {/* Component Lugs / Wire Terminals */}
       {shape.lugs.map((lug) => {
@@ -156,18 +197,20 @@ export const ComponentNode = memo(function ComponentNode({ instance, isSelected,
               }}
             />
 
-            {/* Lug Label Suffix */}
-            <Text
-              x={abs.x - 20}
-              y={abs.y < shape.height / 2 ? abs.y - 14 : abs.y + 6}
-              width={40}
-              text={lug.label}
-              fontSize={7}
-              fontFamily="sans-serif"
-              fill="#a1a1aa"
-              align="center"
-              listening={false}
-            />
+            {/* Lug Label Suffix (Toggleable) */}
+            {showComponentLabels && (
+              <Text
+                x={abs.x - 20}
+                y={abs.y < shape.height / 2 ? abs.y - 14 : abs.y + 6}
+                width={40}
+                text={lug.label}
+                fontSize={7}
+                fontFamily="sans-serif"
+                fill="#a1a1aa"
+                align="center"
+                listening={false}
+              />
+            )}
           </Group>
         );
       })}
@@ -186,25 +229,63 @@ function renderPhysicalComponent(
     case 'pickup_single_coil':
       return (
         <Group>
-          <Rect width={w} height={h} cornerRadius={24} fill="#fef08a" stroke="#ca8a04" strokeWidth={2} />
-          <Rect x={10} y={10} width={w - 20} height={h - 20} cornerRadius={16} fill="#fef9c3" stroke="#eab308" strokeWidth={1} />
+          <Rect
+            width={w}
+            height={h}
+            cornerRadius={24}
+            fill="#fef08a"
+            stroke="#ca8a04"
+            strokeWidth={2}
+          />
+          <Rect
+            x={10}
+            y={10}
+            width={w - 20}
+            height={h - 20}
+            cornerRadius={16}
+            fill="#fef9c3"
+            stroke="#eab308"
+            strokeWidth={1}
+          />
           {/* 6 Alnico Pole Pieces */}
           {[0, 1, 2, 3, 4, 5].map((i) => (
-            <Circle key={i} x={25 + i * (w - 50) / 5} y={h / 2} radius={5} fill="#a1a1aa" stroke="#52525b" strokeWidth={1} />
+            <Circle
+              key={i}
+              x={25 + (i * (w - 50)) / 5}
+              y={h / 2}
+              radius={5}
+              fill="#a1a1aa"
+              stroke="#52525b"
+              strokeWidth={1}
+            />
           ))}
         </Group>
       );
     case 'pickup_humbucker':
       return (
         <Group>
-          <Rect width={w} height={h} cornerRadius={10} fill="#3f3f46" stroke="#18181b" strokeWidth={2} />
+          <Rect
+            width={w}
+            height={h}
+            cornerRadius={10}
+            fill="#3f3f46"
+            stroke="#18181b"
+            strokeWidth={2}
+          />
           <Rect x={6} y={6} width={w / 2 - 8} height={h - 12} cornerRadius={6} fill="#18181b" />
-          <Rect x={w / 2 + 2} y={6} width={w / 2 - 8} height={h - 12} cornerRadius={6} fill="#18181b" />
+          <Rect
+            x={w / 2 + 2}
+            y={6}
+            width={w / 2 - 8}
+            height={h - 12}
+            cornerRadius={6}
+            fill="#18181b"
+          />
           {/* Slotted & Hex Pole Screws */}
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <Group key={i}>
-              <Circle x={14 + i * (w / 2 - 24) / 5} y={h / 2} radius={4} fill="#e4e4e7" />
-              <Circle x={w / 2 + 10 + i * (w / 2 - 24) / 5} y={h / 2} radius={4} fill="#a1a1aa" />
+              <Circle x={14 + (i * (w / 2 - 24)) / 5} y={h / 2} radius={4} fill="#e4e4e7" />
+              <Circle x={w / 2 + 10 + (i * (w / 2 - 24)) / 5} y={h / 2} radius={4} fill="#a1a1aa" />
             </Group>
           ))}
         </Group>
@@ -214,7 +295,14 @@ function renderPhysicalComponent(
     case 'pot_blend':
       return (
         <Group>
-          <Circle x={w / 2} y={h / 2 - 8} radius={w / 2 - 4} fill="#71717a" stroke="#3f3f46" strokeWidth={2} />
+          <Circle
+            x={w / 2}
+            y={h / 2 - 8}
+            radius={w / 2 - 4}
+            fill="#71717a"
+            stroke="#3f3f46"
+            strokeWidth={2}
+          />
           <Circle x={w / 2} y={h / 2 - 8} radius={w / 3} fill="#a1a1aa" />
           <Circle x={w / 2} y={h / 2 - 8} radius={6} fill="#ca8a04" />
           <Rect x={w / 2 - 12} y={h - 18} width={24} height={14} fill="#3f3f46" cornerRadius={2} />
@@ -223,7 +311,14 @@ function renderPhysicalComponent(
     case 'pot_concentric':
       return (
         <Group>
-          <Circle x={w / 2} y={h / 3} radius={w / 2 - 4} fill="#52525b" stroke="#27272a" strokeWidth={2} />
+          <Circle
+            x={w / 2}
+            y={h / 3}
+            radius={w / 2 - 4}
+            fill="#52525b"
+            stroke="#27272a"
+            strokeWidth={2}
+          />
           <Circle x={w / 2} y={h / 3} radius={w / 4} fill="#ca8a04" />
           <Circle x={w / 2} y={h / 3} radius={6} fill="#e4e4e7" />
           <Rect x={10} y={h / 2 + 10} width={w - 20} height={20} fill="#3f3f46" cornerRadius={3} />
@@ -232,16 +327,42 @@ function renderPhysicalComponent(
     case 'switch_3way':
       return (
         <Group>
-          <Rect width={w} height={h} cornerRadius={12} fill="#27272a" stroke="#00e5ff" strokeWidth={1.5} />
-          <Circle x={w / 2} y={h / 2 - 10} radius={14} fill="#e4e4e7" stroke="#71717a" strokeWidth={2} />
-          <Line points={[w / 2, h / 2 - 10, w / 2, h / 2 - 32]} stroke="#ca8a04" strokeWidth={6} lineCap="round" />
+          <Rect
+            width={w}
+            height={h}
+            cornerRadius={12}
+            fill="#27272a"
+            stroke="#00e5ff"
+            strokeWidth={1.5}
+          />
+          <Circle
+            x={w / 2}
+            y={h / 2 - 10}
+            radius={14}
+            fill="#e4e4e7"
+            stroke="#71717a"
+            strokeWidth={2}
+          />
+          <Line
+            points={[w / 2, h / 2 - 10, w / 2, h / 2 - 32]}
+            stroke="#ca8a04"
+            strokeWidth={6}
+            lineCap="round"
+          />
         </Group>
       );
     case 'switch_4way':
     case 'switch_5way':
       return (
         <Group>
-          <Rect width={w} height={h} cornerRadius={6} fill="#1e293b" stroke="#0284c7" strokeWidth={1.5} />
+          <Rect
+            width={w}
+            height={h}
+            cornerRadius={6}
+            fill="#1e293b"
+            stroke="#0284c7"
+            strokeWidth={1.5}
+          />
           <Rect x={10} y={15} width={w - 20} height={12} fill="#0f172a" cornerRadius={2} />
           <Rect x={w / 2 - 4} y={8} width={8} height={26} fill="#ca8a04" cornerRadius={2} />
         </Group>
@@ -249,15 +370,34 @@ function renderPhysicalComponent(
     case 'switch_dpdt':
       return (
         <Group>
-          <Rect width={w} height={h} cornerRadius={6} fill="#1d4ed8" stroke="#3b82f6" strokeWidth={1.5} />
+          <Rect
+            width={w}
+            height={h}
+            cornerRadius={6}
+            fill="#1d4ed8"
+            stroke="#3b82f6"
+            strokeWidth={1.5}
+          />
           <Circle x={w / 2} y={h / 2} radius={12} fill="#93c5fd" />
-          <Line points={[w / 2, h / 2, w / 2, h / 2 - 18]} stroke="#ca8a04" strokeWidth={5} lineCap="round" />
+          <Line
+            points={[w / 2, h / 2, w / 2, h / 2 - 18]}
+            stroke="#ca8a04"
+            strokeWidth={5}
+            lineCap="round"
+          />
         </Group>
       );
     case 'capacitor':
       return (
         <Group>
-          <Rect width={w} height={h} cornerRadius={h / 2} fill="#f97316" stroke="#c2410c" strokeWidth={1.5} />
+          <Rect
+            width={w}
+            height={h}
+            cornerRadius={h / 2}
+            fill="#f97316"
+            stroke="#c2410c"
+            strokeWidth={1.5}
+          />
           <Line points={[0, h / 2, w, h / 2]} stroke="#e4e4e7" strokeWidth={2} />
           <Rect x={12} y={4} width={w - 24} height={h - 8} cornerRadius={6} fill="#fdba74" />
         </Group>
@@ -265,7 +405,14 @@ function renderPhysicalComponent(
     case 'resistor':
       return (
         <Group>
-          <Rect width={w} height={h} cornerRadius={h / 2} fill="#d1d5db" stroke="#9ca3af" strokeWidth={1.5} />
+          <Rect
+            width={w}
+            height={h}
+            cornerRadius={h / 2}
+            fill="#d1d5db"
+            stroke="#9ca3af"
+            strokeWidth={1.5}
+          />
           <Line points={[0, h / 2, w, h / 2]} stroke="#e4e4e7" strokeWidth={2} />
           <Rect x={14} y={3} width={w - 28} height={h - 6} cornerRadius={4} fill="#f3f4f6" />
           {/* Color Bands */}
@@ -278,7 +425,14 @@ function renderPhysicalComponent(
     case 'output_jack':
       return (
         <Group>
-          <Rect width={w} height={h} cornerRadius={8} fill="#a1a1aa" stroke="#52525b" strokeWidth={2} />
+          <Rect
+            width={w}
+            height={h}
+            cornerRadius={8}
+            fill="#a1a1aa"
+            stroke="#52525b"
+            strokeWidth={2}
+          />
           <Circle x={w / 2} y={h / 2} radius={18} fill="#27272a" />
           <Circle x={w / 2} y={h / 2} radius={12} fill="#e4e4e7" />
           <Path data="M 50 20 Q 65 30 65 40" stroke="#ca8a04" strokeWidth={3} fill="transparent" />

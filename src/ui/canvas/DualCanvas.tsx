@@ -99,13 +99,22 @@ export function DualCanvas() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, selectedEdgeId, removeInstance, removeComponent, selectInstance, removeEdge, selectEdge, cancelWiring]);
+  }, [
+    selectedId,
+    selectedEdgeId,
+    removeInstance,
+    removeComponent,
+    selectInstance,
+    removeEdge,
+    selectEdge,
+    cancelWiring,
+  ]);
 
   const isEmpty = instancesCount === 0;
 
   function handleResetView() {
     setScale(1);
-    setPan(0, 0);
+    setPan(size.width / 2, size.height / 2);
   }
 
   return (
@@ -130,17 +139,58 @@ export function DualCanvas() {
           Schematic
         </button>
         {wiringMode && (
-          <span className="canvas-tab" style={{ color: '#ff8c00', cursor: 'default' }}>
-            ⚡ WIRING
+          <span
+            className="canvas-tab"
+            style={{
+              color: 'var(--color-accent-amber)',
+              cursor: 'default',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+            WIRING
           </span>
         )}
         <button
           className="canvas-tab"
-          style={{ marginLeft: 'auto', fontSize: 11 }}
+          style={{
+            marginLeft: 'auto',
+            fontSize: 11,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
           onClick={handleResetView}
           title="Reset Zoom & Pan to 100%"
         >
-          🎯 Fit View
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="16" />
+            <line x1="8" y1="12" x2="16" y2="12" />
+          </svg>
+          Fit View
         </button>
       </div>
 
@@ -158,15 +208,23 @@ export function DualCanvas() {
       {/* Empty state overlay */}
       {isEmpty && (
         <div className="canvas-empty" style={{ pointerEvents: 'none' }}>
-          <div className="canvas-empty__icon">🎸</div>
-          <p className="canvas-empty__text">
-            Drag components from the library to start building your wiring circuit
-          </p>
-          <p className="canvas-empty__hint">
-            {activeView === 'physical'
-              ? 'Physical — click & drag canvas to pan · right-click or press Delete to remove'
-              : 'Schematic — node-based electrical diagram'}
-          </p>
+          <div className="canvas-empty__icon" style={{ opacity: 0.4 }}>
+            <svg
+              width="40"
+              height="40"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="12" y1="8" x2="12" y2="16" />
+              <line x1="8" y1="12" x2="16" y2="12" />
+            </svg>
+          </div>
+          <p className="canvas-empty__text">drag and drop to start designing</p>
         </div>
       )}
 
@@ -174,15 +232,23 @@ export function DualCanvas() {
       <div className="status-bar" id="status-bar">
         <div className="status-bar__section">
           <span className="status-bar__indicator">
-            <span className={`status-bar__dot ${hasErrors ? 'status-bar__dot--error' : 'status-bar__dot--ok'}`} />
+            <span
+              className={`status-bar__dot ${hasErrors ? 'status-bar__dot--error' : 'status-bar__dot--ok'}`}
+            />
             <span>{hasErrors ? 'ERR' : 'OK'}</span>
           </span>
-          <span>{activePaths} path{activePaths !== 1 ? 's' : ''}</span>
+          <span>
+            {activePaths} path{activePaths !== 1 ? 's' : ''}
+          </span>
         </div>
         <div className="status-bar__section">
-          <span>{nodeCount} node{nodeCount !== 1 ? 's' : ''}</span>
+          <span>
+            {nodeCount} node{nodeCount !== 1 ? 's' : ''}
+          </span>
           <span>·</span>
-          <span>{edgeCount} wire{edgeCount !== 1 ? 's' : ''}</span>
+          <span>
+            {edgeCount} wire{edgeCount !== 1 ? 's' : ''}
+          </span>
           <span>·</span>
           <span>{activeView === 'physical' ? 'PHY' : 'SCH'}</span>
         </div>

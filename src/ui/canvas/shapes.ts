@@ -10,11 +10,11 @@ import type { ComponentType } from '@graph/types';
 import type { CanvasComponentInstance } from '@store/canvasStore';
 
 export interface LugAnchor {
-  id: string;       // suffix appended to componentId to form node id
+  id: string; // suffix appended to componentId to form node id
   label: string;
   role: 'hot' | 'ground' | 'wiper' | 'common' | 'output' | 'lug';
-  relX: number;     // 0..1 relative to component width
-  relY: number;     // 0..1 relative to component height
+  relX: number; // 0..1 relative to component width
+  relY: number; // 0..1 relative to component height
 }
 
 export interface ComponentShape {
@@ -22,14 +22,14 @@ export interface ComponentShape {
   width: number;
   height: number;
   label: string;
-  color: string;   // accent color for UI selection
+  color: string; // accent color for UI selection
   lugs: LugAnchor[];
 }
 
 export interface CanvasLugTarget {
-  nodeId: string;       // e.g. "pickup_neck_hot"
-  componentId: string;  // e.g. "pickup_neck"
-  lugId: string;        // e.g. "_hot"
+  nodeId: string; // e.g. "pickup_neck_hot"
+  componentId: string; // e.g. "pickup_neck"
+  lugId: string; // e.g. "_hot"
   label: string;
   x: number;
   y: number;
@@ -44,7 +44,7 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     color: '#ff8c00',
     lugs: [
       { id: '_ground', label: 'GND (Black)', role: 'ground', relX: 0.35, relY: 0.9 },
-      { id: '_hot',    label: 'HOT (White)', role: 'hot',    relX: 0.65, relY: 0.9 },
+      { id: '_hot', label: 'HOT (White)', role: 'hot', relX: 0.65, relY: 0.9 },
     ],
   },
   pickup_humbucker: {
@@ -54,11 +54,11 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     label: 'Humbucker',
     color: '#ff8c00',
     lugs: [
-      { id: '_north_start',  label: 'N-Start (Black/Hot)', role: 'hot',    relX: 0.15, relY: 0.92 },
-      { id: '_north_finish', label: 'N-Finish (White)',    role: 'lug',    relX: 0.32, relY: 0.92 },
-      { id: '_south_finish', label: 'S-Finish (Red)',      role: 'lug',    relX: 0.49, relY: 0.92 },
-      { id: '_south_start',  label: 'S-Start (Green)',     role: 'ground', relX: 0.66, relY: 0.92 },
-      { id: '_shield',       label: 'Shield (Bare)',       role: 'ground', relX: 0.83, relY: 0.92 },
+      { id: '_north_start', label: 'N-Start (Black/Hot)', role: 'hot', relX: 0.15, relY: 0.92 },
+      { id: '_north_finish', label: 'N-Finish (White)', role: 'lug', relX: 0.32, relY: 0.92 },
+      { id: '_south_finish', label: 'S-Finish (Red)', role: 'lug', relX: 0.49, relY: 0.92 },
+      { id: '_south_start', label: 'S-Start (Green)', role: 'ground', relX: 0.66, relY: 0.92 },
+      { id: '_shield', label: 'Shield (Bare)', role: 'ground', relX: 0.83, relY: 0.92 },
     ],
   },
   switch_3way: {
@@ -68,10 +68,10 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     label: '3-Way Toggle',
     color: '#00e5ff',
     lugs: [
-      { id: '_pos1',   label: 'Neck (P1)', role: 'lug',    relX: 0.15, relY: 0.25 },
-      { id: '_pos2',   label: 'Mid (P2)',  role: 'lug',    relX: 0.5,  relY: 0.25 },
-      { id: '_pos3',   label: 'Brdg (P3)', role: 'lug',    relX: 0.85, relY: 0.25 },
-      { id: '_common', label: 'Output COM', role: 'common', relX: 0.5,  relY: 0.9 },
+      { id: '_pos1', label: 'Neck (P1)', role: 'lug', relX: 0.15, relY: 0.25 },
+      { id: '_pos2', label: 'Mid (P2)', role: 'lug', relX: 0.5, relY: 0.25 },
+      { id: '_pos3', label: 'Brdg (P3)', role: 'lug', relX: 0.85, relY: 0.25 },
+      { id: '_common', label: 'Output COM', role: 'common', relX: 0.5, relY: 0.9 },
     ],
   },
   switch_4way: {
@@ -82,14 +82,14 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     color: '#00e5ff',
     lugs: [
       { id: '_poleA_common', label: 'A-COM', role: 'common', relX: 0.08, relY: 0.88 },
-      { id: '_poleA_pos1',   label: 'A1',    role: 'lug',    relX: 0.17, relY: 0.88 },
-      { id: '_poleA_pos2',   label: 'A2',    role: 'lug',    relX: 0.26, relY: 0.88 },
-      { id: '_poleA_pos3',   label: 'A3',    role: 'lug',    relX: 0.35, relY: 0.88 },
-      { id: '_poleA_pos4',   label: 'A4',    role: 'lug',    relX: 0.44, relY: 0.88 },
-      { id: '_poleB_pos1',   label: 'B1',    role: 'lug',    relX: 0.56, relY: 0.88 },
-      { id: '_poleB_pos2',   label: 'B2',    role: 'lug',    relX: 0.65, relY: 0.88 },
-      { id: '_poleB_pos3',   label: 'B3',    role: 'lug',    relX: 0.74, relY: 0.88 },
-      { id: '_poleB_pos4',   label: 'B4',    role: 'lug',    relX: 0.83, relY: 0.88 },
+      { id: '_poleA_pos1', label: 'A1', role: 'lug', relX: 0.17, relY: 0.88 },
+      { id: '_poleA_pos2', label: 'A2', role: 'lug', relX: 0.26, relY: 0.88 },
+      { id: '_poleA_pos3', label: 'A3', role: 'lug', relX: 0.35, relY: 0.88 },
+      { id: '_poleA_pos4', label: 'A4', role: 'lug', relX: 0.44, relY: 0.88 },
+      { id: '_poleB_pos1', label: 'B1', role: 'lug', relX: 0.56, relY: 0.88 },
+      { id: '_poleB_pos2', label: 'B2', role: 'lug', relX: 0.65, relY: 0.88 },
+      { id: '_poleB_pos3', label: 'B3', role: 'lug', relX: 0.74, relY: 0.88 },
+      { id: '_poleB_pos4', label: 'B4', role: 'lug', relX: 0.83, relY: 0.88 },
       { id: '_poleB_common', label: 'B-COM', role: 'common', relX: 0.92, relY: 0.88 },
     ],
   },
@@ -101,12 +101,12 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     color: '#00e5ff',
     lugs: [
       { id: '_poleA_common', label: 'A-COM', role: 'common', relX: 0.08, relY: 0.88 },
-      { id: '_poleA_pos1',   label: 'A1',    role: 'lug',    relX: 0.2,  relY: 0.88 },
-      { id: '_poleA_pos2',   label: 'A2',    role: 'lug',    relX: 0.32, relY: 0.88 },
-      { id: '_poleA_pos3',   label: 'A3',    role: 'lug',    relX: 0.44, relY: 0.88 },
-      { id: '_poleB_pos1',   label: 'B1',    role: 'lug',    relX: 0.56, relY: 0.88 },
-      { id: '_poleB_pos2',   label: 'B2',    role: 'lug',    relX: 0.68, relY: 0.88 },
-      { id: '_poleB_pos3',   label: 'B3',    role: 'lug',    relX: 0.8,  relY: 0.88 },
+      { id: '_poleA_pos1', label: 'A1', role: 'lug', relX: 0.2, relY: 0.88 },
+      { id: '_poleA_pos2', label: 'A2', role: 'lug', relX: 0.32, relY: 0.88 },
+      { id: '_poleA_pos3', label: 'A3', role: 'lug', relX: 0.44, relY: 0.88 },
+      { id: '_poleB_pos1', label: 'B1', role: 'lug', relX: 0.56, relY: 0.88 },
+      { id: '_poleB_pos2', label: 'B2', role: 'lug', relX: 0.68, relY: 0.88 },
+      { id: '_poleB_pos3', label: 'B3', role: 'lug', relX: 0.8, relY: 0.88 },
       { id: '_poleB_common', label: 'B-COM', role: 'common', relX: 0.92, relY: 0.88 },
     ],
   },
@@ -117,12 +117,12 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     label: 'DPDT Mini',
     color: '#00e5ff',
     lugs: [
-      { id: '_poleA_pos1',   label: 'A1',    role: 'lug',    relX: 0.28, relY: 0.22 },
-      { id: '_poleB_pos1',   label: 'B1',    role: 'lug',    relX: 0.72, relY: 0.22 },
+      { id: '_poleA_pos1', label: 'A1', role: 'lug', relX: 0.28, relY: 0.22 },
+      { id: '_poleB_pos1', label: 'B1', role: 'lug', relX: 0.72, relY: 0.22 },
       { id: '_poleA_common', label: 'A-COM', role: 'common', relX: 0.28, relY: 0.53 },
       { id: '_poleB_common', label: 'B-COM', role: 'common', relX: 0.72, relY: 0.53 },
-      { id: '_poleA_pos2',   label: 'A2',    role: 'lug',    relX: 0.28, relY: 0.84 },
-      { id: '_poleB_pos2',   label: 'B2',    role: 'lug',    relX: 0.72, relY: 0.84 },
+      { id: '_poleA_pos2', label: 'A2', role: 'lug', relX: 0.28, relY: 0.84 },
+      { id: '_poleB_pos2', label: 'B2', role: 'lug', relX: 0.72, relY: 0.84 },
     ],
   },
   pot_volume: {
@@ -132,9 +132,9 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     label: 'Volume Pot',
     color: '#39ff14',
     lugs: [
-      { id: '_lug1',  label: 'L1 (CCW)', role: 'lug',   relX: 0.2, relY: 0.9 },
+      { id: '_lug1', label: 'L1 (CCW)', role: 'lug', relX: 0.2, relY: 0.9 },
       { id: '_wiper', label: 'Wiper (2)', role: 'wiper', relX: 0.5, relY: 0.9 },
-      { id: '_lug3',  label: 'L3 (CW)',  role: 'lug',   relX: 0.8, relY: 0.9 },
+      { id: '_lug3', label: 'L3 (CW)', role: 'lug', relX: 0.8, relY: 0.9 },
     ],
   },
   pot_tone: {
@@ -144,9 +144,9 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     label: 'Tone Pot',
     color: '#39ff14',
     lugs: [
-      { id: '_lug1',  label: 'L1 (CCW)', role: 'lug',   relX: 0.2, relY: 0.9 },
+      { id: '_lug1', label: 'L1 (CCW)', role: 'lug', relX: 0.2, relY: 0.9 },
       { id: '_wiper', label: 'Wiper (2)', role: 'wiper', relX: 0.5, relY: 0.9 },
-      { id: '_lug3',  label: 'L3 (CW)',  role: 'lug',   relX: 0.8, relY: 0.9 },
+      { id: '_lug3', label: 'L3 (CW)', role: 'lug', relX: 0.8, relY: 0.9 },
     ],
   },
   pot_blend: {
@@ -156,12 +156,12 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     label: 'Blend Pot',
     color: '#39ff14',
     lugs: [
-      { id: '_potA_lug1',  label: 'A1', role: 'lug',   relX: 0.18, relY: 0.45 },
-      { id: '_potA_wiper', label: 'AW', role: 'wiper', relX: 0.5,  relY: 0.45 },
-      { id: '_potA_lug3',  label: 'A3', role: 'lug',   relX: 0.82, relY: 0.45 },
-      { id: '_potB_lug1',  label: 'B1', role: 'lug',   relX: 0.18, relY: 0.9 },
-      { id: '_potB_wiper', label: 'BW', role: 'wiper', relX: 0.5,  relY: 0.9 },
-      { id: '_potB_lug3',  label: 'B3', role: 'lug',   relX: 0.82, relY: 0.9 },
+      { id: '_potA_lug1', label: 'A1', role: 'lug', relX: 0.18, relY: 0.45 },
+      { id: '_potA_wiper', label: 'AW', role: 'wiper', relX: 0.5, relY: 0.45 },
+      { id: '_potA_lug3', label: 'A3', role: 'lug', relX: 0.82, relY: 0.45 },
+      { id: '_potB_lug1', label: 'B1', role: 'lug', relX: 0.18, relY: 0.9 },
+      { id: '_potB_wiper', label: 'BW', role: 'wiper', relX: 0.5, relY: 0.9 },
+      { id: '_potB_lug3', label: 'B3', role: 'lug', relX: 0.82, relY: 0.9 },
     ],
   },
   pot_concentric: {
@@ -171,12 +171,12 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     label: 'Dual Pot',
     color: '#39ff14',
     lugs: [
-      { id: '_outer_lug1',  label: 'O1', role: 'lug',   relX: 0.18, relY: 0.45 },
-      { id: '_outer_wiper', label: 'OW', role: 'wiper', relX: 0.5,  relY: 0.45 },
-      { id: '_outer_lug3',  label: 'O3', role: 'lug',   relX: 0.82, relY: 0.45 },
-      { id: '_inner_lug1',  label: 'I1', role: 'lug',   relX: 0.18, relY: 0.9 },
-      { id: '_inner_wiper', label: 'IW', role: 'wiper', relX: 0.5,  relY: 0.9 },
-      { id: '_inner_lug3',  label: 'I3', role: 'lug',   relX: 0.82, relY: 0.9 },
+      { id: '_outer_lug1', label: 'O1', role: 'lug', relX: 0.18, relY: 0.45 },
+      { id: '_outer_wiper', label: 'OW', role: 'wiper', relX: 0.5, relY: 0.45 },
+      { id: '_outer_lug3', label: 'O3', role: 'lug', relX: 0.82, relY: 0.45 },
+      { id: '_inner_lug1', label: 'I1', role: 'lug', relX: 0.18, relY: 0.9 },
+      { id: '_inner_wiper', label: 'IW', role: 'wiper', relX: 0.5, relY: 0.9 },
+      { id: '_inner_lug3', label: 'I3', role: 'lug', relX: 0.82, relY: 0.9 },
     ],
   },
   capacitor: {
@@ -208,7 +208,7 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
     label: '1/4" Jack',
     color: '#ff3333',
     lugs: [
-      { id: '_tip',    label: 'Tip (Hot)', role: 'output', relX: 0.82, relY: 0.25 },
+      { id: '_tip', label: 'Tip (Hot)', role: 'output', relX: 0.82, relY: 0.25 },
       { id: '_sleeve', label: 'Sleeve (GND)', role: 'ground', relX: 0.82, relY: 0.75 },
     ],
   },
@@ -247,9 +247,7 @@ export function getLugAbsolutePosition(
   };
 }
 
-export function getAllCanvasLugs(
-  instances: CanvasComponentInstance[],
-): CanvasLugTarget[] {
+export function getAllCanvasLugs(instances: CanvasComponentInstance[]): CanvasLugTarget[] {
   const targets: CanvasLugTarget[] = [];
   for (const inst of instances) {
     const shape = getShape(inst.type);

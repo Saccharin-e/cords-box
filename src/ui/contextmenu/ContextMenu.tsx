@@ -25,7 +25,17 @@ interface Props {
 }
 
 export function ContextMenu({ menu, onClose }: Props) {
-  const { removeInstance, selectInstance, setPan, setScale, wiringMode, cancelWiring, startWiring, instances, resetCanvas } = useCanvasStore();
+  const {
+    removeInstance,
+    selectInstance,
+    setPan,
+    setScale,
+    wiringMode,
+    cancelWiring,
+    startWiring,
+    instances,
+    resetCanvas,
+  } = useCanvasStore();
   const { removeComponent, removeEdge, reset } = useCircuitStore();
 
   // Close context menu on outside click or Escape
@@ -90,8 +100,66 @@ export function ContextMenu({ menu, onClose }: Props) {
           <div className="context-menu__header" style={headerStyle}>
             COMPONENT: {menu.targetId}
           </div>
-          <button className="context-menu__item context-menu__item--danger" style={dangerItemStyle} onClick={handleDeleteTarget}>
-            <span>🗑️ Delete Component</span>
+          <button
+            className="context-menu__item"
+            style={itemStyle}
+            onClick={() => {
+              useCanvasStore.getState().bringToFront(menu.targetId);
+              onClose();
+            }}
+          >
+            Bring to Front
+          </button>
+          <button
+            className="context-menu__item"
+            style={itemStyle}
+            onClick={() => {
+              useCanvasStore.getState().sendToBack(menu.targetId);
+              onClose();
+            }}
+          >
+            Send to Back
+          </button>
+          <button
+            className="context-menu__item"
+            style={itemStyle}
+            onClick={() => {
+              useCanvasStore.getState().bringForward(menu.targetId);
+              onClose();
+            }}
+          >
+            Bring Forward
+          </button>
+          <button
+            className="context-menu__item"
+            style={itemStyle}
+            onClick={() => {
+              useCanvasStore.getState().sendBackward(menu.targetId);
+              onClose();
+            }}
+          >
+            Send Backward
+          </button>
+          <div style={{ height: 1, backgroundColor: '#27272a', margin: '4px 0' }} />
+          <button
+            className="context-menu__item context-menu__item--danger"
+            style={dangerItemStyle}
+            onClick={handleDeleteTarget}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+              Delete Component
+            </span>
             <span style={shortcutStyle}>Del</span>
           </button>
         </>
@@ -102,8 +170,25 @@ export function ContextMenu({ menu, onClose }: Props) {
           <div className="context-menu__header" style={headerStyle}>
             WIRE EDGE
           </div>
-          <button className="context-menu__item context-menu__item--danger" style={dangerItemStyle} onClick={handleDeleteTarget}>
-            <span>🗑️ Delete Wire</span>
+          <button
+            className="context-menu__item context-menu__item--danger"
+            style={dangerItemStyle}
+            onClick={handleDeleteTarget}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+              Delete Wire
+            </span>
             <span style={shortcutStyle}>Del</span>
           </button>
         </>
@@ -129,14 +214,57 @@ export function ContextMenu({ menu, onClose }: Props) {
               onClose();
             }}
           >
-            <span>{wiringMode ? '❌ Cancel Wiring' : '⚡ Wiring Mode'}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              {wiringMode ? 'Cancel Wiring' : 'Wiring Mode'}
+            </span>
           </button>
           <button className="context-menu__item" style={itemStyle} onClick={handleResetView}>
-            <span>🎯 Reset Pan & Zoom</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="16" />
+                <line x1="8" y1="12" x2="16" y2="12" />
+              </svg>
+              Reset Pan & Zoom
+            </span>
           </button>
           <div style={dividerStyle} />
-          <button className="context-menu__item context-menu__item--danger" style={dangerItemStyle} onClick={handleClearAll}>
-            <span>🗑️ Clear Canvas</span>
+          <button
+            className="context-menu__item context-menu__item--danger"
+            style={dangerItemStyle}
+            onClick={handleClearAll}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+              Clear Canvas
+            </span>
           </button>
         </>
       )}

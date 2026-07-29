@@ -31,5 +31,5 @@
     "noFallthroughCasesInSwitch": true,
     "strict": true
   },
-  "include": ["src"]
+  "include": ["src", "tests"]
 }

@@ -67,15 +67,63 @@ describe('Signal Path Solver', () => {
 
   it('should handle multi-hop paths through switches', () => {
     const nodes: CircuitNode[] = [
-      { id: 'pickup_hot', type: 'terminal', componentId: 'pickup', role: 'hot', signalState: 'active' },
-      { id: 'switch_in', type: 'switch_lug', componentId: 'switch', role: 'input', signalState: 'inactive' },
-      { id: 'switch_out', type: 'switch_lug', componentId: 'switch', role: 'output', signalState: 'inactive' },
-      { id: 'output_tip', type: 'jack_terminal', componentId: 'jack', role: 'tip', signalState: 'inactive' },
+      {
+        id: 'pickup_hot',
+        type: 'terminal',
+        componentId: 'pickup',
+        role: 'hot',
+        signalState: 'active',
+      },
+      {
+        id: 'switch_in',
+        type: 'switch_lug',
+        componentId: 'switch',
+        role: 'input',
+        signalState: 'inactive',
+      },
+      {
+        id: 'switch_out',
+        type: 'switch_lug',
+        componentId: 'switch',
+        role: 'output',
+        signalState: 'inactive',
+      },
+      {
+        id: 'output_tip',
+        type: 'jack_terminal',
+        componentId: 'jack',
+        role: 'tip',
+        signalState: 'inactive',
+      },
     ];
     const edges: CircuitEdge[] = [
-      { id: 'w1', source: 'pickup_hot', target: 'switch_in', resistance: 0, wireColor: '#888', connectionType: 'solder', wireType: 'modern_vinyl' },
-      { id: 'w2', source: 'switch_in', target: 'switch_out', resistance: 0, wireColor: '#888', connectionType: 'solder', wireType: 'modern_vinyl' },
-      { id: 'w3', source: 'switch_out', target: 'output_tip', resistance: 0, wireColor: '#888', connectionType: 'solder', wireType: 'modern_vinyl' },
+      {
+        id: 'w1',
+        source: 'pickup_hot',
+        target: 'switch_in',
+        resistance: 0,
+        wireColor: '#888',
+        connectionType: 'solder',
+        wireType: 'modern_vinyl',
+      },
+      {
+        id: 'w2',
+        source: 'switch_in',
+        target: 'switch_out',
+        resistance: 0,
+        wireColor: '#888',
+        connectionType: 'solder',
+        wireType: 'modern_vinyl',
+      },
+      {
+        id: 'w3',
+        source: 'switch_out',
+        target: 'output_tip',
+        resistance: 0,
+        wireColor: '#888',
+        connectionType: 'solder',
+        wireType: 'modern_vinyl',
+      },
     ];
 
     for (const n of nodes) graph.addNode(n);
@@ -85,7 +133,10 @@ describe('Signal Path Solver', () => {
 
     expect(result.activePaths).toHaveLength(1);
     expect(result.activePaths[0].nodes).toEqual([
-      'pickup_hot', 'switch_in', 'switch_out', 'output_tip',
+      'pickup_hot',
+      'switch_in',
+      'switch_out',
+      'output_tip',
     ]);
   });
 });

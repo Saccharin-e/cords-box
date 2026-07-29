@@ -17,12 +17,7 @@ export interface PresetDefinition {
   edges: CircuitEdge[];
 }
 
-function makeEdge(
-  id: string,
-  source: string,
-  target: string,
-  wireColor: string,
-): CircuitEdge {
+function makeEdge(id: string, source: string, target: string, wireColor: string): CircuitEdge {
   return {
     id,
     source,
@@ -155,13 +150,69 @@ export const PRESETS: PresetDefinition[] = [
     description:
       'Vintage 2 Single-Coil Telecaster wiring with 3-Way Blade Switch, 250K Vol, 250K Tone & .047µF Cap.',
     components: [
-      { id: 'pickup_neck', type: 'pickup_single_coil', label: 'Neck Pickup', x: 80, y: 100, width: 140, height: 60 },
-      { id: 'pickup_bridge', type: 'pickup_single_coil', label: 'Bridge Pickup', x: 80, y: 220, width: 140, height: 60 },
-      { id: 'switch_3way_tele', type: 'switch_3way', label: '3-Way Toggle', x: 280, y: 140, width: 100, height: 95 },
-      { id: 'pot_vol', type: 'pot_volume', label: 'Volume Pot', x: 450, y: 100, width: 90, height: 100 },
-      { id: 'pot_tone', type: 'pot_tone', label: 'Tone Pot', x: 450, y: 240, width: 90, height: 100 },
-      { id: 'cap_tone', type: 'capacitor', label: '.047µF Cap', x: 600, y: 240, width: 80, height: 44 },
-      { id: 'jack_out', type: 'output_jack', label: '1/4" Jack', x: 600, y: 100, width: 80, height: 80 },
+      {
+        id: 'pickup_neck',
+        type: 'pickup_single_coil',
+        label: 'Neck Pickup',
+        x: 80,
+        y: 100,
+        width: 140,
+        height: 60,
+      },
+      {
+        id: 'pickup_bridge',
+        type: 'pickup_single_coil',
+        label: 'Bridge Pickup',
+        x: 80,
+        y: 220,
+        width: 140,
+        height: 60,
+      },
+      {
+        id: 'switch_3way_tele',
+        type: 'switch_3way',
+        label: '3-Way Toggle',
+        x: 280,
+        y: 140,
+        width: 100,
+        height: 95,
+      },
+      {
+        id: 'pot_vol',
+        type: 'pot_volume',
+        label: 'Volume Pot',
+        x: 450,
+        y: 100,
+        width: 90,
+        height: 100,
+      },
+      {
+        id: 'pot_tone',
+        type: 'pot_tone',
+        label: 'Tone Pot',
+        x: 450,
+        y: 240,
+        width: 90,
+        height: 100,
+      },
+      {
+        id: 'cap_tone',
+        type: 'capacitor',
+        label: '.047µF Cap',
+        x: 600,
+        y: 240,
+        width: 80,
+        height: 44,
+      },
+      {
+        id: 'jack_out',
+        type: 'output_jack',
+        label: '1/4" Jack',
+        x: 600,
+        y: 100,
+        width: 80,
+        height: 80,
+      },
     ],
     edges: [
       makeEdge('e1', 'pickup_neck_hot', 'switch_3way_tele_pos1', '#ffffff'),

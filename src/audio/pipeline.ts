@@ -52,16 +52,16 @@ export class AudioPipeline {
     let lastNode: AudioNode = this.inputNode;
 
     // Find volume & tone pots in the circuit graph that have active nodes
-    const activeComponents = graph.getComponents().filter((c) =>
-      graph.getComponentNodes(c.id).some((n) => solverResult.activeNodes.has(n.id))
-    );
+    const activeComponents = graph
+      .getComponents()
+      .filter((c) => graph.getComponentNodes(c.id).some((n) => solverResult.activeNodes.has(n.id)));
 
     for (const comp of activeComponents) {
       if (comp.type === 'pot_volume') {
         const val = comp.value as { position: number; taper: string } | undefined;
         const pos = val?.position ?? 1.0;
         const gainNode = ctx.createGain();
-        
+
         // Audio Taper logarithmic approximation (pos^2.5)
         const gainVal = val?.taper === 'linear' ? pos : Math.pow(pos, 2.5);
         gainNode.gain.value = Math.max(0.0001, gainVal);
@@ -74,7 +74,7 @@ export class AudioPipeline {
         const pos = val?.position ?? 1.0;
         const filterNode = ctx.createBiquadFilter();
         filterNode.type = 'lowpass';
-        
+
         // Roll-off cutoff frequency calculation: 10kHz (open) -> 400Hz (closed)
         const minFreq = 400;
         const maxFreq = 10000;
@@ -113,7 +113,8 @@ export class AudioPipeline {
   /**
    * Trigger a synthesized guitar pluck note
    */
-  triggerPluck(freq: number = 329.63) { // High E (E4)
+  triggerPluck(freq: number = 329.63) {
+    // High E (E4)
     const ctx = audioEngine.getContext();
     if (!ctx || !audioEngine.isReady() || !this.masterGain) return;
 
@@ -151,7 +152,7 @@ export class AudioPipeline {
     if (this.currentSourceType === 'mic' && this.micStream) {
       return ctx.createMediaStreamSource(this.micStream);
     }
-    
+
     // Default pass-through gain node for synthesized plucks / inputs
     const inputGain = ctx.createGain();
     inputGain.gain.value = 1.0;

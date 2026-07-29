@@ -12,9 +12,29 @@ describe('Circuit Linter & Validation Suite', () => {
   });
 
   it('should detect direct dead shorts to ground', () => {
-    graph.addNode({ id: 'pu_hot', type: 'terminal', role: 'hot', signalState: 'active' });
-    graph.addNode({ id: 'gnd', type: 'ground', role: 'ground' });
-    graph.addEdge({ id: 'e1', source: 'pu_hot', target: 'gnd' });
+    graph.addNode({
+      id: 'pu_hot',
+      type: 'terminal',
+      componentId: 'pu1',
+      role: 'hot',
+      signalState: 'active',
+    });
+    graph.addNode({
+      id: 'gnd',
+      type: 'ground',
+      componentId: 'gnd1',
+      role: 'ground',
+      signalState: 'grounded',
+    });
+    graph.addEdge({
+      id: 'e1',
+      source: 'pu_hot',
+      target: 'gnd',
+      resistance: 0,
+      wireColor: '#000000',
+      connectionType: 'solder',
+      wireType: 'modern_vinyl',
+    });
 
     const diagnostics = lintCircuit(graph);
     const shortDiag = diagnostics.find((d) => d.code === 'DEAD_SHORT');
@@ -23,8 +43,20 @@ describe('Circuit Linter & Validation Suite', () => {
   });
 
   it('should detect open circuits when pickup has no path to output', () => {
-    graph.addNode({ id: 'pu_hot', type: 'terminal', role: 'hot', signalState: 'active' });
-    graph.addNode({ id: 'jack_tip', type: 'jack_terminal', role: 'tip' });
+    graph.addNode({
+      id: 'pu_hot',
+      type: 'terminal',
+      componentId: 'pu1',
+      role: 'hot',
+      signalState: 'active',
+    });
+    graph.addNode({
+      id: 'jack_tip',
+      type: 'jack_terminal',
+      componentId: 'jack1',
+      role: 'tip',
+      signalState: 'inactive',
+    });
 
     const diagnostics = lintCircuit(graph);
     const openDiag = diagnostics.find((d) => d.code === 'OPEN_CIRCUIT');
@@ -33,9 +65,29 @@ describe('Circuit Linter & Validation Suite', () => {
   });
 
   it('should pass cleanly when pickup connects to output jack', () => {
-    graph.addNode({ id: 'pu_hot', type: 'terminal', role: 'hot', signalState: 'active' });
-    graph.addNode({ id: 'jack_tip', type: 'jack_terminal', role: 'tip' });
-    graph.addEdge({ id: 'wire1', source: 'pu_hot', target: 'jack_tip' });
+    graph.addNode({
+      id: 'pu_hot',
+      type: 'terminal',
+      componentId: 'pu1',
+      role: 'hot',
+      signalState: 'active',
+    });
+    graph.addNode({
+      id: 'jack_tip',
+      type: 'jack_terminal',
+      componentId: 'jack1',
+      role: 'tip',
+      signalState: 'inactive',
+    });
+    graph.addEdge({
+      id: 'wire1',
+      source: 'pu_hot',
+      target: 'jack_tip',
+      resistance: 0,
+      wireColor: '#888888',
+      connectionType: 'solder',
+      wireType: 'modern_vinyl',
+    });
 
     const diagnostics = lintCircuit(graph);
     const openDiag = diagnostics.find((d) => d.code === 'OPEN_CIRCUIT');

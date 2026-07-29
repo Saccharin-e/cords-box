@@ -11,7 +11,7 @@
  * - Dots, Lines, Crosshatch, Isometric, None
  */
 
-import { Layer, Rect, Line, Circle } from 'react-konva';
+import { Layer, Rect, Line, Circle, Group } from 'react-konva';
 import type { CanvasTheme, GridStyle } from '@store/canvasStore';
 
 interface Props {
@@ -25,15 +25,13 @@ interface Props {
   panY: number;
 }
 
-const THEME_CONFIGS: Record<
-  CanvasTheme,
-  { bg: string; gridColor: string; subGridColor: string }
-> = {
-  dark: { bg: '#121214', gridColor: '#27272a', subGridColor: '#18181b' },
-  light: { bg: '#f8fafc', gridColor: '#cbd5e1', subGridColor: '#e2e8f0' },
-  blueprint: { bg: '#0f172a', gridColor: '#1e293b', subGridColor: '#0284c7' },
-  vintage: { bg: '#fef3c7', gridColor: '#fde68a', subGridColor: '#d97706' },
-};
+const THEME_CONFIGS: Record<CanvasTheme, { bg: string; gridColor: string; subGridColor: string }> =
+  {
+    dark: { bg: '#121214', gridColor: '#3f3f46', subGridColor: '#27272a' },
+    light: { bg: '#f8fafc', gridColor: '#94a3b8', subGridColor: '#cbd5e1' },
+    blueprint: { bg: '#0f172a', gridColor: '#0284c7', subGridColor: '#1e293b' },
+    vintage: { bg: '#fef3c7', gridColor: '#d97706', subGridColor: '#fde68a' },
+  };
 
 export function GridBackground({
   width,
@@ -49,16 +47,22 @@ export function GridBackground({
 
   if (gridStyle === 'none') {
     return (
-      <Layer>
-        <Rect x={-panX / scale} y={-panY / scale} width={width / scale + 1000} height={height / scale + 1000} fill={theme.bg} />
+      <Layer listening={false}>
+        <Rect
+          x={-panX / scale}
+          y={-panY / scale}
+          width={width / scale + 1000}
+          height={height / scale + 1000}
+          fill={theme.bg}
+        />
       </Layer>
     );
   }
 
   // Calculate visible grid bounds in canvas space
-  const startX = Math.floor((-panX / scale) / gridSize) * gridSize - gridSize;
+  const startX = Math.floor(-panX / scale / gridSize) * gridSize - gridSize;
   const endX = Math.ceil((width - panX) / scale / gridSize) * gridSize + gridSize;
-  const startY = Math.floor((-panY / scale) / gridSize) * gridSize - gridSize;
+  const startY = Math.floor(-panY / scale / gridSize) * gridSize - gridSize;
   const endY = Math.ceil((height - panY) / scale / gridSize) * gridSize + gridSize;
 
   const lines: React.ReactNode[] = [];
@@ -72,8 +76,8 @@ export function GridBackground({
           key={`v-${x}`}
           points={[x, startY, x, endY]}
           stroke={isMajor ? theme.gridColor : theme.subGridColor}
-          strokeWidth={isMajor ? 1.5 : 0.75}
-          opacity={isMajor ? 0.8 : 0.4}
+          strokeWidth={isMajor ? 1 : 0.5}
+          opacity={isMajor ? 0.55 : 0.35}
         />,
       );
     }
@@ -85,13 +89,13 @@ export function GridBackground({
           key={`h-${y}`}
           points={[startX, y, endX, y]}
           stroke={isMajor ? theme.gridColor : theme.subGridColor}
-          strokeWidth={isMajor ? 1.5 : 0.75}
-          opacity={isMajor ? 0.8 : 0.4}
+          strokeWidth={isMajor ? 1 : 0.5}
+          opacity={isMajor ? 0.55 : 0.35}
         />,
       );
     }
   } else if (gridStyle === 'dots') {
-    // Dot matrix grid
+    // Dot matrix grid - subtle & comfortable radius
     for (let x = startX; x <= endX; x += gridSize) {
       for (let y = startY; y <= endY; y += gridSize) {
         const isMajor = x % (gridSize * 5) === 0 && y % (gridSize * 5) === 0;
@@ -100,9 +104,9 @@ export function GridBackground({
             key={`d-${x}-${y}`}
             x={x}
             y={y}
-            radius={isMajor ? 2 : 1}
+            radius={isMajor ? 1.75 : 1}
             fill={isMajor ? theme.gridColor : theme.subGridColor}
-            opacity={isMajor ? 0.9 : 0.5}
+            opacity={isMajor ? 0.65 : 0.4}
           />,
         );
       }
@@ -115,22 +119,22 @@ export function GridBackground({
           key={`iso1-${x}`}
           points={[x, startY, x + (endY - startY) * 1.732, endY]}
           stroke={theme.subGridColor}
-          strokeWidth={0.75}
-          opacity={0.4}
+          strokeWidth={0.5}
+          opacity={0.35}
         />,
         <Line
           key={`iso2-${x}`}
           points={[x, startY, x - (endY - startY) * 1.732, endY]}
           stroke={theme.subGridColor}
-          strokeWidth={0.75}
-          opacity={0.4}
+          strokeWidth={0.5}
+          opacity={0.35}
         />,
       );
     }
   }
 
   return (
-    <Layer>
+    <Layer listening={false}>
       {/* Background Fill */}
       <Rect
         x={-panX / scale - 500}
@@ -140,6 +144,13 @@ export function GridBackground({
         fill={theme.bg}
       />
       {lines}
+
+      {/* Origin Marker */}
+      <Group x={0} y={0}>
+        <Circle x={0} y={0} radius={4} fill={theme.subGridColor} opacity={0.8} />
+        <Line points={[-10, 0, 10, 0]} stroke={theme.subGridColor} strokeWidth={1} opacity={0.8} />
+        <Line points={[0, -10, 0, 10]} stroke={theme.subGridColor} strokeWidth={1} opacity={0.8} />
+      </Group>
     </Layer>
   );
 }

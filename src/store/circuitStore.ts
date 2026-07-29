@@ -26,6 +26,8 @@ export interface CircuitStore {
   removeEdge: (edgeId: string) => void;
   addComponent: (component: Component) => void;
   updateComponentValue: (componentId: string, value: Component['value']) => void;
+  updateComponentLabel: (componentId: string, label: string) => void;
+  updateEdge: (edgeId: string, updates: Partial<CircuitEdge>, skipSolve?: boolean) => void;
   removeComponent: (componentId: string) => void;
   setSwitchState: (state: SwitchState) => void;
 
@@ -78,6 +80,17 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
   updateComponentValue: (componentId, value) => {
     get().graph.updateComponentValue(componentId, value);
     get().solve();
+    set({});
+  },
+  updateComponentLabel: (componentId, label) => {
+    get().graph.updateComponentLabel(componentId, label);
+    set({});
+  },
+  updateEdge: (edgeId, updates, skipSolve = false) => {
+    get().graph.updateEdge(edgeId, updates);
+    if (!skipSolve) {
+      get().solve();
+    }
     set({});
   },
   removeComponent: (componentId: string) => {

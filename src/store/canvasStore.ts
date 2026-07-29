@@ -23,7 +23,7 @@ export interface CanvasComponentInstance {
   y: number;
   width: number;
   height: number;
-  rotation?: number;  // 0, 90, 180, 270 degrees
+  rotation?: number; // 0, 90, 180, 270 degrees
   flippedH?: boolean;
   flippedV?: boolean;
   groupId?: string;
@@ -40,6 +40,29 @@ export interface PendingWire {
   from: WireAnchor;
   toX: number;
   toY: number;
+}
+
+export type WireColorPreset = (typeof WIRE_COLOR_PRESETS)[number];
+
+export const WIRE_COLOR_PRESETS = [
+  { id: 'black', label: 'Black', hex: '#18181b' },
+  { id: 'white', label: 'White', hex: '#e4e4e7' },
+  { id: 'red', label: 'Red', hex: '#dc2626' },
+  { id: 'green', label: 'Green', hex: '#16a34a' },
+  { id: 'blue', label: 'Blue', hex: '#2563eb' },
+  { id: 'yellow', label: 'Yellow', hex: '#eab308' },
+  { id: 'orange', label: 'Orange', hex: '#d97706' },
+  { id: 'brown', label: 'Brown', hex: '#78350f' },
+  { id: 'purple', label: 'Purple', hex: '#7c3aed' },
+  { id: 'bare', label: 'Bare Copper', hex: '#b45309' },
+] as const;
+
+export type WireDrawType = 'vintage_cloth_pushback' | 'modern_vinyl' | 'shielded' | 'bare';
+
+export interface WireDrawOptions {
+  color: string;
+  wireType: WireDrawType;
+  connectionType: 'solder' | 'quick_connect' | 'crimp' | 'twist';
 }
 
 export interface ExportBox {
@@ -60,6 +83,7 @@ export interface CanvasStore {
   selectedIds: string[];
   wiringMode: boolean;
   pendingWire: PendingWire | null;
+  wireDrawOptions: WireDrawOptions;
   viewMode: 'physical' | 'schematic';
 
   // Export Settings
@@ -82,6 +106,8 @@ export interface CanvasStore {
   gridStyle: GridStyle;
   gridSize: number;
   snapToGrid: boolean;
+  showComponentLabels: boolean;
+  toggleShowComponentLabels: () => void;
 
   // History & Clipboard
   history: CanvasComponentInstance[][];
@@ -96,20 +122,30 @@ export interface CanvasStore {
 
   // Actions
   addInstance: (inst: CanvasComponentInstance) => void;
+  updateInstance: (id: string, updates: Partial<CanvasComponentInstance>) => void;
   moveInstance: (id: string, x: number, y: number) => void;
   moveInstances: (deltas: { id: string; x: number; y: number }[]) => void;
   removeInstance: (id: string) => void;
   removeSelected: () => void;
   selectInstance: (id: string | null, multi?: boolean) => void;
+  setSelectedIds: (ids: string[]) => void;
   selectAll: () => void;
   clearSelection: () => void;
   setViewMode: (mode: 'physical' | 'schematic') => void;
   setScale: (scale: number) => void;
   setPan: (x: number, y: number) => void;
   startWiring: (anchor: WireAnchor) => void;
+  toggleWiringMode: () => void;
   updateWiringCursor: (x: number, y: number) => void;
   cancelWiring: () => void;
   completeWiring: (to: WireAnchor) => void;
+  setWireDrawOptions: (opts: Partial<WireDrawOptions>) => void;
+
+  // Layer Ordering Actions
+  bringToFront: (id?: string) => void;
+  sendToBack: (id?: string) => void;
+  bringForward: (id?: string) => void;
+  sendBackward: (id?: string) => void;
 
   // Display Settings Mutators
   setThemeMode: (theme: CanvasTheme) => void;
@@ -147,6 +183,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   selectedIds: [],
   wiringMode: false,
   pendingWire: null,
+  wireDrawOptions: {
+    color: '#d97706',
+    wireType: 'modern_vinyl',
+    connectionType: 'solder',
+  },
   viewMode: 'physical',
 
   // Export Settings
@@ -255,6 +296,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   gridStyle: 'dots',
   gridSize: 20,
   snapToGrid: true,
+  showComponentLabels: false,
+
+  toggleShowComponentLabels: () => set((s) => ({ showComponentLabels: !s.showComponentLabels })),
 
   history: [[]],
   historyIndex: 0,
@@ -277,6 +321,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       instances: [...s.instances, inst],
       selectedId: inst.id,
       selectedIds: [inst.id],
+    }));
+    get().pushHistory();
+  },
+
+  updateInstance: (id, updates) => {
+    set((s) => ({
+      instances: s.instances.map((i) => (i.id === id ? { ...i, ...updates } : i)),
     }));
     get().pushHistory();
   },
@@ -335,14 +386,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set((s) => {
       if (multi) {
         const exists = s.selectedIds.includes(id);
-        const newIds = exists
-          ? s.selectedIds.filter((sid) => sid !== id)
-          : [...s.selectedIds, id];
+        const newIds = exists ? s.selectedIds.filter((sid) => sid !== id) : [...s.selectedIds, id];
         return { selectedIds: newIds, selectedId: newIds[newIds.length - 1] ?? null };
       }
       return { selectedId: id, selectedIds: [id] };
     });
   },
+
+  setSelectedIds: (ids) => set({ selectedIds: ids, selectedId: ids[0] ?? null }),
 
   selectAll: () => {
     const { instances } = get();
@@ -356,26 +407,142 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setScale: (scale) => set({ scale: Math.min(3, Math.max(0.25, scale)) }),
   setPan: (x, y) => set({ panX: x, panY: y }),
 
-  startWiring: (anchor) =>
-    set({ wiringMode: true, pendingWire: { from: anchor, toX: anchor.x, toY: anchor.y } }),
+  startWiring: (anchor) => {
+    const { wiringMode, pendingWire } = get();
+    if (!wiringMode) {
+      // First click: enable wiring mode and start from this lug
+      set({ wiringMode: true, pendingWire: { from: anchor, toX: anchor.x, toY: anchor.y } });
+    } else if (pendingWire) {
+      // Second click: complete the wire to this lug
+      // Prevent self-wiring to the same lug
+      if (
+        pendingWire.from.componentId === anchor.componentId &&
+        pendingWire.from.lugId === anchor.lugId
+      ) {
+        return;
+      }
+      // Dispatch to completeWiring
+      get().completeWiring(anchor);
+    } else {
+      // Wiring mode active but no pending wire — start new
+      set({ pendingWire: { from: anchor, toX: anchor.x, toY: anchor.y } });
+    }
+  },
   updateWiringCursor: (x, y) =>
     set((s) => (s.pendingWire ? { pendingWire: { ...s.pendingWire, toX: x, toY: y } } : {})),
+  toggleWiringMode: () => {
+    const { wiringMode } = get();
+    if (wiringMode) {
+      set({ wiringMode: false, pendingWire: null });
+    } else {
+      set({ wiringMode: true, pendingWire: null });
+    }
+  },
   cancelWiring: () => set({ wiringMode: false, pendingWire: null }),
-  completeWiring: (_to) => set({ wiringMode: false, pendingWire: null }),
+  completeWiring: (to) => {
+    const { pendingWire } = get();
+    if (!pendingWire) {
+      set({ wiringMode: false, pendingWire: null });
+      return;
+    }
+
+    const sourceNodeId = pendingWire.from.componentId + pendingWire.from.lugId;
+    const targetNodeId = to.componentId + to.lugId;
+
+    // Dynamically import circuitStore to avoid circular dependency at module evaluation time
+    const { wireDrawOptions } = get();
+    import('./circuitStore').then(({ useCircuitStore }) => {
+      const edgeId = `wire_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      useCircuitStore.getState().addEdge({
+        id: edgeId,
+        source: sourceNodeId,
+        target: targetNodeId,
+        resistance: 0,
+        wireColor: wireDrawOptions.color,
+        connectionType: wireDrawOptions.connectionType,
+        wireType: wireDrawOptions.wireType,
+      });
+    });
+
+    // Stay in wiring mode so user can draw another wire immediately
+    set({ pendingWire: null });
+  },
+  setWireDrawOptions: (opts) =>
+    set((s) => ({ wireDrawOptions: { ...s.wireDrawOptions, ...opts } })),
 
   setThemeMode: (themeMode) => set({ themeMode }),
   setGridStyle: (gridStyle) => set({ gridStyle }),
   setGridSize: (gridSize) => set({ gridSize }),
   toggleSnapToGrid: () => set((s) => ({ snapToGrid: !s.snapToGrid })),
 
+  bringToFront: (targetId) => {
+    const { selectedId, selectedIds, instances } = get();
+    const idsToMove = targetId
+      ? [targetId]
+      : selectedIds.length
+        ? selectedIds
+        : selectedId
+          ? [selectedId]
+          : [];
+    if (!idsToMove.length) return;
+
+    const remaining = instances.filter((i) => !idsToMove.includes(i.id));
+    const moved = instances.filter((i) => idsToMove.includes(i.id));
+    set({ instances: [...remaining, ...moved] });
+    get().pushHistory();
+  },
+
+  sendToBack: (targetId) => {
+    const { selectedId, selectedIds, instances } = get();
+    const idsToMove = targetId
+      ? [targetId]
+      : selectedIds.length
+        ? selectedIds
+        : selectedId
+          ? [selectedId]
+          : [];
+    if (!idsToMove.length) return;
+
+    const remaining = instances.filter((i) => !idsToMove.includes(i.id));
+    const moved = instances.filter((i) => idsToMove.includes(i.id));
+    set({ instances: [...moved, ...remaining] });
+    get().pushHistory();
+  },
+
+  bringForward: (targetId) => {
+    const { selectedId, instances } = get();
+    const id = targetId || selectedId;
+    if (!id) return;
+    const idx = instances.findIndex((i) => i.id === id);
+    if (idx < 0 || idx === instances.length - 1) return;
+    const next = [...instances];
+    const temp = next[idx];
+    next[idx] = next[idx + 1];
+    next[idx + 1] = temp;
+    set({ instances: next });
+    get().pushHistory();
+  },
+
+  sendBackward: (targetId) => {
+    const { selectedId, instances } = get();
+    const id = targetId || selectedId;
+    if (!id) return;
+    const idx = instances.findIndex((i) => i.id === id);
+    if (idx <= 0) return;
+    const next = [...instances];
+    const temp = next[idx];
+    next[idx] = next[idx - 1];
+    next[idx - 1] = temp;
+    set({ instances: next });
+    get().pushHistory();
+  },
+
   rotateSelected: (angleDelta = 90) => {
     const { selectedIds } = get();
     if (selectedIds.length === 0) return;
     set((s) => ({
       instances: s.instances.map((i) =>
-        selectedIds.includes(i.id)
-          ? { ...i, rotation: ((i.rotation ?? 0) + angleDelta) % 360 }
-          : i,
+        selectedIds.includes(i.id) ? { ...i, rotation: ((i.rotation ?? 0) + angleDelta) % 360 } : i,
       ),
     }));
     get().pushHistory();
@@ -408,9 +575,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     if (selectedIds.length < 2) return;
     const groupId = `group_${Date.now()}`;
     set((s) => ({
-      instances: s.instances.map((i) =>
-        selectedIds.includes(i.id) ? { ...i, groupId } : i,
-      ),
+      instances: s.instances.map((i) => (selectedIds.includes(i.id) ? { ...i, groupId } : i)),
     }));
     get().pushHistory();
   },

@@ -10,6 +10,7 @@ import { ComponentLibrary } from './ui/library/ComponentLibrary';
 import { DualCanvas } from './ui/canvas/DualCanvas';
 import { ValueInspector } from './ui/inspector/ValueInspector';
 import { ExportModal } from './ui/export/ExportModal';
+import { SettingsModal } from './ui/settings/SettingsModal';
 import { useCanvasStore } from '@store/canvasStore';
 
 export default function App() {
@@ -42,6 +43,7 @@ export default function App() {
       <DualCanvas />
       <ValueInspector />
       <ExportModal />
+      <SettingsModal />
     </div>
   );
 }

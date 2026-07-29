@@ -13,9 +13,11 @@ import { Stage, Layer, Rect, Text, Circle, Group } from 'react-konva';
 import type Konva from 'konva';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
-import { WireLayer, buildWireVisuals } from './WireLayer';
+import { WireLayer } from './WireLayer';
+import { buildWireVisuals } from './wireUtils';
 import { ContextMenu, type ContextMenuState } from '@ui/contextmenu/ContextMenu';
 import { getShape } from './shapes';
+import { GridBackground } from './GridBackground';
 
 interface Props {
   width: number;
@@ -27,8 +29,17 @@ export function SchematicView({ width, height }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   const {
-    instances, scale, panX, panY,
-    selectedId, selectInstance, setScale, setPan,
+    instances,
+    scale,
+    panX,
+    panY,
+    selectedId,
+    selectInstance,
+    setScale,
+    setPan,
+    themeMode,
+    gridStyle,
+    gridSize,
   } = useCanvasStore();
 
   const { selectEdge, selectedEdgeId } = useCircuitStore();
@@ -116,6 +127,17 @@ export function SchematicView({ width, height }: Props) {
           }
         }}
       >
+        <GridBackground
+          width={width}
+          height={height}
+          themeMode={themeMode}
+          gridStyle={gridStyle}
+          gridSize={gridSize}
+          scale={scale}
+          panX={panX}
+          panY={panY}
+        />
+
         {/* Wires first */}
         <WireLayer
           wires={wires}
@@ -209,9 +231,7 @@ export function SchematicView({ width, height }: Props) {
       </Stage>
 
       {/* Floating Context Menu */}
-      {contextMenu && (
-        <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
-      )}
+      {contextMenu && <ContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />}
     </div>
   );
 }

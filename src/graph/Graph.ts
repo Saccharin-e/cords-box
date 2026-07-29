@@ -33,9 +33,7 @@ export class Graph {
   removeNode(nodeId: string): void {
     this.graph.nodes = this.graph.nodes.filter((n) => n.id !== nodeId);
     // Remove all edges connected to this node
-    this.graph.edges = this.graph.edges.filter(
-      (e) => e.source !== nodeId && e.target !== nodeId,
-    );
+    this.graph.edges = this.graph.edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
     // Clean adjacency list
     this.adjacencyList.delete(nodeId);
     for (const neighbors of this.adjacencyList.values()) {
@@ -109,12 +107,24 @@ export class Graph {
     }
   }
 
+  updateComponentLabel(componentId: string, label: string): void {
+    const comp = this.graph.components.find((c) => c.id === componentId);
+    if (comp) {
+      comp.label = label;
+    }
+  }
+
+  updateEdge(edgeId: string, updates: Partial<CircuitEdge>): void {
+    const edge = this.graph.edges.find((e) => e.id === edgeId);
+    if (edge) {
+      Object.assign(edge, updates);
+    }
+  }
+
   removeComponent(componentId: string): void {
     this.graph.components = this.graph.components.filter((c) => c.id !== componentId);
     // Remove all nodes belonging to this component
-    const nodeIds = this.graph.nodes
-      .filter((n) => n.componentId === componentId)
-      .map((n) => n.id);
+    const nodeIds = this.graph.nodes.filter((n) => n.componentId === componentId).map((n) => n.id);
     for (const nodeId of nodeIds) {
       this.removeNode(nodeId);
     }

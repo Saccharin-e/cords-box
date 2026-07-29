@@ -66,9 +66,7 @@ function detectDeadShorts(graph: Graph): LintDiagnostic[] {
 function detectOpenCircuits(graph: Graph): LintDiagnostic[] {
   const diagnostics: LintDiagnostic[] = [];
   const nodes = graph.getNodes();
-  const pickupHots = nodes.filter(
-    (n) => n.role === 'hot' && n.signalState === 'active',
-  );
+  const pickupHots = nodes.filter((n) => n.role === 'hot' && n.signalState === 'active');
   const outputTips = nodes.filter((n) => n.type === 'jack_terminal' || n.role === 'tip');
 
   if (outputTips.length === 0 && pickupHots.length > 0) {
@@ -103,7 +101,7 @@ function detectSamePoleJumpers(graph: Graph): LintDiagnostic[] {
   for (const comp of components) {
     if (comp.type.startsWith('switch_')) {
       const nodes = graph.getComponentNodes(comp.id);
-      
+
       // Group lugs by pole
       const poleGroups: Map<string, string[]> = new Map();
       for (const node of nodes) {

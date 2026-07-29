@@ -92,7 +92,7 @@ export const ExportBoxOverlay = memo(function ExportBoxOverlay() {
         <Text
           x={8}
           y={5}
-          text={`📷 EXPORT BOX: ${width} × ${height} px`}
+          text={`EXPORT BOX: ${width} × ${height} px`}
           fontSize={10}
           fontStyle="bold"
           fontFamily="'Inter', monospace"

@@ -49,8 +49,14 @@ export function ExportModal() {
         // Draw cropped section from main stage canvas
         ctx.drawImage(
           stageEl,
-          x, y, width, height, // Source crop rect
-          0, 0, width, height  // Destination rect
+          x,
+          y,
+          width,
+          height, // Source crop rect
+          0,
+          0,
+          width,
+          height, // Destination rect
         );
       }
 
@@ -89,10 +95,27 @@ export function ExportModal() {
         {/* Header */}
         <div style={headerStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 18 }}>📥</span>
-            <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '0.05em' }}>EXPORT CIRCUIT DESIGN</span>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '0.05em' }}>
+              EXPORT CIRCUIT DESIGN
+            </span>
           </div>
-          <button onClick={toggleExportModal} style={closeBtnStyle}>✕</button>
+          <button onClick={toggleExportModal} style={closeBtnStyle}>
+            ✕
+          </button>
         </div>
 
         {/* Format Selector */}
@@ -106,7 +129,20 @@ export function ExportModal() {
                 ...(format === 'png' ? activeFormatBtnStyle : {}),
               }}
             >
-              <span style={{ fontSize: 18 }}>📷</span>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontWeight: 700 }}>PNG Image</div>
                 <div style={{ fontSize: 10, opacity: 0.7 }}>2x HD Raster Image</div>
@@ -120,7 +156,22 @@ export function ExportModal() {
                 ...(format === 'pdf' ? activeFormatBtnStyle : {}),
               }}
             >
-              <span style={{ fontSize: 18 }}>📄</span>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontWeight: 700 }}>PDF Document</div>
                 <div style={{ fontSize: 10, opacity: 0.7 }}>Print-Ready Vector PDF</div>
@@ -131,15 +182,46 @@ export function ExportModal() {
 
         {/* Export Area & Bounding Box Size Controls */}
         <div style={sectionBoxStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 10,
+            }}
+          >
             <label style={labelStyle}>Export Region Bounds</label>
-            <button onClick={recalculateAutoExportBox} style={secondaryBtnStyle}>
-              🎯 Auto-Fit Rectangular Bounds
+            <button
+              onClick={recalculateAutoExportBox}
+              style={{ ...secondaryBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="16" />
+                <line x1="8" y1="12" x2="16" y2="12" />
+              </svg>
+              Auto-Fit Rectangular Bounds
             </button>
           </div>
 
           {/* Canvas Box Info */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr 1fr',
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
             <div style={statBoxStyle}>
               <span style={statLabelStyle}>Width</span>
               <span style={statValueStyle}>{exportBox.width} px</span>
@@ -159,7 +241,14 @@ export function ExportModal() {
           </div>
 
           {/* Aspect Ratio Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 10,
+            }}
+          >
             <span style={{ fontSize: 12, color: '#a1a1aa' }}>Aspect Ratio Preset</span>
             <select
               value={exportBox.aspectRatio}
@@ -179,9 +268,19 @@ export function ExportModal() {
 
           {/* Margin / Padding Slider */}
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#a1a1aa', marginBottom: 4 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: 12,
+                color: '#a1a1aa',
+                marginBottom: 4,
+              }}
+            >
               <span>Adequate Canvas Padding</span>
-              <span style={{ color: '#38bdf8', fontWeight: 600 }}>{exportBox.padding ?? 60} px</span>
+              <span style={{ color: '#38bdf8', fontWeight: 600 }}>
+                {exportBox.padding ?? 60} px
+              </span>
             </div>
             <input
               type="range"
@@ -206,7 +305,10 @@ export function ExportModal() {
             onChange={toggleShowExportBox}
             style={{ width: 16, height: 16, accentColor: '#38bdf8', cursor: 'pointer' }}
           />
-          <label htmlFor="show-export-box" style={{ fontSize: 12, color: '#e4e4e7', cursor: 'pointer' }}>
+          <label
+            htmlFor="show-export-box"
+            style={{ fontSize: 12, color: '#e4e4e7', cursor: 'pointer' }}
+          >
             Show line indicating export box on canvas
           </label>
         </div>
@@ -217,7 +319,7 @@ export function ExportModal() {
             Cancel
           </button>
           <button onClick={handleExport} style={exportActionBtnStyle}>
-            {format === 'png' ? '💾 Export PNG' : '📄 Export PDF'}
+            {format === 'png' ? 'Export PNG' : 'Export PDF'}
           </button>
         </div>
       </div>
