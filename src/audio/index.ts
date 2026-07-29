@@ -1,1 +1,3 @@
-export { AudioEngine, audioEngine } from './context';
+export { audioEngine } from './context';
+export { audioPipeline } from './pipeline';
+export type { InputSourceType } from './pipeline';
