@@ -1,17 +1,25 @@
 /**
- * WireLayer — Konva layer for drawing wires between component lugs.
+ * WireLayer — DIYLC-Style Interactive Wire Engine for Konva Canvas
  *
- * Renders committed wires as colored Bezier curves and the
- * in-progress "pending" wire as a dashed line following the cursor.
- * Supports clicking to select wire edge for deletion.
+ * Mechanics:
+ * - Exact lug position alignment matching real-world component shapes.
+ * - Draggable wire endpoint handles (P1 and P2) to extend, move, and reconnect wires freely.
+ * - Magnetic snap-to-lug indicator halo when pulling endpoints near component solder lugs.
+ * - Midpoint bend control handle for freeform curved routing.
+ * - High-contrast selection, glowing active signal state, and right-click context menu compatibility.
  */
 
-import { Layer, Line, Circle } from 'react-konva';
+import { useState, useMemo } from 'react';
+import { Layer, Line, Circle, Group, Ring } from 'react-konva';
+import type Konva from 'konva';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
+import { getShape, getLugAbsolutePosition, getAllCanvasLugs, type CanvasLugTarget } from './shapes';
 
 export interface WireVisual {
   id: string;
+  sourceNodeId: string;
+  targetNodeId: string;
   x1: number;
   y1: number;
   x2: number;
@@ -27,74 +35,203 @@ interface Props {
 }
 
 export function WireLayer({ wires, selectedEdgeId, onSelectEdge }: Props) {
-  const { pendingWire } = useCanvasStore();
+  const { pendingWire, instances } = useCanvasStore();
+  const { removeEdge, addEdge } = useCircuitStore();
+  const graph = useCircuitStore((s) => s.graph);
+
+  // Live overrides for endpoint dragging
+  const [dragOverride, setDragOverride] = useState<{
+    edgeId: string;
+    endpoint: 'source' | 'target';
+    x: number;
+    y: number;
+    snappedLug: CanvasLugTarget | null;
+  } | null>(null);
+
+  // Custom midpoint bends
+  const [wireBends, setWireBends] = useState<Record<string, { x: number; y: number }>>({});
+
+  const allLugs = useMemo(() => getAllCanvasLugs(instances), [instances]);
+
+  function handleEndpointDragMove(
+    edgeId: string,
+    endpoint: 'source' | 'target',
+    e: Konva.KonvaEventObject<DragEvent>,
+  ) {
+    const stage = e.target.getStage();
+    if (!stage) return;
+    const dragX = e.target.x();
+    const dragY = e.target.y();
+
+    // Check magnetic snap to nearest lug (within 18px radius)
+    let closestLug: CanvasLugTarget | null = null;
+    let minDistance = 18; // Snap radius
+
+    for (const lug of allLugs) {
+      const dx = lug.x - dragX;
+      const dy = lug.y - dragY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestLug = lug;
+      }
+    }
+
+    setDragOverride({
+      edgeId,
+      endpoint,
+      x: closestLug ? closestLug.x : dragX,
+      y: closestLug ? closestLug.y : dragY,
+      snappedLug: closestLug,
+    });
+  }
+
+  function handleEndpointDragEnd(
+    wire: WireVisual,
+    endpoint: 'source' | 'target',
+  ) {
+    if (dragOverride && dragOverride.edgeId === wire.id && dragOverride.snappedLug) {
+      const existingEdge = graph.getEdges().find((e) => e.id === wire.id);
+      if (existingEdge) {
+        const newSource = endpoint === 'source' ? dragOverride.snappedLug.nodeId : existingEdge.source;
+        const newTarget = endpoint === 'target' ? dragOverride.snappedLug.nodeId : existingEdge.target;
+
+        // Re-anchor wire edge in circuit graph
+        removeEdge(wire.id);
+        addEdge({
+          ...existingEdge,
+          source: newSource,
+          target: newTarget,
+        });
+      }
+    }
+
+    setDragOverride(null);
+  }
 
   return (
     <Layer>
-      {/* Committed wires */}
+      {/* Committed Wires */}
       {wires.map((wire) => {
         const isSelected = selectedEdgeId === wire.id;
-        const midX = (wire.x1 + wire.x2) / 2;
-        const dy = wire.y2 - wire.y1;
-        const cp1X = wire.x1 + (midX - wire.x1) * 0.5;
-        const cp1Y = wire.y1 + dy * 0.15;
-        const cp2X = wire.x2 - (wire.x2 - midX) * 0.5;
-        const cp2Y = wire.y2 - dy * 0.15;
+
+        // Apply drag overrides if currently dragging an endpoint
+        let p1X = wire.x1;
+        let p1Y = wire.y1;
+        let p2X = wire.x2;
+        let p2Y = wire.y2;
+
+        if (dragOverride && dragOverride.edgeId === wire.id) {
+          if (dragOverride.endpoint === 'source') {
+            p1X = dragOverride.x;
+            p1Y = dragOverride.y;
+          } else {
+            p2X = dragOverride.x;
+            p2Y = dragOverride.y;
+          }
+        }
+
+        // Custom or calculated midpoint bend
+        const bendPos = wireBends[wire.id] ?? {
+          x: (p1X + p2X) / 2,
+          y: (p1Y + p2Y) / 2,
+        };
 
         const strokeColor = isSelected ? '#ef4444' : wire.isActive ? wire.color : '#52525b';
-        const strokeW = isSelected ? 4 : wire.isActive ? 3 : 2;
+        const strokeW = isSelected ? 4 : wire.isActive ? 3.5 : 2.5;
 
         return (
-          <Line
-            key={wire.id}
-            points={[wire.x1, wire.y1, cp1X, cp1Y, cp2X, cp2Y, wire.x2, wire.y2]}
-            tension={0.4}
-            stroke={strokeColor}
-            strokeWidth={strokeW}
-            hitStrokeWidth={12}
-            shadowColor={strokeColor}
-            shadowBlur={isSelected || wire.isActive ? 10 : 0}
-            shadowOpacity={0.8}
-            lineCap="round"
-            lineJoin="round"
-            onClick={(e) => {
-              e.cancelBubble = true;
-              onSelectEdge?.(wire.id);
-            }}
+          <Group key={wire.id}>
+            {/* Wire Path (Quadratic Bezier with Bend Point) */}
+            <Line
+              points={[p1X, p1Y, bendPos.x, bendPos.y, p2X, p2Y]}
+              tension={0.3}
+              stroke={strokeColor}
+              strokeWidth={strokeW}
+              hitStrokeWidth={14}
+              shadowColor={strokeColor}
+              shadowBlur={isSelected || wire.isActive ? 12 : 0}
+              shadowOpacity={0.8}
+              lineCap="round"
+              lineJoin="round"
+              onClick={(e) => {
+                e.cancelBubble = true;
+                onSelectEdge?.(wire.id);
+              }}
+            />
+
+            {/* DIYLC Interactive Endpoint P1 (Source Lug Handle) */}
+            <Circle
+              x={p1X}
+              y={p1Y}
+              radius={isSelected ? 6 : 4.5}
+              fill={isSelected ? '#ef4444' : wire.color}
+              stroke="#ffffff"
+              strokeWidth={1.5}
+              draggable
+              onDragMove={(e) => handleEndpointDragMove(wire.id, 'source', e)}
+              onDragEnd={() => handleEndpointDragEnd(wire, 'source')}
+              onClick={(e) => {
+                e.cancelBubble = true;
+                onSelectEdge?.(wire.id);
+              }}
+            />
+
+            {/* DIYLC Interactive Endpoint P2 (Target Lug Handle) */}
+            <Circle
+              x={p2X}
+              y={p2Y}
+              radius={isSelected ? 6 : 4.5}
+              fill={isSelected ? '#ef4444' : wire.color}
+              stroke="#ffffff"
+              strokeWidth={1.5}
+              draggable
+              onDragMove={(e) => handleEndpointDragMove(wire.id, 'target', e)}
+              onDragEnd={() => handleEndpointDragEnd(wire, 'target')}
+              onClick={(e) => {
+                e.cancelBubble = true;
+                onSelectEdge?.(wire.id);
+              }}
+            />
+
+            {/* DIYLC Midpoint Bend Handle (Visible on select/hover) */}
+            {isSelected && (
+              <Circle
+                x={bendPos.x}
+                y={bendPos.y}
+                radius={5}
+                fill="#eab308"
+                stroke="#000000"
+                strokeWidth={1}
+                draggable
+                onDragMove={(e) => {
+                  setWireBends((prev) => ({
+                    ...prev,
+                    [wire.id]: { x: e.target.x(), y: e.target.y() },
+                  }));
+                }}
+              />
+            )}
+          </Group>
+        );
+      })}
+
+      {/* Snap Halo Indicator when dragging endpoint near a lug */}
+      {dragOverride?.snappedLug && (
+        <Group x={dragOverride.snappedLug.x} y={dragOverride.snappedLug.y}>
+          <Ring
+            innerRadius={8}
+            outerRadius={14}
+            fill="#22c55e"
+            opacity={0.8}
+            shadowColor="#22c55e"
+            shadowBlur={10}
           />
-        );
-      })}
+          <Circle radius={4} fill="#ffffff" />
+        </Group>
+      )}
 
-      {/* Solder joint dots at endpoints */}
-      {wires.map((wire) => {
-        const isSelected = selectedEdgeId === wire.id;
-        const dotColor = isSelected ? '#ef4444' : wire.isActive ? wire.color : '#71717a';
-
-        return (
-          <g key={`${wire.id}-dots`}>
-            <Circle
-              x={wire.x1}
-              y={wire.y1}
-              radius={4}
-              fill={dotColor}
-              shadowColor={dotColor}
-              shadowBlur={isSelected || wire.isActive ? 6 : 0}
-              shadowOpacity={0.8}
-            />
-            <Circle
-              x={wire.x2}
-              y={wire.y2}
-              radius={4}
-              fill={dotColor}
-              shadowColor={dotColor}
-              shadowBlur={isSelected || wire.isActive ? 6 : 0}
-              shadowOpacity={0.8}
-            />
-          </g>
-        );
-      })}
-
-      {/* Pending wire (in-progress draw) */}
+      {/* Pending Wire (Currently Drawing) */}
       {pendingWire && (
         <Line
           points={[
@@ -116,32 +253,56 @@ export function WireLayer({ wires, selectedEdgeId, onSelectEdge }: Props) {
   );
 }
 
-/** Build WireVisual list from graph edges + canvas instances */
+/**
+ * Build WireVisual list from graph edges + canvas instances.
+ * Maps edge node IDs (e.g., "pickup_neck_hot") to exact shape lug coordinates.
+ */
 export function buildWireVisuals(
   edges: ReturnType<typeof useCircuitStore.getState>['graph']['getEdges'],
   instances: ReturnType<typeof useCanvasStore.getState>['instances'],
   activeEdges: Set<string>,
 ): WireVisual[] {
-  const instanceMap = new Map(instances.map((i) => [i.id, i]));
   const visuals: WireVisual[] = [];
 
   for (const edge of edges()) {
-    const sourceCompId = edge.source.split('_').slice(0, -1).join('_');
-    const targetCompId = edge.target.split('_').slice(0, -1).join('_');
-    const srcInst = instanceMap.get(sourceCompId);
-    const tgtInst = instanceMap.get(targetCompId);
-    if (!srcInst || !tgtInst) continue;
+    // Parse component ID and lug ID suffix
+    const srcMatch = parseNodeId(edge.source, instances);
+    const tgtMatch = parseNodeId(edge.target, instances);
+
+    if (!srcMatch || !tgtMatch) continue;
 
     visuals.push({
       id: edge.id,
-      x1: srcInst.x + srcInst.width / 2,
-      y1: srcInst.y + srcInst.height / 2,
-      x2: tgtInst.x + tgtInst.width / 2,
-      y2: tgtInst.y + tgtInst.height / 2,
+      sourceNodeId: edge.source,
+      targetNodeId: edge.target,
+      x1: srcMatch.x,
+      y1: srcMatch.y,
+      x2: tgtMatch.x,
+      y2: tgtMatch.y,
       color: edge.wireColor ?? '#ff8c00',
       isActive: activeEdges.has(edge.id),
     });
   }
 
   return visuals;
+}
+
+/** Helper to parse a node ID into exact absolute lug coordinates */
+function parseNodeId(
+  nodeId: string,
+  instances: ReturnType<typeof useCanvasStore.getState>['instances'],
+): { x: number; y: number } | null {
+  for (const inst of instances) {
+    if (nodeId.startsWith(inst.id)) {
+      const lugSuffix = nodeId.slice(inst.id.length);
+      const shape = getShape(inst.type);
+      const lug = shape.lugs.find((l) => l.id === lugSuffix);
+      if (lug) {
+        return getLugAbsolutePosition(shape, lug, inst.x, inst.y);
+      }
+      // Fallback to component center if lug suffix doesn't match
+      return { x: inst.x + shape.width / 2, y: inst.y + shape.height / 2 };
+    }
+  }
+  return null;
 }

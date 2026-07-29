@@ -2,13 +2,11 @@
  * Canvas Store (Zustand)
  *
  * Manages view-level state for the dual canvas:
- * component positions, zoom, pan, selection, and wiring mode.
- * Defaults to the Indie-Rock Telecaster wiring layout.
+ * component positions, zoom, pan, selection, and interactive wiring mode.
  */
 
 import { create } from 'zustand';
 import type { ComponentType } from '@graph/types';
-import { DEFAULT_COMPONENTS } from '../presets/defaultCircuit';
 
 export interface CanvasComponentInstance {
   id: string;
@@ -57,18 +55,8 @@ export interface CanvasStore {
   resetCanvas: () => void;
 }
 
-const initialCanvasInstances: CanvasComponentInstance[] = DEFAULT_COMPONENTS.map((c) => ({
-  id: c.id,
-  type: c.type,
-  label: c.label,
-  x: c.x,
-  y: c.y,
-  width: c.width,
-  height: c.height,
-}));
-
 export const useCanvasStore = create<CanvasStore>((set) => ({
-  instances: initialCanvasInstances,
+  instances: [],
   scale: 1,
   panX: 0,
   panY: 0,
@@ -110,7 +98,7 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
 
   resetCanvas: () =>
     set({
-      instances: initialCanvasInstances,
+      instances: [],
       scale: 1,
       panX: 0,
       panY: 0,

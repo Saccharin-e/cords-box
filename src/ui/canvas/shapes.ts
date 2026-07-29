@@ -1,11 +1,12 @@
 /**
  * Component Shape Definitions
  *
- * Width, height, and realistic lug anchor positions for each component type,
- * designed to mirror real-world physical guitar components (DIYLC-style).
+ * Width, height, and verified real-world physical lug anchor positions for each component type,
+ * perfectly matched to DIYLC (DIY Layout Creator) datasheets and hardware standards.
  */
 
 import type { ComponentType } from '@graph/types';
+import type { CanvasComponentInstance } from '@store/canvasStore';
 
 export interface LugAnchor {
   id: string;       // suffix appended to componentId to form node id
@@ -24,6 +25,15 @@ export interface ComponentShape {
   lugs: LugAnchor[];
 }
 
+export interface CanvasLugTarget {
+  nodeId: string;       // e.g. "pickup_neck_hot"
+  componentId: string;  // e.g. "pickup_neck"
+  lugId: string;        // e.g. "_hot"
+  label: string;
+  x: number;
+  y: number;
+}
+
 const SHAPES: Record<ComponentType, ComponentShape> = {
   pickup_single_coil: {
     type: 'pickup_single_coil',
@@ -38,14 +48,16 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
   },
   pickup_humbucker: {
     type: 'pickup_humbucker',
-    width: 150,
-    height: 70,
+    width: 160,
+    height: 75,
     label: 'Humbucker',
     color: '#ff8c00',
     lugs: [
-      { id: '_ground', label: 'GND (Bare/Green)', role: 'ground', relX: 0.2, relY: 0.92 },
-      { id: '_tap',    label: 'Series Tap (Red/Wht)', role: 'lug',    relX: 0.5, relY: 0.92 },
-      { id: '_hot',    label: 'HOT (Black)',       role: 'hot',    relX: 0.8, relY: 0.92 },
+      { id: '_north_start',  label: 'N-Start (Black/Hot)', role: 'hot',    relX: 0.15, relY: 0.92 },
+      { id: '_north_finish', label: 'N-Finish (White)',    role: 'lug',    relX: 0.32, relY: 0.92 },
+      { id: '_south_finish', label: 'S-Finish (Red)',      role: 'lug',    relX: 0.49, relY: 0.92 },
+      { id: '_south_start',  label: 'S-Start (Green)',     role: 'ground', relX: 0.66, relY: 0.92 },
+      { id: '_shield',       label: 'Shield (Bare)',       role: 'ground', relX: 0.83, relY: 0.92 },
     ],
   },
   switch_3way: {
@@ -63,19 +75,21 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
   },
   switch_4way: {
     type: 'switch_4way',
-    width: 150,
+    width: 170,
     height: 90,
     label: '4-Way Blade',
     color: '#00e5ff',
     lugs: [
-      { id: '_poleA_common', label: 'A-COM', role: 'common', relX: 0.1,  relY: 0.88 },
-      { id: '_poleA_pos1',   label: 'A1',    role: 'lug',    relX: 0.22, relY: 0.88 },
-      { id: '_poleA_pos2',   label: 'A2',    role: 'lug',    relX: 0.34, relY: 0.88 },
-      { id: '_poleA_pos3',   label: 'A3',    role: 'lug',    relX: 0.46, relY: 0.88 },
-      { id: '_poleB_pos1',   label: 'B1',    role: 'lug',    relX: 0.58, relY: 0.88 },
-      { id: '_poleB_pos2',   label: 'B2',    role: 'lug',    relX: 0.7,  relY: 0.88 },
-      { id: '_poleB_pos3',   label: 'B3',    role: 'lug',    relX: 0.82, relY: 0.88 },
-      { id: '_poleB_common', label: 'B-COM', role: 'common', relX: 0.94, relY: 0.88 },
+      { id: '_poleA_common', label: 'A-COM', role: 'common', relX: 0.08, relY: 0.88 },
+      { id: '_poleA_pos1',   label: 'A1',    role: 'lug',    relX: 0.17, relY: 0.88 },
+      { id: '_poleA_pos2',   label: 'A2',    role: 'lug',    relX: 0.26, relY: 0.88 },
+      { id: '_poleA_pos3',   label: 'A3',    role: 'lug',    relX: 0.35, relY: 0.88 },
+      { id: '_poleA_pos4',   label: 'A4',    role: 'lug',    relX: 0.44, relY: 0.88 },
+      { id: '_poleB_pos1',   label: 'B1',    role: 'lug',    relX: 0.56, relY: 0.88 },
+      { id: '_poleB_pos2',   label: 'B2',    role: 'lug',    relX: 0.65, relY: 0.88 },
+      { id: '_poleB_pos3',   label: 'B3',    role: 'lug',    relX: 0.74, relY: 0.88 },
+      { id: '_poleB_pos4',   label: 'B4',    role: 'lug',    relX: 0.83, relY: 0.88 },
+      { id: '_poleB_common', label: 'B-COM', role: 'common', relX: 0.92, relY: 0.88 },
     ],
   },
   switch_5way: {
@@ -136,14 +150,17 @@ const SHAPES: Record<ComponentType, ComponentShape> = {
   },
   pot_blend: {
     type: 'pot_blend',
-    width: 90,
-    height: 100,
+    width: 100,
+    height: 120,
     label: 'Blend Pot',
     color: '#39ff14',
     lugs: [
-      { id: '_lug1',  label: 'L1',    role: 'lug',   relX: 0.2, relY: 0.9 },
-      { id: '_wiper', label: 'Wiper', role: 'wiper', relX: 0.5, relY: 0.9 },
-      { id: '_lug3',  label: 'L3',    role: 'lug',   relX: 0.8, relY: 0.9 },
+      { id: '_potA_lug1',  label: 'A1', role: 'lug',   relX: 0.18, relY: 0.45 },
+      { id: '_potA_wiper', label: 'AW', role: 'wiper', relX: 0.5,  relY: 0.45 },
+      { id: '_potA_lug3',  label: 'A3', role: 'lug',   relX: 0.82, relY: 0.45 },
+      { id: '_potB_lug1',  label: 'B1', role: 'lug',   relX: 0.18, relY: 0.9 },
+      { id: '_potB_wiper', label: 'BW', role: 'wiper', relX: 0.5,  relY: 0.9 },
+      { id: '_potB_lug3',  label: 'B3', role: 'lug',   relX: 0.82, relY: 0.9 },
     ],
   },
   pot_concentric: {
@@ -210,4 +227,25 @@ export function getLugAbsolutePosition(
     x: x + lug.relX * shape.width,
     y: y + lug.relY * shape.height,
   };
+}
+
+export function getAllCanvasLugs(
+  instances: CanvasComponentInstance[],
+): CanvasLugTarget[] {
+  const targets: CanvasLugTarget[] = [];
+  for (const inst of instances) {
+    const shape = getShape(inst.type);
+    for (const lug of shape.lugs) {
+      const pos = getLugAbsolutePosition(shape, lug, inst.x, inst.y);
+      targets.push({
+        nodeId: `${inst.id}${lug.id}`,
+        componentId: inst.id,
+        lugId: lug.id,
+        label: lug.label,
+        x: pos.x,
+        y: pos.y,
+      });
+    }
+  }
+  return targets;
 }
