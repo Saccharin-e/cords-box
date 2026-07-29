@@ -36,7 +36,7 @@ export function ComponentLibrary() {
   const [_dragItem, setDragItem] = useState<string | null>(null);
 
   return (
-    <aside className="sidebar" id="component-library">
+    <aside className="sidebar neu-panel" id="component-library">
       <div className="sidebar__header">
         <span className="sidebar__title">Components</span>
       </div>

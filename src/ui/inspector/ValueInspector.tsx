@@ -1,6 +1,6 @@
 export function ValueInspector() {
   return (
-    <aside className="inspector" id="inspector-panel">
+    <aside className="inspector neu-panel" id="inspector-panel">
       <div className="inspector__header">
         <span className="inspector__title">Inspector</span>
       </div>
