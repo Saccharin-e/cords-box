@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { Graph } from '@graph/Graph';
 import { solveSignalPaths } from '@graph/solver';
 import type { SolverResult } from '@graph/solver';
+import { audioPipeline } from '@audio/index';
 import type { CircuitNode, CircuitEdge, Component, SwitchState } from '@graph/types';
 
 export interface CircuitStore {
@@ -94,7 +95,9 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
     set({ selectedNodeId: null, selectedEdgeId: null, selectedComponentId: null }),
 
   solve: () => {
-    const result = solveSignalPaths(get().graph);
+    const graph = get().graph;
+    const result = solveSignalPaths(graph);
+    audioPipeline.updatePipeline(graph, result);
     set({ solverResult: result });
   },
 
