@@ -126,11 +126,21 @@ export function Toolbar() {
 
         <div style={{ width: 1, height: 16, backgroundColor: '#3f3f46', margin: '0 4px' }} />
 
-        <button className="btn btn--sm" id="btn-import" onClick={handleImport}>
-          Import
+        <button
+          className="btn btn--sm"
+          id="btn-export-image"
+          onClick={() => useCanvasStore.getState().toggleExportModal()}
+          title="Export Canvas to High-Res PNG Image or PDF Document"
+          style={{ backgroundColor: 'rgba(56, 189, 248, 0.15)', borderColor: '#38bdf8', color: '#38bdf8', fontWeight: 700 }}
+        >
+          📷 Export Image/PDF
         </button>
-        <button className="btn btn--sm" id="btn-export" onClick={handleExport}>
-          Export
+
+        <button className="btn btn--sm" id="btn-import" onClick={handleImport} title="Import JSON Design">
+          JSON Load
+        </button>
+        <button className="btn btn--sm" id="btn-export" onClick={handleExport} title="Save JSON Design">
+          JSON Save
         </button>
         <button className="btn btn--sm" id="btn-reset" onClick={handleReset}>
           Reset

@@ -18,6 +18,7 @@ import { ComponentNode } from './ComponentNode';
 import { WireLayer, buildWireVisuals } from './WireLayer';
 import { GridBackground } from './GridBackground';
 import { CanvasControls } from './CanvasControls';
+import { ExportBoxOverlay } from './ExportBoxOverlay';
 import { useCanvasKeyboard } from './useCanvasKeyboard';
 import { ContextMenu, type ContextMenuState } from '@ui/contextmenu/ContextMenu';
 import { getShape } from './shapes';
@@ -257,6 +258,11 @@ export function PhysicalView({ width, height }: Props) {
               onDragEnd={(x, y) => moveInstance(inst.id, x, y)}
             />
           ))}
+        </Layer>
+
+        {/* Export Bounding Box Line Overlay Layer */}
+        <Layer x={panX} y={panY} scaleX={scale} scaleY={scale}>
+          <ExportBoxOverlay />
         </Layer>
       </Stage>
 

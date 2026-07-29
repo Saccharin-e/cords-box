@@ -42,6 +42,15 @@ export interface PendingWire {
   toY: number;
 }
 
+export interface ExportBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  padding: number;
+  aspectRatio: 'auto' | '1:1' | '16:9' | '4:3' | 'a4';
+}
+
 export interface CanvasStore {
   instances: CanvasComponentInstance[];
   scale: number;
@@ -52,6 +61,15 @@ export interface CanvasStore {
   wiringMode: boolean;
   pendingWire: PendingWire | null;
   viewMode: 'physical' | 'schematic';
+
+  // Export Settings
+  exportBox: ExportBox;
+  showExportBox: boolean;
+  isExportModalOpen: boolean;
+  setExportBox: (box: Partial<ExportBox>) => void;
+  toggleShowExportBox: () => void;
+  toggleExportModal: () => void;
+  recalculateAutoExportBox: () => void;
 
   // Retractable Panel Layout State
   isToolbarOpen: boolean;
@@ -130,6 +148,102 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   wiringMode: false,
   pendingWire: null,
   viewMode: 'physical',
+
+  // Export Settings
+  exportBox: {
+    x: 40,
+    y: 40,
+    width: 800,
+    height: 550,
+    padding: 60,
+    aspectRatio: 'auto',
+  },
+  showExportBox: false,
+  isExportModalOpen: false,
+
+  setExportBox: (box) =>
+    set((s) => ({
+      exportBox: { ...s.exportBox, ...box },
+    })),
+
+  toggleShowExportBox: () =>
+    set((s) => ({
+      showExportBox: !s.showExportBox,
+    })),
+
+  toggleExportModal: () =>
+    set((s) => {
+      const nextOpen = !s.isExportModalOpen;
+      if (nextOpen) {
+        // Automatically calculate export bounds on modal open
+        s.recalculateAutoExportBox();
+      }
+      return {
+        isExportModalOpen: nextOpen,
+        showExportBox: nextOpen ? true : s.showExportBox,
+      };
+    }),
+
+  recalculateAutoExportBox: () => {
+    const { instances, exportBox } = get();
+    const padding = exportBox.padding ?? 60;
+
+    if (instances.length === 0) {
+      set({
+        exportBox: {
+          ...exportBox,
+          x: 40,
+          y: 40,
+          width: 800,
+          height: 550,
+        },
+      });
+      return;
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const inst of instances) {
+      // Get width and height from shape lookup or default
+      const w = inst.width ?? 120;
+      const h = inst.height ?? 80;
+      minX = Math.min(minX, inst.x);
+      minY = Math.min(minY, inst.y);
+      maxX = Math.max(maxX, inst.x + w);
+      maxY = Math.max(maxY, inst.y + h);
+    }
+
+    const calcX = Math.max(0, minX - padding);
+    const calcY = Math.max(0, minY - padding);
+    let calcWidth = maxX - minX + padding * 2;
+    let calcHeight = maxY - minY + padding * 2;
+
+    // Apply aspect ratio constraints if selected
+    if (exportBox.aspectRatio === '1:1') {
+      const size = Math.max(calcWidth, calcHeight);
+      calcWidth = size;
+      calcHeight = size;
+    } else if (exportBox.aspectRatio === '16:9') {
+      calcHeight = Math.round(calcWidth * (9 / 16));
+    } else if (exportBox.aspectRatio === '4:3') {
+      calcHeight = Math.round(calcWidth * (3 / 4));
+    } else if (exportBox.aspectRatio === 'a4') {
+      calcHeight = Math.round(calcWidth / 1.414);
+    }
+
+    set({
+      exportBox: {
+        ...exportBox,
+        x: Math.round(calcX),
+        y: Math.round(calcY),
+        width: Math.round(calcWidth),
+        height: Math.round(calcHeight),
+      },
+    });
+  },
 
   // Default panels expanded
   isToolbarOpen: true,
