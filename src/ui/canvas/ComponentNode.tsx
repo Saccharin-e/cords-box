@@ -4,6 +4,7 @@
  * Supports rotation, horizontal/vertical flipping, group outlines, and multi-selection handles.
  */
 
+import { memo } from 'react';
 import { Group, Rect, Circle, Text, Line, Path } from 'react-konva';
 import type Konva from 'konva';
 import type { CanvasComponentInstance } from '@store/canvasStore';
@@ -17,9 +18,10 @@ interface Props {
   onDragEnd: (x: number, y: number) => void;
 }
 
-export function ComponentNode({ instance, isSelected, onSelect, onDragEnd }: Props) {
+export const ComponentNode = memo(function ComponentNode({ instance, isSelected, onSelect, onDragEnd }: Props) {
   const shape = getShape(instance.type);
-  const { wiringMode, startWiring } = useCanvasStore();
+  const wiringMode = useCanvasStore((s) => s.wiringMode);
+  const startWiring = useCanvasStore((s) => s.startWiring);
   const accentColor = shape.color;
 
   function handleDragStart(e: Konva.KonvaEventObject<DragEvent>) {
@@ -171,7 +173,7 @@ export function ComponentNode({ instance, isSelected, onSelect, onDragEnd }: Pro
       })}
     </Group>
   );
-}
+});
 
 /** Render photorealistic graphics for component shapes */
 function renderPhysicalComponent(

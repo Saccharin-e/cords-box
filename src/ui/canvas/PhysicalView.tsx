@@ -52,14 +52,25 @@ export function PhysicalView({ width, height }: Props) {
   // Activate global CAD keyboard shortcuts
   useCanvasKeyboard();
 
-  const {
-    instances, scale, panX, panY,
-    selectedId, selectedIds, wiringMode, pendingWire,
-    themeMode, gridStyle, gridSize,
-    addInstance, moveInstance, selectInstance,
-    setScale, setPan, cancelWiring,
-    updateWiringCursor,
-  } = useCanvasStore();
+  const instances = useCanvasStore((s) => s.instances);
+  const scale = useCanvasStore((s) => s.scale);
+  const panX = useCanvasStore((s) => s.panX);
+  const panY = useCanvasStore((s) => s.panY);
+  const selectedId = useCanvasStore((s) => s.selectedId);
+  const selectedIds = useCanvasStore((s) => s.selectedIds);
+  const wiringMode = useCanvasStore((s) => s.wiringMode);
+  const pendingWire = useCanvasStore((s) => s.pendingWire);
+  const themeMode = useCanvasStore((s) => s.themeMode);
+  const gridStyle = useCanvasStore((s) => s.gridStyle);
+  const gridSize = useCanvasStore((s) => s.gridSize);
+
+  const addInstance = useCanvasStore((s) => s.addInstance);
+  const moveInstance = useCanvasStore((s) => s.moveInstance);
+  const selectInstance = useCanvasStore((s) => s.selectInstance);
+  const setScale = useCanvasStore((s) => s.setScale);
+  const setPan = useCanvasStore((s) => s.setPan);
+  const cancelWiring = useCanvasStore((s) => s.cancelWiring);
+  const updateWiringCursor = useCanvasStore((s) => s.updateWiringCursor);
 
   const { addComponent, solverResult, selectEdge, selectedEdgeId } = useCircuitStore();
   const graph = useCircuitStore((s) => s.graph);
@@ -150,11 +161,16 @@ export function PhysicalView({ width, height }: Props) {
   );
 
   /* ─── Cursor tracking for pending wire ─────────────────────────────── */
+  const mouseRafRef = useRef<number | null>(null);
   const handleMouseMove = useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
       if (!pendingWire) return;
       const pos = stageRef.current?.getPointerPosition();
-      if (pos) updateWiringCursor((pos.x - panX) / scale, (pos.y - panY) / scale);
+      if (!pos) return;
+      if (mouseRafRef.current) cancelAnimationFrame(mouseRafRef.current);
+      mouseRafRef.current = requestAnimationFrame(() => {
+        updateWiringCursor((pos.x - panX) / scale, (pos.y - panY) / scale);
+      });
     },
     [pendingWire, panX, panY, scale, updateWiringCursor],
   );

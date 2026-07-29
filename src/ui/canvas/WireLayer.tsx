@@ -32,9 +32,13 @@ interface Props {
   onSelectEdge?: (edgeId: string) => void;
 }
 
-export function WireLayer({ wires, selectedEdgeId, onSelectEdge }: Props) {
-  const { pendingWire, instances } = useCanvasStore();
-  const { removeEdge, addEdge } = useCircuitStore();
+import { memo } from 'react';
+
+export const WireLayer = memo(function WireLayer({ wires, selectedEdgeId, onSelectEdge }: Props) {
+  const pendingWire = useCanvasStore((s) => s.pendingWire);
+  const instances = useCanvasStore((s) => s.instances);
+  const removeEdge = useCircuitStore((s) => s.removeEdge);
+  const addEdge = useCircuitStore((s) => s.addEdge);
   const graph = useCircuitStore((s) => s.graph);
 
   function handleEndpointDragEnd(
@@ -170,7 +174,7 @@ export function WireLayer({ wires, selectedEdgeId, onSelectEdge }: Props) {
       )}
     </Layer>
   );
-}
+});
 
 /**
  * Build WireVisual list from graph edges + canvas instances.

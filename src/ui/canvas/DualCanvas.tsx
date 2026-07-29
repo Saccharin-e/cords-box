@@ -1,9 +1,6 @@
 /**
  * DualCanvas — host element for Physical + Schematic Konva stages.
- *
- * Measures its own DOM size and passes width/height to the active view.
- * Manages tab switching, empty state, status bar, global keyboard shortcuts
- * (Delete / Backspace to remove components or wires), and view controls.
+ * Measures container size with throttled ResizeObserver for smooth performance.
  */
 
 import { useState, useRef, useEffect } from 'react';
@@ -20,34 +17,53 @@ export function DualCanvas() {
   const containerRef = useRef<HTMLElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
-  const {
-    instances, wiringMode, selectedId,
-    removeInstance, selectInstance, cancelWiring,
-    setPan, setScale,
-  } = useCanvasStore();
+  const instancesCount = useCanvasStore((s) => s.instances.length);
+  const wiringMode = useCanvasStore((s) => s.wiringMode);
+  const selectedId = useCanvasStore((s) => s.selectedId);
+  const selectedEdgeId = useCircuitStore((s) => s.selectedEdgeId);
+  const graph = useCircuitStore((s) => s.graph);
+  const solverResult = useCircuitStore((s) => s.solverResult);
 
-  const {
-    graph, solverResult, selectedEdgeId,
-    removeComponent, removeEdge, selectEdge,
-  } = useCircuitStore();
+  const removeInstance = useCanvasStore((s) => s.removeInstance);
+  const selectInstance = useCanvasStore((s) => s.selectInstance);
+  const cancelWiring = useCanvasStore((s) => s.cancelWiring);
+  const setPan = useCanvasStore((s) => s.setPan);
+  const setScale = useCanvasStore((s) => s.setScale);
 
-  const nodeCount = useCircuitStore((s) => s.graph.getNodes().length);
-  const edgeCount = useCircuitStore((s) => s.graph.getEdges().length);
+  const removeComponent = useCircuitStore((s) => s.removeComponent);
+  const removeEdge = useCircuitStore((s) => s.removeEdge);
+  const selectEdge = useCircuitStore((s) => s.selectEdge);
 
+  const nodeCount = graph.getNodes().length;
+  const edgeCount = graph.getEdges().length;
   const diagnostics = lintCircuit(graph);
   const hasErrors = diagnostics.some((d) => d.severity === 'error');
   const activePaths = solverResult?.activePaths.length ?? 0;
 
-  // Measure container
+  // Throttled ResizeObserver for smooth 60FPS layout updates
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
+    let rafId: number | null = null;
     const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setSize({ width, height });
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const { width, height } = entry.contentRect;
+        setSize((prev) => {
+          if (Math.abs(prev.width - width) < 2 && Math.abs(prev.height - height) < 2) {
+            return prev;
+          }
+          return { width, height };
+        });
+      });
     });
+
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      ro.disconnect();
+    };
   }, []);
 
   // Global Keyboard Shortcuts (Delete, Backspace, Escape)
@@ -85,7 +101,7 @@ export function DualCanvas() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedId, selectedEdgeId, removeInstance, removeComponent, selectInstance, removeEdge, selectEdge, cancelWiring]);
 
-  const isEmpty = instances.length === 0;
+  const isEmpty = instancesCount === 0;
 
   function handleResetView() {
     setScale(1);
