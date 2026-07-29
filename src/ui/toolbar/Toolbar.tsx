@@ -1,21 +1,40 @@
-/**
- * Toolbar — Top application bar.
- *
- * Contains brand, wiring mode toggle, export, and import actions.
- */
-
+import { useState } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
+import { audioEngine, audioPipeline } from '@audio/index';
 
 export function Toolbar() {
   const { wiringMode, startWiring: _s, cancelWiring, resetCanvas } = useCanvasStore();
   const { exportJSON, importJSON, reset: resetGraph } = useCircuitStore();
+  const [audioActive, setAudioActive] = useState(false);
+
+  async function handleAudioToggle() {
+    if (!audioActive) {
+      await audioEngine.initialize();
+      await audioEngine.resume();
+      setAudioActive(true);
+      // Trigger initial graph solve to sync audio pipeline
+      useCircuitStore.getState().solve();
+    } else {
+      await audioEngine.suspend();
+      setAudioActive(false);
+    }
+  }
+
+  function handlePluck() {
+    if (!audioActive) {
+      void handleAudioToggle().then(() => {
+        audioPipeline.triggerPluck();
+      });
+    } else {
+      audioPipeline.triggerPluck();
+    }
+  }
 
   function handleWiringToggle() {
     if (wiringMode) {
       cancelWiring();
     }
-    // Wiring starts from lug clicks on the canvas
   }
 
   function handleExport() {
@@ -56,6 +75,24 @@ export function Toolbar() {
       </div>
 
       <nav className="toolbar__actions">
+        <button
+          className={`btn btn--sm ${audioActive ? 'btn--primary' : ''}`}
+          id="btn-audio-power"
+          onClick={handleAudioToggle}
+          title="Toggle Web Audio Engine"
+        >
+          {audioActive ? '🔊 Audio ON' : '🔈 Audio OFF'}
+        </button>
+
+        <button
+          className="btn btn--sm"
+          id="btn-pluck"
+          onClick={handlePluck}
+          title="Pluck guitar string to test audio DSP pipeline"
+        >
+          🎵 Pluck String
+        </button>
+
         <button className="btn btn--sm" id="btn-reset" onClick={handleReset}>
           Reset
         </button>
@@ -77,3 +114,4 @@ export function Toolbar() {
     </header>
   );
 }
+
