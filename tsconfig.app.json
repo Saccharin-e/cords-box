@@ -2,20 +2,18 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "es2023",
-    "ignoreDeprecations": "6.0",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "esnext",
     "types": ["vite/client"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@graph/*": ["src/graph/*"],
-      "@audio/*": ["src/audio/*"],
-      "@store/*": ["src/store/*"],
-      "@ui/*": ["src/ui/*"],
-      "@lint/*": ["src/lint/*"]
+      "@/*": ["./src/*"],
+      "@graph/*": ["./src/graph/*"],
+      "@audio/*": ["./src/audio/*"],
+      "@store/*": ["./src/store/*"],
+      "@ui/*": ["./src/ui/*"],
+      "@lint/*": ["./src/lint/*"]
     },
 
     /* Bundler mode */

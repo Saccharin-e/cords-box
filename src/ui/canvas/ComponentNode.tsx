@@ -27,7 +27,12 @@ export function ComponentNode({ instance, isSelected, onSelect, onDragEnd }: Pro
   const { wiringMode, startWiring } = useCanvasStore();
   const accentColor = shape.color;
 
+  function handleDragStart(e: Konva.KonvaEventObject<DragEvent>) {
+    e.cancelBubble = true;
+  }
+
   function handleDragEnd(e: Konva.KonvaEventObject<DragEvent>) {
+    e.cancelBubble = true;
     onDragEnd(e.target.x(), e.target.y());
   }
 
@@ -37,6 +42,7 @@ export function ComponentNode({ instance, isSelected, onSelect, onDragEnd }: Pro
       y={instance.y}
       draggable={!wiringMode}
       onClick={onSelect}
+      onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
       {/* Drop Shadow */}
