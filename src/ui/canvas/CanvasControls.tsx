@@ -34,47 +34,13 @@ export function CanvasControls() {
 
   const hasSelection = selectedIds.length > 0;
 
-  if (!isControlsOpen) {
-    return (
-      <div
-        onClick={toggleControls}
-        style={{
-          position: 'absolute',
-          bottom: 40,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 50,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '4px 10px',
-          backgroundColor: 'rgba(24, 24, 27, 0.92)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(63, 63, 70, 0.6)',
-          borderRadius: 20,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-          color: '#38bdf8',
-          fontSize: 11,
-          fontWeight: 600,
-          cursor: 'pointer',
-          transition: 'all 0.2s ease',
-        }}
-        title="Expand Floating CAD Controls"
-      >
-        <IconPalette color="#38bdf8" />
-        <span>CAD Tools</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-          <polyline points="18 15 12 9 6 15" />
-        </svg>
-      </div>
-    );
-  }
+  if (!isControlsOpen) return null;
 
   return (
     <div
       style={{
         position: 'absolute',
-        bottom: 36,
+        bottom: 16,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 50,

@@ -2,11 +2,20 @@ import { useState } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { audioEngine, audioPipeline } from '@audio/index';
+import { lintCircuit } from '@lint/linter';
 
 export function Toolbar() {
-  const { wiringMode, cancelWiring, resetCanvas, isToolbarOpen, toggleToolbar } = useCanvasStore();
-  const { exportJSON, importJSON, reset: resetGraph } = useCircuitStore();
+  const {
+    wiringMode, cancelWiring, resetCanvas,
+    isSidebarOpen, toggleSidebar,
+    isInspectorOpen, toggleInspector,
+    isControlsOpen, toggleControls,
+  } = useCanvasStore();
+
+  const { exportJSON, importJSON, reset: resetGraph, graph } = useCircuitStore();
   const [audioActive, setAudioActive] = useState(false);
+
+  const diagnostics = lintCircuit(graph);
 
   async function handleAudioToggle() {
     if (!audioActive) {
@@ -65,80 +74,29 @@ export function Toolbar() {
     resetGraph();
   }
 
-  if (!isToolbarOpen) {
-    return (
-      <>
-        {/* Retracted container claims 0px in grid layout */}
-        <header
-          className="toolbar"
-          id="toolbar"
-          style={{
-            height: 0,
-            minHeight: 0,
-            padding: 0,
-            margin: 0,
-            overflow: 'hidden',
-            border: 'none',
-            opacity: 0,
-            transition: 'all 0.25s ease',
-          }}
-        />
-
-        {/* Floating Handle Tab on Top Edge */}
-        <button
-          onClick={toggleToolbar}
-          style={{
-            position: 'absolute',
-            top: 12,
-            left: 12,
-            zIndex: 60,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '4px 10px',
-            backgroundColor: 'rgba(24, 24, 27, 0.92)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(63, 63, 70, 0.6)',
-            borderRadius: 16,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            color: '#ff8c00',
-            fontSize: 11,
-            fontWeight: 700,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-          title="Expand Main Toolbar & Audio Controls"
-        >
-          <div style={{
-            width: 16,
-            height: 16,
-            borderRadius: 4,
-            backgroundColor: '#0a0a0c',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 8,
-            color: '#fff',
-            fontWeight: 800,
-          }}>CB</div>
-          <span>CORDS BOX</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
-      </>
-    );
-  }
-
   return (
-    <header className="toolbar" id="toolbar" style={{ transition: 'all 0.25s ease' }}>
-      <div className="toolbar__brand">
-        <div className="toolbar__logo">CB</div>
-        <span className="toolbar__title">Cords Box</span>
-        <span className="toolbar__subtitle">Indie-Rock Telecaster Wiring Sandbox</span>
+    <header className="toolbar" id="toolbar" style={{ gridArea: 'toolbar', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px' }}>
+      {/* Left Section: Brand Logo + Sidebar Toggle */}
+      <div className="toolbar__brand" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="toolbar__logo">CB</div>
+          <span className="toolbar__title" style={{ fontWeight: 800 }}>Cords Box</span>
+        </div>
+
+        {/* Toggle Component Library Sidebar */}
+        <button
+          className={`btn btn--sm ${isSidebarOpen ? 'btn--primary' : ''}`}
+          onClick={toggleSidebar}
+          title="Toggle Component Library Panel"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
+        >
+          <span>🧰</span>
+          <span>Library</span>
+        </button>
       </div>
 
-      <nav className="toolbar__actions">
+      {/* Center Section: Core Workbench Actions */}
+      <nav className="toolbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button
           className={`btn btn--sm ${audioActive ? 'btn--primary' : ''}`}
           id="btn-audio-power"
@@ -157,15 +115,6 @@ export function Toolbar() {
           🎵 Pluck String
         </button>
 
-        <button className="btn btn--sm" id="btn-reset" onClick={handleReset}>
-          Reset
-        </button>
-        <button className="btn btn--sm" id="btn-import" onClick={handleImport}>
-          Import
-        </button>
-        <button className="btn btn--sm" id="btn-export" onClick={handleExport}>
-          Export
-        </button>
         <button
           className={`btn btn--sm ${wiringMode ? 'btn--primary' : ''}`}
           id="btn-wire"
@@ -175,31 +124,54 @@ export function Toolbar() {
           {wiringMode ? '⚡ Wiring…' : '⚡ Wire'}
         </button>
 
-        {/* Retract Header Button */}
-        <button
-          onClick={toggleToolbar}
-          style={toggleButtonStyle}
-          title="Collapse Top Toolbar"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <polyline points="18 15 12 9 6 15" />
-          </svg>
+        <div style={{ width: 1, height: 16, backgroundColor: '#3f3f46', margin: '0 4px' }} />
+
+        <button className="btn btn--sm" id="btn-import" onClick={handleImport}>
+          Import
+        </button>
+        <button className="btn btn--sm" id="btn-export" onClick={handleExport}>
+          Export
+        </button>
+        <button className="btn btn--sm" id="btn-reset" onClick={handleReset}>
+          Reset
         </button>
       </nav>
+
+      {/* Right Section: CAD Controls Toggle & Value Inspector Toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Toggle Floating CAD Controls Bar */}
+        <button
+          className={`btn btn--sm ${isControlsOpen ? 'btn--primary' : ''}`}
+          onClick={toggleControls}
+          title="Toggle Floating CAD Tools (Themes, Grid, Snap, Rotate, Copy/Paste)"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
+        >
+          <span>⚙️</span>
+          <span>CAD Tools</span>
+        </button>
+
+        {/* Toggle Value Inspector Panel */}
+        <button
+          className={`btn btn--sm ${isInspectorOpen ? 'btn--primary' : ''}`}
+          onClick={toggleInspector}
+          title="Toggle Component Inspector Panel"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
+        >
+          <span>️</span>
+          <span>Inspector</span>
+          {diagnostics.length > 0 && (
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                backgroundColor: '#f59e0b',
+                boxShadow: '0 0 6px #f59e0b',
+              }}
+            />
+          )}
+        </button>
+      </div>
     </header>
   );
 }
-
-const toggleButtonStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 26,
-  height: 26,
-  backgroundColor: '#27272a',
-  color: '#a1a1aa',
-  border: '1px solid #3f3f46',
-  borderRadius: 6,
-  cursor: 'pointer',
-  transition: 'all 0.15s ease',
-};
