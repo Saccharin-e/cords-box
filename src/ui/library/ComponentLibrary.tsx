@@ -63,7 +63,7 @@ export function ComponentLibrary() {
           onClick={toggleSidebar}
           style={{
             position: 'absolute',
-            top: isToolbarOpen ? 72 : 12,
+            top: isToolbarOpen ? 12 : 52,
             left: 12,
             zIndex: 60,
             display: 'flex',

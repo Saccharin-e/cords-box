@@ -20,7 +20,6 @@ export function ValueInspector() {
   const selectedId = useCanvasStore((s) => s.selectedId);
   const instances = useCanvasStore((s) => s.instances);
   const isInspectorOpen = useCanvasStore((s) => s.isInspectorOpen);
-  const isToolbarOpen = useCanvasStore((s) => s.isToolbarOpen);
   const toggleInspector = useCanvasStore((s) => s.toggleInspector);
 
   const graph = useCircuitStore((s) => s.graph);
@@ -64,7 +63,7 @@ export function ValueInspector() {
           onClick={toggleInspector}
           style={{
             position: 'absolute',
-            top: isToolbarOpen ? 72 : 12,
+            top: 12,
             right: 12,
             zIndex: 60,
             display: 'flex',

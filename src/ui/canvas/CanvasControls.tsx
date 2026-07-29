@@ -74,7 +74,7 @@ export function CanvasControls() {
     <div
       style={{
         position: 'absolute',
-        bottom: 40,
+        bottom: 36,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 50,
@@ -82,7 +82,10 @@ export function CanvasControls() {
         alignItems: 'center',
         gap: 8,
         padding: '6px 12px',
-        backgroundColor: 'rgba(24, 24, 27, 0.92)',
+        maxWidth: 'calc(100% - 32px)',
+        overflowX: 'auto',
+        boxSizing: 'border-box',
+        backgroundColor: 'rgba(24, 24, 27, 0.94)',
         backdropFilter: 'blur(12px)',
         border: '1px solid rgba(63, 63, 70, 0.6)',
         borderRadius: 12,
@@ -90,6 +93,7 @@ export function CanvasControls() {
         color: '#e4e4e7',
         fontSize: 12,
         fontFamily: "'Inter', sans-serif",
+        whiteSpace: 'nowrap',
       }}
     >
       {/* ── Theme Mode Selector ── */}
