@@ -53,10 +53,11 @@ export function PhysicalView({ width, height }: Props) {
   } = useCanvasStore();
 
   const { addComponent, solverResult } = useCircuitStore();
-  const graphEdges = useCircuitStore((s) => s.graph.getEdges.bind(s.graph));
+  const graph = useCircuitStore((s) => s.graph);
 
   const activeEdges = solverResult?.activeEdges ?? new Set<string>();
-  const wires = buildWireVisuals(graphEdges, instances, activeEdges);
+  // Read edges directly from graph instance — stable per store update
+  const wires = buildWireVisuals(() => graph.getEdges(), instances, activeEdges);
 
   /* ─── Drop from sidebar ────────────────────────────────────────────── */
   const handleDrop = useCallback(

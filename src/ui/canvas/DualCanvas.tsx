@@ -22,14 +22,15 @@ export function DualCanvas() {
 
   const instances = useCanvasStore((s) => s.instances);
   const wiringMode = useCanvasStore((s) => s.wiringMode);
-  const graphEdges = useCircuitStore((s) => s.graph.getEdges());
   const graph = useCircuitStore((s) => s.graph);
   const solverResult = useCircuitStore((s) => s.solverResult);
+  // Read stable primitive counts — avoid calling graph methods inside selectors
+  const nodeCount = useCircuitStore((s) => s.graph.getNodes().length);
+  const edgeCount = useCircuitStore((s) => s.graph.getEdges().length);
 
   const diagnostics = lintCircuit(graph);
   const hasErrors = diagnostics.some((d) => d.severity === 'error');
-  const nodeCount = useCircuitStore((s) => s.graph.getNodes().length);
-  const edgeCount = graphEdges.length;
+  const activePaths = solverResult?.activePaths.length ?? 0;
 
   // Measure container
   useEffect(() => {
@@ -44,7 +45,6 @@ export function DualCanvas() {
   }, []);
 
   const isEmpty = instances.length === 0;
-  const activePaths = solverResult?.activePaths.length ?? 0;
 
   return (
     <section className="canvas-area" ref={containerRef} id="canvas-area">

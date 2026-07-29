@@ -27,12 +27,12 @@ export function SchematicView({ width, height }: Props) {
     selectedId, selectInstance, setScale,
   } = useCanvasStore();
 
-  const graphEdges = useCircuitStore((s) => s.graph.getEdges.bind(s.graph));
+  const graph = useCircuitStore((s) => s.graph);
   const solverResult = useCircuitStore((s) => s.solverResult);
   const activeEdges = solverResult?.activeEdges ?? new Set<string>();
   const activeNodes = solverResult?.activeNodes ?? new Set<string>();
 
-  const wires = buildWireVisuals(graphEdges, instances, activeEdges);
+  const wires = buildWireVisuals(() => graph.getEdges(), instances, activeEdges);
 
   const handleWheel = useCallback(
     (e: Konva.KonvaEventObject<WheelEvent>) => {
