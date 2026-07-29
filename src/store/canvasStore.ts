@@ -3,14 +3,15 @@
  *
  * Manages view-level state for the dual canvas:
  * component positions, zoom, pan, selection, and wiring mode.
- * Separated from circuitStore to keep graph logic pure.
+ * Defaults to the Indie-Rock Telecaster wiring layout.
  */
 
 import { create } from 'zustand';
 import type { ComponentType } from '@graph/types';
+import { DEFAULT_COMPONENTS } from '../presets/defaultCircuit';
 
 export interface CanvasComponentInstance {
-  id: string;           // matches Component.id in circuitStore
+  id: string;
   type: ComponentType;
   label: string;
   x: number;
@@ -21,33 +22,27 @@ export interface CanvasComponentInstance {
 
 export interface WireAnchor {
   componentId: string;
-  lugId: string;       // node id in graph
+  lugId: string;
   x: number;
   y: number;
 }
 
 export interface PendingWire {
   from: WireAnchor;
-  toX: number;         // current cursor position during draw
+  toX: number;
   toY: number;
 }
 
 export interface CanvasStore {
-  // Components placed on canvas
   instances: CanvasComponentInstance[];
-  // Zoom & pan
   scale: number;
   panX: number;
   panY: number;
-  // Selection
   selectedId: string | null;
-  // Wiring mode
   wiringMode: boolean;
   pendingWire: PendingWire | null;
-  // View mode
   viewMode: 'physical' | 'schematic';
 
-  // Actions
   addInstance: (inst: CanvasComponentInstance) => void;
   moveInstance: (id: string, x: number, y: number) => void;
   removeInstance: (id: string) => void;
@@ -62,8 +57,18 @@ export interface CanvasStore {
   resetCanvas: () => void;
 }
 
+const initialCanvasInstances: CanvasComponentInstance[] = DEFAULT_COMPONENTS.map((c) => ({
+  id: c.id,
+  type: c.type,
+  label: c.label,
+  x: c.x,
+  y: c.y,
+  width: c.width,
+  height: c.height,
+}));
+
 export const useCanvasStore = create<CanvasStore>((set) => ({
-  instances: [],
+  instances: initialCanvasInstances,
   scale: 1,
   panX: 0,
   panY: 0,
@@ -105,7 +110,7 @@ export const useCanvasStore = create<CanvasStore>((set) => ({
 
   resetCanvas: () =>
     set({
-      instances: [],
+      instances: initialCanvasInstances,
       scale: 1,
       panX: 0,
       panY: 0,

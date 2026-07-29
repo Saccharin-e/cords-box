@@ -3,6 +3,7 @@
  *
  * Single source of truth for the circuit graph state.
  * Subscribed by both UI canvas and audio engine layers.
+ * Defaults to the Indie-Rock Telecaster wiring harness.
  */
 
 import { create } from 'zustand';
@@ -11,6 +12,26 @@ import { solveSignalPaths } from '@graph/solver';
 import type { SolverResult } from '@graph/solver';
 import { audioPipeline } from '@audio/index';
 import type { CircuitNode, CircuitEdge, Component, SwitchState } from '@graph/types';
+import { DEFAULT_COMPONENTS, DEFAULT_EDGES } from '../presets/defaultCircuit';
+
+function createDefaultGraph(): { graph: Graph; solverResult: SolverResult } {
+  const g = new Graph('Guitar');
+  for (const c of DEFAULT_COMPONENTS) {
+    g.addComponent({
+      id: c.id,
+      type: c.type,
+      label: c.label,
+      value: c.value,
+    });
+  }
+  for (const e of DEFAULT_EDGES) {
+    g.addEdge(e);
+  }
+  const result = solveSignalPaths(g);
+  return { graph: g, solverResult: result };
+}
+
+const initialCircuit = createDefaultGraph();
 
 export interface CircuitStore {
   graph: Graph;
@@ -44,8 +65,8 @@ export interface CircuitStore {
 }
 
 export const useCircuitStore = create<CircuitStore>((set, get) => ({
-  graph: new Graph('Guitar'),
-  solverResult: null,
+  graph: initialCircuit.graph,
+  solverResult: initialCircuit.solverResult,
   selectedNodeId: null,
   selectedEdgeId: null,
   selectedComponentId: null,
@@ -109,7 +130,8 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
     get().solve();
   },
   reset: () => {
-    set({ graph: new Graph('Guitar'), solverResult: null });
+    const def = createDefaultGraph();
+    set({ graph: def.graph, solverResult: def.solverResult });
     get().clearSelection();
   },
 }));

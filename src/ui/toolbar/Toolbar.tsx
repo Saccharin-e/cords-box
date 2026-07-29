@@ -2,11 +2,10 @@ import { useState } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { audioEngine, audioPipeline } from '@audio/index';
-import { PRESETS, type PresetDefinition } from '../../presets/presetLibrary';
 
 export function Toolbar() {
-  const { wiringMode, cancelWiring, resetCanvas, addInstance } = useCanvasStore();
-  const { exportJSON, importJSON, reset: resetGraph, addComponent, addEdge, solve } = useCircuitStore();
+  const { wiringMode, cancelWiring, resetCanvas } = useCanvasStore();
+  const { exportJSON, importJSON, reset: resetGraph } = useCircuitStore();
   const [audioActive, setAudioActive] = useState(false);
 
   async function handleAudioToggle() {
@@ -43,7 +42,7 @@ export function Toolbar() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'circuit.json';
+    a.download = 'indie-tele-harness.json';
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -66,74 +65,15 @@ export function Toolbar() {
     resetGraph();
   }
 
-  function handleLoadPreset(preset: PresetDefinition) {
-    resetCanvas();
-    resetGraph();
-
-    for (const comp of preset.components) {
-      addInstance({
-        id: comp.id,
-        type: comp.type,
-        label: comp.label,
-        x: comp.x,
-        y: comp.y,
-        width: comp.width,
-        height: comp.height,
-      });
-
-      addComponent({
-        id: comp.id,
-        type: comp.type,
-        label: comp.label,
-        value: comp.value,
-      });
-    }
-
-    for (const edge of preset.edges) {
-      addEdge(edge);
-    }
-
-    solve();
-  }
-
   return (
     <header className="toolbar" id="toolbar">
       <div className="toolbar__brand">
         <div className="toolbar__logo">CB</div>
         <span className="toolbar__title">Cords Box</span>
-        <span className="toolbar__subtitle">Guitar Wiring Sandbox</span>
+        <span className="toolbar__subtitle">Indie-Rock Telecaster Wiring Sandbox</span>
       </div>
 
       <nav className="toolbar__actions">
-        {/* Preset Selector Dropdown */}
-        <select
-          className="btn btn--sm"
-          style={{
-            backgroundColor: '#18181b',
-            color: '#e4e4e7',
-            borderColor: '#3f3f46',
-            cursor: 'pointer',
-            paddingRight: 10,
-          }}
-          defaultValue=""
-          onChange={(e) => {
-            const found = PRESETS.find((p) => p.id === e.target.value);
-            if (found) {
-              handleLoadPreset(found);
-              e.target.value = '';
-            }
-          }}
-        >
-          <option value="" disabled>
-            🎸 Load Harness Preset…
-          </option>
-          {PRESETS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-
         <button
           className={`btn btn--sm ${audioActive ? 'btn--primary' : ''}`}
           id="btn-audio-power"
