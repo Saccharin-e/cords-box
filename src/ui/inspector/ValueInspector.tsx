@@ -53,10 +53,11 @@ export function ValueInspector() {
           transition: 'all 0.25s ease',
         }}
       >
+        {/* Click arrow to expand left into workspace */}
         <button
           onClick={toggleInspector}
           style={toggleButtonStyle}
-          title="Expand Value Inspector Panel"
+          title="Expand Inspector Panel"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <polyline points="15 18 9 12 15 6" />
@@ -66,18 +67,45 @@ export function ValueInspector() {
         <div
           onClick={toggleInspector}
           style={{
-            writingMode: 'vertical-rl',
-            textTransform: 'uppercase',
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: '0.15em',
-            color: '#a1a1aa',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 16,
+            marginTop: 8,
             cursor: 'pointer',
-            marginTop: 12,
           }}
-          title="Expand Inspector"
+          title="Expand Inspector Panel"
         >
-          INSPECTOR {component ? `• ${component.label}` : ''}
+          <div style={{ fontSize: 18 }} title="Component Inspector">🎛️</div>
+
+          {/* Corrected orientation: reads naturally top-to-bottom */}
+          <div
+            style={{
+              writingMode: 'vertical-rl',
+              transform: 'rotate(180deg)',
+              textTransform: 'uppercase',
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: '0.15em',
+              color: '#a1a1aa',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            INSPECTOR {component ? `• ${component.label}` : ''}
+          </div>
+
+          {diagnostics.length > 0 && (
+            <div
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: '#f59e0b',
+                boxShadow: '0 0 8px #f59e0b',
+              }}
+              title={`${diagnostics.length} wiring warning(s)`}
+            />
+          )}
         </div>
       </aside>
     );
@@ -87,6 +115,7 @@ export function ValueInspector() {
     <aside className="inspector neu-panel" id="inspector-panel" style={{ transition: 'all 0.25s ease' }}>
       <div className="inspector__header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span className="inspector__title">Inspector</span>
+        {/* Click arrow to collapse right off-screen */}
         <button
           onClick={toggleInspector}
           style={toggleButtonStyle}
