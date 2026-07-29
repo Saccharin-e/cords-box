@@ -1,12 +1,12 @@
 /**
  * PhysicalView — Konva Stage for the guitar-body layout view.
  *
- * Implements standard canvas interactions:
- * - Stage Panning: Click & drag background or middle mouse button
- * - Zoom: Mouse wheel scrolls towards pointer position
- * - Component Dragging & Selection
- * - Wire drawing via lug click-to-click
- * - Right-Click Context Menu for deletion and options
+ * Implements professional CAD canvas features:
+ * - Floating CAD Control Bar (Themes, Grid Styles, Snap-to-Grid, Rotate, Flip, Group, Copy/Paste, Undo/Redo)
+ * - Canvas themes: Dark, Light, Blueprint, Vintage Paper
+ * - Grid styles: Dot Matrix, Line Grid, Crosshatch, Isometric, None
+ * - Keyboard shortcuts: Ctrl+C, Ctrl+V, Ctrl+D, Ctrl+A, Ctrl+Z, R, H, V, Delete, Arrow keys
+ * - Multi-selection (Shift-click)
  */
 
 import { useRef, useCallback, useState } from 'react';
@@ -16,6 +16,9 @@ import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { ComponentNode } from './ComponentNode';
 import { WireLayer, buildWireVisuals } from './WireLayer';
+import { GridBackground } from './GridBackground';
+import { CanvasControls } from './CanvasControls';
+import { useCanvasKeyboard } from './useCanvasKeyboard';
 import { ContextMenu, type ContextMenuState } from '@ui/contextmenu/ContextMenu';
 import { getShape } from './shapes';
 import type { ComponentType } from '@graph/types';
@@ -46,9 +49,13 @@ export function PhysicalView({ width, height }: Props) {
   const stageRef = useRef<Konva.Stage>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
+  // Activate global CAD keyboard shortcuts
+  useCanvasKeyboard();
+
   const {
     instances, scale, panX, panY,
-    selectedId, wiringMode, pendingWire,
+    selectedId, selectedIds, wiringMode, pendingWire,
+    themeMode, gridStyle, gridSize,
     addInstance, moveInstance, selectInstance,
     setScale, setPan, cancelWiring,
     updateWiringCursor,
@@ -173,13 +180,18 @@ export function PhysicalView({ width, height }: Props) {
   return (
     <div
       style={{
+        position: 'relative',
         width,
         height,
         cursor: wiringMode ? 'crosshair' : 'grab',
+        overflow: 'hidden',
       }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
     >
+      {/* Floating CAD Options Toolbar */}
+      <CanvasControls />
+
       <Stage
         ref={stageRef}
         width={width}
@@ -195,6 +207,18 @@ export function PhysicalView({ width, height }: Props) {
         onDragEnd={handleStageDragEnd}
         onContextMenu={handleContextMenu}
       >
+        {/* Dynamic Grid Background Layer */}
+        <GridBackground
+          width={width}
+          height={height}
+          themeMode={themeMode}
+          gridStyle={gridStyle}
+          gridSize={gridSize}
+          scale={scale}
+          panX={panX}
+          panY={panY}
+        />
+
         {/* Wire layer */}
         <WireLayer
           wires={wires}
@@ -208,9 +232,10 @@ export function PhysicalView({ width, height }: Props) {
             <ComponentNode
               key={inst.id}
               instance={inst}
-              isSelected={selectedId === inst.id}
-              onSelect={() => {
-                selectInstance(inst.id);
+              isSelected={selectedIds.includes(inst.id)}
+              onSelect={(evt) => {
+                const multiSelect = evt.evt.shiftKey;
+                selectInstance(inst.id, multiSelect);
                 selectEdge(null);
               }}
               onDragEnd={(x, y) => moveInstance(inst.id, x, y)}

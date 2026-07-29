@@ -3,6 +3,7 @@
  *
  * Width, height, and verified real-world physical lug anchor positions for each component type,
  * perfectly matched to DIYLC (DIY Layout Creator) datasheets and hardware standards.
+ * Supports rotation and flipping transformations.
  */
 
 import type { ComponentType } from '@graph/types';
@@ -222,10 +223,27 @@ export function getLugAbsolutePosition(
   lug: LugAnchor,
   x: number,
   y: number,
+  rotation = 0,
+  flippedH = false,
+  flippedV = false,
 ): { x: number; y: number } {
+  let dx = (lug.relX - 0.5) * shape.width;
+  let dy = (lug.relY - 0.5) * shape.height;
+
+  if (flippedH) dx = -dx;
+  if (flippedV) dy = -dy;
+
+  if (rotation !== 0) {
+    const rad = (rotation * Math.PI) / 180;
+    const rx = dx * Math.cos(rad) - dy * Math.sin(rad);
+    const ry = dx * Math.sin(rad) + dy * Math.cos(rad);
+    dx = rx;
+    dy = ry;
+  }
+
   return {
-    x: x + lug.relX * shape.width,
-    y: y + lug.relY * shape.height,
+    x: x + shape.width / 2 + dx,
+    y: y + shape.height / 2 + dy,
   };
 }
 
@@ -236,7 +254,15 @@ export function getAllCanvasLugs(
   for (const inst of instances) {
     const shape = getShape(inst.type);
     for (const lug of shape.lugs) {
-      const pos = getLugAbsolutePosition(shape, lug, inst.x, inst.y);
+      const pos = getLugAbsolutePosition(
+        shape,
+        lug,
+        inst.x,
+        inst.y,
+        inst.rotation ?? 0,
+        inst.flippedH ?? false,
+        inst.flippedV ?? false,
+      );
       targets.push({
         nodeId: `${inst.id}${lug.id}`,
         componentId: inst.id,
