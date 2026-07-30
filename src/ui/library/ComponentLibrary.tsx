@@ -6,7 +6,7 @@ interface ComponentItem {
   id: string;
   name: string;
   description: string;
-  category: 'pickup' | 'switch' | 'pot' | 'passive' | 'output';
+  category: 'pickup' | 'switch' | 'pot' | 'passive' | 'doc' | 'shapes' | 'output';
 }
 
 const COMPONENTS: ComponentItem[] = [
@@ -17,76 +17,142 @@ const COMPONENTS: ComponentItem[] = [
     category: 'pickup',
   },
   {
+    id: 'pickup_p90',
+    name: 'P-90 Soapbar',
+    description: 'Vintage high-output P-90',
+    category: 'pickup',
+  },
+  {
     id: 'pickup_hb',
     name: 'Humbucker',
-    description: 'Dual-coil humbucker',
+    description: 'Dual-coil noise-canceling pickup',
     category: 'pickup',
   },
   {
     id: 'switch_3way',
     name: '3-Way Toggle',
-    description: '1 pole, 3 positions',
+    description: 'Standard 3-way pickup selector',
     category: 'switch',
   },
   {
     id: 'switch_4way',
     name: '4-Way Switch',
-    description: '2 poles, 4 positions',
+    description: 'Series / parallel 4-way blade switch',
     category: 'switch',
   },
   {
     id: 'switch_5way',
     name: '5-Way Blade',
-    description: '2 poles, 5 positions',
+    description: 'Strat-style 5-position switch',
     category: 'switch',
   },
   {
     id: 'switch_dpdt',
-    name: 'DPDT Push-Pull',
-    description: 'Phase reversal switch',
+    name: 'DPDT Mini Switch',
+    description: '2-position DPDT toggle switch',
     category: 'switch',
   },
   {
     id: 'pot_volume',
     name: 'Volume Pot',
-    description: '250K–500K range',
+    description: '250K / 500K audio taper pot',
     category: 'pot',
   },
-  { id: 'pot_tone', name: 'Tone Pot', description: 'With tone cap', category: 'pot' },
+  { id: 'pot_tone', name: 'Tone Pot', description: 'Tone control potentiometer', category: 'pot' },
+  {
+    id: 'pot_pushpull',
+    name: 'Push-Pull Pot',
+    description: 'Potentiometer with DPDT switch',
+    category: 'pot',
+  },
   {
     id: 'pot_blend',
     name: 'Blend Pot',
-    description: 'Pickup blend control',
+    description: 'Center-detent pickup blend pot',
     category: 'pot',
   },
   {
     id: 'pot_concentric',
-    name: 'Concentric Pot',
-    description: 'Dual stacked control',
+    name: 'Stacked Dual Pot',
+    description: 'Concentric dual control pot',
     category: 'pot',
+  },
+  {
+    id: 'battery_9v',
+    name: '9V Active Battery',
+    description: 'Power supply for active pickups / onboard EQ',
+    category: 'passive',
+  },
+  {
+    id: 'ground_terminal',
+    name: 'Star Ground Lug',
+    description: 'Centralized star grounding point',
+    category: 'passive',
+  },
+  {
+    id: 'treble_bleed',
+    name: 'Treble Bleed Mod',
+    description: 'High-frequency retention module',
+    category: 'passive',
   },
   {
     id: 'wire',
     name: 'Hookup Wire',
-    description: 'Standalone adjustable wire',
+    description: 'Customizable canvas wire segment',
     category: 'passive',
   },
   {
     id: 'capacitor',
     name: 'Capacitor',
-    description: 'Tone / treble bleed',
+    description: 'Orange Drop / Film tone cap',
     category: 'passive',
   },
   {
     id: 'resistor',
     name: 'Resistor',
-    description: 'Signal attenuation',
+    description: 'Resistor / bleed resistor',
     category: 'passive',
   },
   {
+    id: 'text_box',
+    name: 'Custom Text Note',
+    description: 'Editable text box for notes & instructions',
+    category: 'doc',
+  },
+  {
+    id: 'project_card',
+    name: 'Project Info Card',
+    description: 'Title block with author, model, date & specs',
+    category: 'doc',
+  },
+  {
+    id: 'shape_rect',
+    name: 'Shielding / Cavity Box',
+    description: 'Custom rectangle for shielding foil or cavity bounds',
+    category: 'shapes',
+  },
+  {
+    id: 'shape_circle',
+    name: 'Drill Hole / Route Circle',
+    description: 'Custom circle for drill holes or pickup routes',
+    category: 'shapes',
+  },
+  {
+    id: 'shape_line',
+    name: 'Guide Line',
+    description: 'Dashed or solid alignment line segment',
+    category: 'shapes',
+  },
+  {
+    id: 'shape_arrow',
+    name: 'Pointer Arrow',
+    description: 'Callout pointer arrow with editable text',
+    category: 'shapes',
+  },
+  {
     id: 'output_jack',
-    name: 'Output Jack',
-    description: '1/4" mono jack',
+    name: '1/4" Output Jack',
+    description: 'Standard 1/4" mono output jack',
     category: 'output',
   },
 ];
@@ -95,8 +161,10 @@ const GROUPS = [
   { key: 'pickup' as const, label: 'Pickups' },
   { key: 'switch' as const, label: 'Switches' },
   { key: 'pot' as const, label: 'Potentiometers' },
-  { key: 'passive' as const, label: 'Passive Components' },
-  { key: 'output' as const, label: 'Output' },
+  { key: 'passive' as const, label: 'Mods & Components' },
+  { key: 'doc' as const, label: 'Documentation & Cards' },
+  { key: 'shapes' as const, label: 'Free Shapes & Drawing' },
+  { key: 'output' as const, label: 'Output Jacks' },
 ];
 
 export function ComponentLibrary() {

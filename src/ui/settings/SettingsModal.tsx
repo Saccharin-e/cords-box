@@ -351,32 +351,32 @@ export function SettingsModal() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <ControlCard
                 title="Marquee Selection"
-                icon="🔲"
+                icon={<IconMarquee />}
                 desc="Left Click and drag on empty canvas background to select multiple components or wires simultaneously."
               />
               <ControlCard
                 title="Multi-Component Group Move"
-                icon="🖐️"
+                icon={<IconHand />}
                 desc="Left Click & drag any selected component to smoothly move all selected items in unison."
               />
               <ControlCard
                 title="60 FPS Wire Endpoint Dragging"
-                icon="🔌"
+                icon={<IconWire />}
                 desc="Click & drag the circular handles at wire endpoints to smoothly re-route or adjust wire paths in real-time."
               />
               <ControlCard
                 title="Viewport Panning"
-                icon="🖱️"
+                icon={<IconMouse />}
                 desc="Hold Middle Mouse Button OR Alt + Right Click & Drag anywhere to pan around the canvas."
               />
               <ControlCard
                 title="Zoom Canvas"
-                icon="🔍"
+                icon={<IconZoom />}
                 desc="Scroll Mouse Wheel up/down to zoom in and out smoothly relative to your cursor position."
               />
               <ControlCard
                 title="Point-to-Point Wire Routing"
-                icon="⚡"
+                icon={<IconZap />}
                 desc="Click any component solder lug, move cursor to target lug pin, and click to complete wire connection."
               />
             </div>
@@ -430,7 +430,7 @@ export function SettingsModal() {
   );
 }
 
-function ControlCard({ title, icon, desc }: { title: string; icon: string; desc: string }) {
+function ControlCard({ title, icon, desc }: { title: string; icon: React.ReactNode; desc: string }) {
   return (
     <div
       style={{
@@ -441,11 +441,67 @@ function ControlCard({ title, icon, desc }: { title: string; icon: string; desc:
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{ fontSize: 16 }}>{icon}</span>
+        <span style={{ fontSize: 16, color: '#38bdf8', display: 'flex', alignItems: 'center' }}>
+          {icon}
+        </span>
         <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#f4f4f5' }}>{title}</h4>
       </div>
       <p style={{ margin: 0, fontSize: 11, color: '#a1a1aa', lineHeight: 1.4 }}>{desc}</p>
     </div>
+  );
+}
+
+function IconMarquee() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="4 4" />
+    </svg>
+  );
+}
+
+function IconHand() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V3a2 2 0 0 0-4 0v9" />
+      <path d="M18 11a2 2 0 0 1 4 0v4a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.8-6.1-2.4L2 16" />
+    </svg>
+  );
+}
+
+function IconWire() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 2v8m0 4v8M5 12h14" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}
+
+function IconMouse() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="6" y="3" width="12" height="18" rx="6" />
+      <line x1="12" y1="7" x2="12" y2="11" />
+    </svg>
+  );
+}
+
+function IconZoom() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+      <line x1="11" y1="8" x2="11" y2="14" />
+      <line x1="8" y1="11" x2="14" y2="11" />
+    </svg>
+  );
+}
+
+function IconZap() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
   );
 }
 

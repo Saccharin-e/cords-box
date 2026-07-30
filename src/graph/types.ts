@@ -28,6 +28,7 @@ export type NodeType = z.infer<typeof NodeType>;
 export const ComponentType = z.enum([
   'pickup_single_coil',
   'pickup_humbucker',
+  'pickup_p90',
   'switch_3way',
   'switch_4way',
   'switch_5way',
@@ -36,9 +37,19 @@ export const ComponentType = z.enum([
   'pot_tone',
   'pot_blend',
   'pot_concentric',
+  'pot_pushpull',
   'capacitor',
   'resistor',
+  'treble_bleed',
+  'battery_9v',
+  'ground_terminal',
   'output_jack',
+  'text_box',
+  'project_card',
+  'shape_rect',
+  'shape_circle',
+  'shape_line',
+  'shape_arrow',
 ]);
 export type ComponentType = z.infer<typeof ComponentType>;
 

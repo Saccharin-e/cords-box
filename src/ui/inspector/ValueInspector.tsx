@@ -20,6 +20,7 @@ import { lintCircuit } from '@lint/linter';
 import type { LintDiagnostic } from '@lint/linter';
 import type { PotentiometerValue, CapacitorValue, ResistorValue, CircuitEdge } from '@graph/types';
 import { buildWireVisuals } from '@ui/canvas/wireUtils';
+import { getShape } from '@ui/canvas/shapes';
 
 export function ValueInspector() {
   const selectedId = useCanvasStore((s) => s.selectedId);
@@ -217,6 +218,21 @@ export function ValueInspector() {
             )}
 
             {component.type === 'output_jack' && <OutputJackInspector />}
+
+            {component.type === 'text_box' && <TextBoxInspector inst={inst} />}
+
+            {component.type === 'project_card' && <ProjectCardInspector inst={inst} />}
+
+            {(component.type === 'shape_rect' ||
+              component.type === 'shape_circle' ||
+              component.type === 'shape_line' ||
+              component.type === 'shape_arrow' ||
+              component.type === 'text_box') && <FreeShapeInspector inst={inst} />}
+
+            {/* Editable Custom Labels, Finish Colors & Terminal Lugs Inspector */}
+            {component.type !== 'text_box' &&
+              component.type !== 'project_card' &&
+              !component.type.startsWith('shape_') && <CustomLabelsAndLugsInspector inst={inst} />}
 
             {/* Layering Controls */}
             <div
@@ -1019,3 +1035,265 @@ const closeButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
   transition: 'all 0.15s ease',
 };
+
+/* ─── Custom Lug Labels & Color Theme Inspector ──────────────────────────── */
+function CustomLabelsAndLugsInspector({ inst }: { inst: any }) {
+  const updateInstance = useCanvasStore((s) => s.updateInstance);
+  const shape = getShape(inst.type);
+
+  return (
+    <InspectorSection title="Custom Labels & Lug Names">
+      <InspectorRow label="Display Title">
+        <input
+          type="text"
+          className="inspector-input"
+          value={inst.customLabel ?? inst.label ?? ''}
+          onChange={(e) => updateInstance(inst.id, { customLabel: e.target.value })}
+          placeholder={shape.label}
+        />
+      </InspectorRow>
+
+      {/* Pickup Finish Theme */}
+      {(inst.type === 'pickup_single_coil' || inst.type === 'pickup_p90' || inst.type === 'pickup_humbucker') && (
+        <InspectorRow label="Finish Style">
+          <select
+            className="inspector-select"
+            value={inst.colorTheme ?? 'vintage'}
+            onChange={(e) => updateInstance(inst.id, { colorTheme: e.target.value })}
+          >
+            <option value="vintage">Vintage Yellow / Amber</option>
+            <option value="cream">Cream / Aged White</option>
+            <option value="black">Black Cover / Bobbin</option>
+          </select>
+        </InspectorRow>
+      )}
+
+      {/* Terminal Lug Editors */}
+      {shape.lugs.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#a1a1aa', textTransform: 'uppercase', marginBottom: 6 }}>
+            Terminal Lug Labels ({shape.lugs.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {shape.lugs.map((lug) => {
+              const currentVal = inst.customLugLabels?.[lug.id] ?? lug.label;
+              return (
+                <div key={lug.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 10, color: '#71717a', width: 60, flexShrink: 0, fontFamily: 'monospace' }}>
+                    {lug.id}
+                  </span>
+                  <input
+                    type="text"
+                    className="inspector-input"
+                    value={currentVal}
+                    onChange={(e) => {
+                      const updated = { ...(inst.customLugLabels ?? {}), [lug.id]: e.target.value };
+                      updateInstance(inst.id, { customLugLabels: updated });
+                    }}
+                    style={{ flex: 1 }}
+                    placeholder={lug.label}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </InspectorSection>
+  );
+}
+
+/* ─── Text Box Inspector ─────────────────────────────────────────────────── */
+function TextBoxInspector({ inst }: { inst: any }) {
+  const updateInstance = useCanvasStore((s) => s.updateInstance);
+
+  return (
+    <InspectorSection title="Text Box Notes">
+      <InspectorRow label="Note Text">
+        <textarea
+          className="inspector-input"
+          rows={4}
+          value={inst.textValue ?? ''}
+          onChange={(e) => updateInstance(inst.id, { textValue: e.target.value })}
+          placeholder="Type notes, wiring instructions, or pinouts here..."
+          style={{ width: '100%', fontFamily: 'sans-serif', resize: 'vertical' }}
+        />
+      </InspectorRow>
+    </InspectorSection>
+  );
+}
+
+/* ─── Project Info Card Inspector ────────────────────────────────────────── */
+function ProjectCardInspector({ inst }: { inst: any }) {
+  const updateInstance = useCanvasStore((s) => s.updateInstance);
+
+  return (
+    <InspectorSection title="Project Card Details">
+      <InspectorRow label="Title">
+        <input
+          type="text"
+          className="inspector-input"
+          value={inst.customLabel ?? inst.label ?? ''}
+          onChange={(e) => updateInstance(inst.id, { customLabel: e.target.value })}
+          placeholder="GUITAR WIRING HARNESS"
+        />
+      </InspectorRow>
+      <InspectorRow label="Author">
+        <input
+          type="text"
+          className="inspector-input"
+          value={inst.authorValue ?? ''}
+          onChange={(e) => updateInstance(inst.id, { authorValue: e.target.value })}
+          placeholder="Luthier Studio"
+        />
+      </InspectorRow>
+      <InspectorRow label="Guitar Model">
+        <input
+          type="text"
+          className="inspector-input"
+          value={inst.modelValue ?? ''}
+          onChange={(e) => updateInstance(inst.id, { modelValue: e.target.value })}
+          placeholder="Stratocaster HSS / Telecaster"
+        />
+      </InspectorRow>
+      <InspectorRow label="Date / Rev">
+        <input
+          type="text"
+          className="inspector-input"
+          value={inst.revisionValue ?? ''}
+          onChange={(e) => updateInstance(inst.id, { revisionValue: e.target.value })}
+          placeholder="2026-07-30 · Rev 1.0"
+        />
+      </InspectorRow>
+      <InspectorRow label="Specs & Notes">
+        <textarea
+          className="inspector-input"
+          rows={3}
+          value={inst.textValue ?? ''}
+          onChange={(e) => updateInstance(inst.id, { textValue: e.target.value })}
+          placeholder="250K CTS Pots, 0.047uF Cap, Treble Bleed, 50s Wiring..."
+          style={{ width: '100%', fontFamily: 'sans-serif', resize: 'vertical' }}
+        />
+      </InspectorRow>
+    </InspectorSection>
+  );
+}
+
+/* ─── Free Shape Styling & Dimensions Inspector ───────────────────────────── */
+function FreeShapeInspector({ inst }: { inst: any }) {
+  const updateInstance = useCanvasStore((s) => s.updateInstance);
+
+  return (
+    <InspectorSection title="Shape Formatting & Appearance">
+      {/* Width & Height Dimensions */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>W:</span>
+          <input
+            type="number"
+            className="inspector-input"
+            value={Math.round(inst.width)}
+            onChange={(e) => updateInstance(inst.id, { width: Math.max(10, Number(e.target.value)) })}
+            style={{ width: '100%' }}
+          />
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>H:</span>
+          <input
+            type="number"
+            className="inspector-input"
+            value={Math.round(inst.height)}
+            onChange={(e) => updateInstance(inst.id, { height: Math.max(10, Number(e.target.value)) })}
+            style={{ width: '100%' }}
+          />
+        </div>
+      </div>
+
+      {/* Stroke Color */}
+      <InspectorRow label="Stroke Color">
+        <select
+          className="inspector-select"
+          value={inst.strokeColor ?? (inst.type === 'shape_rect' ? '#a855f7' : '#38bdf8')}
+          onChange={(e) => updateInstance(inst.id, { strokeColor: e.target.value })}
+        >
+          <option value="#a855f7">Purple (#a855f7)</option>
+          <option value="#38bdf8">Cyan (#38bdf8)</option>
+          <option value="#eab308">Yellow (#eab308)</option>
+          <option value="#22c55e">Green (#22c55e)</option>
+          <option value="#ef4444">Red (#ef4444)</option>
+          <option value="#f8fafc">White (#f8fafc)</option>
+          <option value="#64748b">Slate (#64748b)</option>
+          <option value="#0f172a">Dark Navy (#0f172a)</option>
+        </select>
+      </InspectorRow>
+
+      {/* Fill Color */}
+      <InspectorRow label="Fill Color">
+        <select
+          className="inspector-select"
+          value={inst.fillColor ?? 'transparent'}
+          onChange={(e) => updateInstance(inst.id, { fillColor: e.target.value })}
+        >
+          <option value="transparent">None (Transparent)</option>
+          <option value="rgba(168, 85, 247, 0.15)">Purple Tint (15%)</option>
+          <option value="rgba(56, 189, 248, 0.15)">Cyan Tint (15%)</option>
+          <option value="rgba(234, 179, 8, 0.15)">Yellow Tint (15%)</option>
+          <option value="rgba(34, 197, 94, 0.15)">Green Tint (15%)</option>
+          <option value="rgba(255, 255, 255, 0.08)">Subtle White Tint (8%)</option>
+          <option value="#0f172a">Solid Navy Dark (#0f172a)</option>
+        </select>
+      </InspectorRow>
+
+      {/* Stroke Width */}
+      <InspectorRow label="Line Weight">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+          <input
+            type="range"
+            min={1}
+            max={10}
+            step={0.5}
+            value={inst.strokeWidth ?? 2}
+            onChange={(e) => updateInstance(inst.id, { strokeWidth: Number(e.target.value) })}
+            style={{ flex: 1 }}
+          />
+          <span style={{ fontSize: 10, color: 'var(--color-text-muted)', width: 24, textAlign: 'right' }}>
+            {inst.strokeWidth ?? 2}px
+          </span>
+        </div>
+      </InspectorRow>
+
+      {/* Dash Style */}
+      <InspectorRow label="Line Style">
+        <select
+          className="inspector-select"
+          value={inst.dashStyle ?? 'solid'}
+          onChange={(e) => updateInstance(inst.id, { dashStyle: e.target.value as any })}
+        >
+          <option value="solid">Solid Line</option>
+          <option value="dashed">Dashed (---)</option>
+          <option value="dotted">Dotted (...) </option>
+        </select>
+      </InspectorRow>
+
+      {/* Corner Radius for Rectangles / Notes */}
+      {(inst.type === 'shape_rect' || inst.type === 'text_box') && (
+        <InspectorRow label="Corner Rounding">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+            <input
+              type="range"
+              min={0}
+              max={30}
+              step={1}
+              value={inst.cornerRadius ?? 6}
+              onChange={(e) => updateInstance(inst.id, { cornerRadius: Number(e.target.value) })}
+              style={{ flex: 1 }}
+            />
+            <span style={{ fontSize: 10, color: 'var(--color-text-muted)', width: 24, textAlign: 'right' }}>
+              {inst.cornerRadius ?? 6}px
+            </span>
+          </div>
+        </InspectorRow>
+      )}
+    </InspectorSection>
+  );
+}

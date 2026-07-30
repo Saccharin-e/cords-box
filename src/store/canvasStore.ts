@@ -27,6 +27,19 @@ export interface CanvasComponentInstance {
   flippedH?: boolean;
   flippedV?: boolean;
   groupId?: string;
+  // Customization & Editable Fields
+  customLabel?: string;
+  customLugLabels?: Record<string, string>;
+  textValue?: string;
+  authorValue?: string;
+  modelValue?: string;
+  revisionValue?: string;
+  colorTheme?: string;
+  fillColor?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  cornerRadius?: number;
+  dashStyle?: 'solid' | 'dashed' | 'dotted';
 }
 
 export interface WireAnchor {

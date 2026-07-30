@@ -9,8 +9,8 @@
  * - Multi-selection (Shift-click)
  */
 
-import { useRef, useCallback, useState } from 'react';
-import { Stage, Layer, Rect } from 'react-konva';
+import { useRef, useCallback, useState, useEffect } from 'react';
+import { Stage, Layer, Rect, Transformer } from 'react-konva';
 import type Konva from 'konva';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
@@ -30,6 +30,7 @@ import type { WireAnchor } from '@store/canvasStore';
 
 const DRAG_TYPE_MAP: Record<string, ComponentType> = {
   pickup_sc: 'pickup_single_coil',
+  pickup_p90: 'pickup_p90',
   pickup_hb: 'pickup_humbucker',
   switch_3way: 'switch_3way',
   switch_4way: 'switch_4way',
@@ -39,6 +40,16 @@ const DRAG_TYPE_MAP: Record<string, ComponentType> = {
   pot_tone: 'pot_tone',
   pot_blend: 'pot_blend',
   pot_concentric: 'pot_concentric',
+  pot_pushpull: 'pot_pushpull',
+  battery_9v: 'battery_9v',
+  ground_terminal: 'ground_terminal',
+  treble_bleed: 'treble_bleed',
+  text_box: 'text_box',
+  project_card: 'project_card',
+  shape_rect: 'shape_rect',
+  shape_circle: 'shape_circle',
+  shape_line: 'shape_line',
+  shape_arrow: 'shape_arrow',
   capacitor: 'capacitor',
   resistor: 'resistor',
   output_jack: 'output_jack',
@@ -89,8 +100,26 @@ export function PhysicalView({ width, height }: Props) {
   const { addComponent, solverResult, selectEdge, selectedEdgeId } = useCircuitStore();
   const graph = useCircuitStore((s) => s.graph);
 
+  const trRef = useRef<Konva.Transformer>(null);
+
   const activeEdges = solverResult?.activeEdges ?? new Set<string>();
   const wires = buildWireVisuals(() => graph.getEdges(), instances, activeEdges);
+
+  useEffect(() => {
+    if (trRef.current && stageRef.current) {
+      if (selectedIds.length === 1) {
+        const id = selectedIds[0];
+        const selectedNode = stageRef.current.findOne('#' + id);
+        if (selectedNode) {
+          trRef.current.nodes([selectedNode]);
+          trRef.current.getLayer()?.batchDraw();
+          return;
+        }
+      }
+      trRef.current.nodes([]);
+      trRef.current.getLayer()?.batchDraw();
+    }
+  }, [selectedIds, instances]);
 
   /* ─── Drop from Component Library ──────────────────────────────────── */
   const handleDrop = useCallback(
@@ -489,6 +518,22 @@ export function PhysicalView({ width, height }: Props) {
               onDragEnd={(x, y) => moveInstance(inst.id, x, y)}
             />
           ))}
+          <Transformer
+            ref={trRef}
+            boundBoxFunc={(oldBox, newBox) => {
+              // Enforce min width / height of 15px
+              if (Math.abs(newBox.width) < 15 || Math.abs(newBox.height) < 15) {
+                return oldBox;
+              }
+              return newBox;
+            }}
+            anchorSize={7}
+            anchorCornerRadius={2}
+            anchorFill="#38bdf8"
+            anchorStroke="#0284c7"
+            borderStroke="#38bdf8"
+            borderDash={[4, 4]}
+          />
         </Layer>
 
         {/* Selection Box Overlay Layer */}

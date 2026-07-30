@@ -271,6 +271,57 @@ function renderIconGraphic(id: string) {
           <circle cx="34" cy="10" r="2.5" fill="#f4f4f5" stroke="#d97706" strokeWidth="1" />
         </g>
       );
+    case 'shape_rect':
+      return (
+        <g>
+          <rect
+            x="6"
+            y="8"
+            width="28"
+            height="24"
+            rx="3"
+            fill="rgba(168, 85, 247, 0.2)"
+            stroke="#a855f7"
+            strokeWidth="1.5"
+            strokeDasharray="3 2"
+          />
+        </g>
+      );
+    case 'shape_circle':
+      return (
+        <g>
+          <circle
+            cx="20"
+            cy="20"
+            r="13"
+            fill="rgba(56, 189, 248, 0.2)"
+            stroke="#38bdf8"
+            strokeWidth="1.5"
+            strokeDasharray="3 2"
+          />
+        </g>
+      );
+    case 'shape_line':
+      return (
+        <g>
+          <line
+            x1="6"
+            y1="20"
+            x2="34"
+            y2="20"
+            stroke="#e2e8f0"
+            strokeWidth="2"
+            strokeDasharray="4 2"
+          />
+        </g>
+      );
+    case 'shape_arrow':
+      return (
+        <g>
+          <line x1="6" y1="20" x2="30" y2="20" stroke="#eab308" strokeWidth="2" />
+          <polygon points="34,20 28,16 28,24" fill="#eab308" />
+        </g>
+      );
     default:
       return <rect x="5" y="5" width="30" height="30" fill="#3f3f46" rx="4" />;
   }
