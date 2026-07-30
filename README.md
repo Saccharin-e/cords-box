@@ -61,4 +61,4 @@ src/
 
 ## License
 
-Private — All rights reserved.
+This project is licensed under the GNU General Public License v2.0 (GPL-2.0-only). See the [LICENSE](LICENSE) file for details.
