@@ -12,6 +12,8 @@ import type { SolverResult } from '@graph/solver';
 import { audioPipeline } from '@audio/index';
 import type { CircuitNode, CircuitEdge, Component, SwitchState } from '@graph/types';
 
+import { useCanvasStore } from './canvasStore';
+
 export interface CircuitStore {
   graph: Graph;
   solverResult: SolverResult | null;
@@ -57,34 +59,41 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
     get().graph.addNode(node);
     get().solve();
     set({});
+    useCanvasStore.getState().pushHistory();
   },
   removeNode: (nodeId) => {
     get().graph.removeNode(nodeId);
     get().solve();
     set({});
+    useCanvasStore.getState().pushHistory();
   },
   addEdge: (edge) => {
     get().graph.addEdge(edge);
     get().solve();
     set({});
+    useCanvasStore.getState().pushHistory();
   },
   removeEdge: (edgeId) => {
     get().graph.removeEdge(edgeId);
     get().solve();
     set({});
+    useCanvasStore.getState().pushHistory();
   },
   addComponent: (component) => {
     get().graph.addComponent(component);
     set({});
+    useCanvasStore.getState().pushHistory();
   },
   updateComponentValue: (componentId, value) => {
     get().graph.updateComponentValue(componentId, value);
     get().solve();
     set({});
+    useCanvasStore.getState().pushHistory();
   },
   updateComponentLabel: (componentId, label) => {
     get().graph.updateComponentLabel(componentId, label);
     set({});
+    useCanvasStore.getState().pushHistory();
   },
   updateEdge: (edgeId, updates, skipSolve = false) => {
     get().graph.updateEdge(edgeId, updates);
@@ -92,16 +101,19 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
       get().solve();
     }
     set({});
+    useCanvasStore.getState().pushHistory();
   },
   removeComponent: (componentId: string) => {
     get().graph.removeComponent(componentId);
     get().solve();
     set({});
+    useCanvasStore.getState().pushHistory();
   },
   setSwitchState: (state) => {
     get().graph.setSwitchState(state);
     get().solve();
     set({});
+    useCanvasStore.getState().pushHistory();
   },
 
   selectNode: (nodeId) =>

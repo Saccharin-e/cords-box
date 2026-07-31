@@ -165,6 +165,15 @@ export function useCanvasKeyboard() {
         toggleShowComponentLabels();
         return;
       }
+      if (matchesKeybinding(e, keybindings.toggleFullscreen)) {
+        e.preventDefault();
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+        return;
+      }
       if (matchesKeybinding(e, keybindings.toggleWiring)) {
         e.preventDefault();
         toggleWiringMode();

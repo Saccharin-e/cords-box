@@ -5,6 +5,7 @@
  * and CAD Tools. Retracted sidebars collapse to 0px so canvas claims 100% space.
  */
 
+import { useEffect } from 'react';
 import { Toolbar } from './ui/toolbar/Toolbar';
 import { ComponentLibrary } from './ui/library/ComponentLibrary';
 import { DualCanvas } from './ui/canvas/DualCanvas';
@@ -16,8 +17,13 @@ import { useCanvasStore } from '@store/canvasStore';
 export default function App() {
   const isSidebarOpen = useCanvasStore((s) => s.isSidebarOpen);
   const isInspectorOpen = useCanvasStore((s) => s.isInspectorOpen);
+  const inspectorWidth = useCanvasStore((s) => s.inspectorWidth);
 
-  const gridCols = `${isSidebarOpen ? '280px' : '0px'} 1fr ${isInspectorOpen ? '320px' : '0px'}`;
+  useEffect(() => {
+    document.documentElement.style.setProperty('--inspector-width', `${inspectorWidth}px`);
+  }, [inspectorWidth]);
+
+  const gridCols = `${isSidebarOpen ? '280px' : '0px'} 1fr ${isInspectorOpen ? 'var(--inspector-width, 320px)' : '0px'}`;
 
   return (
     <div
@@ -35,7 +41,7 @@ export default function App() {
         overflow: 'hidden',
         boxSizing: 'border-box',
         backgroundColor: '#1b1b1e',
-        transition: 'grid-template-columns 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: 'grid-template-columns 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
       <Toolbar />

@@ -70,6 +70,13 @@ export const DEFAULT_KEYBINDINGS: Record<string, Keybinding> = {
     category: 'View & Canvas',
     key: 'l',
   },
+  toggleFullscreen: {
+    id: 'toggleFullscreen',
+    name: 'Toggle Fullscreen Mode',
+    category: 'View & Canvas',
+    key: 'f',
+    shift: true,
+  },
   toggleWiring: {
     id: 'toggleWiring',
     name: 'Toggle Wiring Mode',

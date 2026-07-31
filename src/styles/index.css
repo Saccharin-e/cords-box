@@ -411,6 +411,61 @@ body {
   grid-area: inspector;
   padding: var(--space-5);
   overflow-y: auto;
+  position: relative;
+  min-width: 0;
+}
+
+.inspector-resizer {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 50;
+  user-select: none;
+  touch-action: none;
+  transition: background-color var(--transition-fast);
+}
+
+.inspector-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 2px;
+  transition: all var(--transition-fast);
+}
+
+.inspector-resizer:hover,
+.inspector-resizer--active {
+  background: rgba(217, 119, 6, 0.25);
+}
+
+.inspector-resizer:hover::after,
+.inspector-resizer--active::after {
+  background: var(--color-accent-amber);
+  box-shadow: 0 0 10px var(--color-accent-amber);
+  height: 52px;
+}
+
+/* Global cursor & event locking during panel drag */
+body.is-resizing,
+body.is-resizing *,
+body.is-resizing #app-root,
+body.is-resizing .inspector-panel,
+body.is-resizing .library-panel {
+  transition: none !important;
+  user-select: none !important;
+  cursor: col-resize !important;
+}
+
+body.is-resizing canvas {
+  pointer-events: none !important;
 }
 
 .inspector__header {
@@ -681,45 +736,57 @@ body {
   border-color: var(--color-accent-amber);
 }
 
-/* ─── Slider ────────────────────────────────────────────────────────────────── */
+/* ─── Ultra-Thin & Sleek Sliders (Low Screen Footprint) ───────────────────── */
 
-.inspector-slider-wrap {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-}
-
+input[type='range'],
 .inspector-slider {
   flex: 1;
   -webkit-appearance: none;
   appearance: none;
-  height: 6px;
+  height: 3px;
   background: var(--color-bg-inset);
   border-radius: var(--radius-full);
-  box-shadow: var(--neu-inset);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
   outline: none;
+  margin: 4px 0;
 }
 
+input[type='range']::-webkit-slider-thumb,
 .inspector-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 11px;
+  height: 11px;
   border-radius: var(--radius-full);
   background: var(--color-bg-base);
   box-shadow:
-    var(--neu-flat),
-    0 0 6px var(--color-accent-amber);
+    0 1px 3px rgba(0, 0, 0, 0.6),
+    0 0 4px var(--color-accent-amber);
   cursor: ew-resize;
-  border: 2px solid var(--color-accent-amber);
-  transition: box-shadow var(--transition-fast);
+  border: 1.5px solid var(--color-accent-amber);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
+input[type='range']::-webkit-slider-thumb:hover,
 .inspector-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.25);
   box-shadow:
-    var(--neu-flat),
-    0 0 12px var(--color-accent-amber);
+    0 1px 4px rgba(0, 0, 0, 0.8),
+    0 0 8px var(--color-accent-amber);
+}
+
+input[type='range']::-moz-range-thumb,
+.inspector-slider::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-base);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.6),
+    0 0 4px var(--color-accent-amber);
+  cursor: ew-resize;
+  border: 1.5px solid var(--color-accent-amber);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 /* ─── Diagnostics Panel ─────────────────────────────────────────────────────── */

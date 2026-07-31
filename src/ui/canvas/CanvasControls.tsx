@@ -42,63 +42,78 @@ export function CanvasControls() {
     <div
       style={{
         position: 'absolute',
-        bottom: 16,
+        bottom: 12,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 50,
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        gap: 8,
-        padding: '6px 12px',
-        maxWidth: 'calc(100% - 32px)',
-        overflowX: 'auto',
+        gap: 4,
+        padding: '5px 10px',
         boxSizing: 'border-box',
-        backgroundColor: 'rgba(24, 24, 27, 0.94)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(63, 63, 70, 0.6)',
-        borderRadius: 12,
-        boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(24, 24, 27, 0.95)',
+        backdropFilter: 'blur(16px)',
+        border: '1px solid rgba(63, 63, 70, 0.65)',
+        borderRadius: 10,
+        boxShadow: '0 8px 24px -4px rgba(0, 0, 0, 0.6), 0 0 1px rgba(255, 255, 255, 0.1)',
         color: '#e4e4e7',
-        fontSize: 12,
+        fontSize: 11,
         fontFamily: "'Inter', sans-serif",
-        whiteSpace: 'nowrap',
       }}
     >
-      {/* ── Theme Mode Selector ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <IconPalette color="#38bdf8" />
+      {/* ── ROW 1: Display & Grid Configuration ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+        {/* Theme Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <IconPalette color="#38bdf8" />
+          <select
+            value={themeMode}
+            onChange={(e) => setThemeMode(e.target.value as CanvasTheme)}
+            style={selectStyle}
+            title="Canvas Display Theme"
+          >
+            <option value="dark">Dark Theme</option>
+            <option value="light">Light Theme</option>
+            <option value="blueprint">Blueprint CAD</option>
+            <option value="vintage">Vintage Paper</option>
+          </select>
+        </div>
+
+        <div style={dividerStyle} />
+
+        {/* Grid Style Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <IconGrid color="#a1a1aa" />
+          <select
+            value={gridStyle}
+            onChange={(e) => setGridStyle(e.target.value as GridStyle)}
+            style={selectStyle}
+            title="Grid Background Style"
+          >
+            <option value="dots">Dot Matrix</option>
+            <option value="lines">Line Grid</option>
+            <option value="crosshatch">Crosshatch</option>
+            <option value="isometric">Isometric 3D</option>
+            <option value="none">No Grid</option>
+          </select>
+        </div>
+
+        {/* Grid Size Selector */}
         <select
-          value={themeMode}
-          onChange={(e) => setThemeMode(e.target.value as CanvasTheme)}
+          value={gridSize}
+          onChange={(e) => setGridSize(Number(e.target.value))}
           style={selectStyle}
-          title="Canvas Display Theme"
+          title="Grid Step Size"
         >
-          <option value="dark">Dark Theme</option>
-          <option value="light">Light Theme</option>
-          <option value="blueprint">Blueprint CAD</option>
-          <option value="vintage">Vintage Paper</option>
-        </select>
-      </div>
-
-      <div style={dividerStyle} />
-
-      {/* ── Grid Style & Snap Selector ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <IconGrid color="#a1a1aa" />
-        <select
-          value={gridStyle}
-          onChange={(e) => setGridStyle(e.target.value as GridStyle)}
-          style={selectStyle}
-          title="Grid Background Style"
-        >
-          <option value="dots">Dot Matrix</option>
-          <option value="lines">Line Grid</option>
-          <option value="crosshatch">Crosshatch</option>
-          <option value="isometric">Isometric 3D</option>
-          <option value="none">No Grid</option>
+          <option value={10}>10px</option>
+          <option value={20}>20px</option>
+          <option value={50}>50px</option>
         </select>
 
-        {/* Snap-to-Grid Toggle Button */}
+        <div style={dividerStyle} />
+
+        {/* Snap & Labels Toggles */}
         <button
           onClick={toggleSnapToGrid}
           style={{
@@ -113,7 +128,6 @@ export function CanvasControls() {
           <span>Snap {snapToGrid ? 'ON' : 'OFF'}</span>
         </button>
 
-        {/* Component Text Labels Toggle Button */}
         <button
           onClick={toggleShowComponentLabels}
           style={{
@@ -127,142 +141,131 @@ export function CanvasControls() {
           <IconTag color={showComponentLabels ? '#38bdf8' : '#71717a'} />
           <span>Labels {showComponentLabels ? 'ON' : 'OFF'}</span>
         </button>
-
-        {/* Grid Size Selector */}
-        <select
-          value={gridSize}
-          onChange={(e) => setGridSize(Number(e.target.value))}
-          style={selectStyle}
-          title="Grid Step Size"
-        >
-          <option value={10}>10px</option>
-          <option value={20}>20px</option>
-          <option value={50}>50px</option>
-        </select>
       </div>
 
-      <div style={dividerStyle} />
+      {/* ── ROW 2: CAD Editing & Transform Tools ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+        {/* Undo / Redo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <button onClick={undo} style={buttonStyle} title="Undo (Ctrl+Z)">
+            <IconUndo />
+          </button>
+          <button onClick={redo} style={buttonStyle} title="Redo (Ctrl+Y)">
+            <IconRedo />
+          </button>
+        </div>
 
-      {/* ── Undo / Redo ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <button onClick={undo} style={buttonStyle} title="Undo (Ctrl+Z)">
-          <IconUndo />
-        </button>
-        <button onClick={redo} style={buttonStyle} title="Redo (Ctrl+Y)">
-          <IconRedo />
+        <div style={dividerStyle} />
+
+        {/* Transforms */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <button
+            onClick={() => rotateSelected(90)}
+            disabled={!hasSelection}
+            style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
+            title="Rotate CW 90° (R)"
+          >
+            <IconRotateCw />
+          </button>
+          <button
+            onClick={() => rotateSelected(-90)}
+            disabled={!hasSelection}
+            style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
+            title="Rotate CCW 90° (Shift+R)"
+          >
+            <IconRotateCcw />
+          </button>
+          <button
+            onClick={flipSelectedH}
+            disabled={!hasSelection}
+            style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
+            title="Flip Horizontal (H)"
+          >
+            <IconFlipH />
+          </button>
+          <button
+            onClick={flipSelectedV}
+            disabled={!hasSelection}
+            style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
+            title="Flip Vertical (V)"
+          >
+            <IconFlipV />
+          </button>
+          <button
+            onClick={groupSelected}
+            disabled={selectedIds.length < 2}
+            style={{ ...buttonStyle, opacity: selectedIds.length >= 2 ? 1 : 0.4 }}
+            title="Group Components (Ctrl+G)"
+          >
+            <IconGroup />
+          </button>
+          <button
+            onClick={ungroupSelected}
+            disabled={!hasSelection}
+            style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
+            title="Ungroup Components (Ctrl+Shift+G)"
+          >
+            <IconUngroup />
+          </button>
+        </div>
+
+        <div style={dividerStyle} />
+
+        {/* Editing */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <button
+            onClick={copySelected}
+            disabled={!hasSelection}
+            style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
+            title="Copy (Ctrl+C)"
+          >
+            <IconCopy />
+          </button>
+          <button onClick={pasteSelected} style={buttonStyle} title="Paste (Ctrl+V)">
+            <IconPaste />
+          </button>
+          <button
+            onClick={duplicateSelected}
+            disabled={!hasSelection}
+            style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
+            title="Duplicate (Ctrl+D)"
+          >
+            <IconDuplicate />
+          </button>
+          <button
+            onClick={removeSelected}
+            disabled={!hasSelection}
+            style={{
+              ...buttonStyle,
+              opacity: hasSelection ? 1 : 0.4,
+              color: hasSelection ? '#f87171' : '#71717a',
+            }}
+            title="Delete (Delete / Backspace)"
+          >
+            <IconTrash />
+          </button>
+        </div>
+
+        <div style={dividerStyle} />
+
+        {/* Retract Floating Bar */}
+        <button
+          onClick={toggleControls}
+          style={{ ...buttonStyle, color: '#a1a1aa' }}
+          title="Collapse CAD Floating Bar"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
         </button>
       </div>
-
-      <div style={dividerStyle} />
-
-      {/* ── Transform Toolbar (Rotate, Flip, Group) ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <button
-          onClick={() => rotateSelected(90)}
-          disabled={!hasSelection}
-          style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
-          title="Rotate CW 90° (R)"
-        >
-          <IconRotateCw />
-        </button>
-        <button
-          onClick={() => rotateSelected(-90)}
-          disabled={!hasSelection}
-          style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
-          title="Rotate CCW 90° (Shift+R)"
-        >
-          <IconRotateCcw />
-        </button>
-        <button
-          onClick={flipSelectedH}
-          disabled={!hasSelection}
-          style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
-          title="Flip Horizontal (H)"
-        >
-          <IconFlipH />
-        </button>
-        <button
-          onClick={flipSelectedV}
-          disabled={!hasSelection}
-          style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
-          title="Flip Vertical (V)"
-        >
-          <IconFlipV />
-        </button>
-        <button
-          onClick={groupSelected}
-          disabled={selectedIds.length < 2}
-          style={{ ...buttonStyle, opacity: selectedIds.length >= 2 ? 1 : 0.4 }}
-          title="Group Components (Ctrl+G)"
-        >
-          <IconGroup />
-        </button>
-        <button
-          onClick={ungroupSelected}
-          disabled={!hasSelection}
-          style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
-          title="Ungroup Components (Ctrl+Shift+G)"
-        >
-          <IconUngroup />
-        </button>
-      </div>
-
-      <div style={dividerStyle} />
-
-      {/* ── Editing Toolbar (Copy, Paste, Duplicate, Delete) ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <button
-          onClick={copySelected}
-          disabled={!hasSelection}
-          style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
-          title="Copy (Ctrl+C)"
-        >
-          <IconCopy />
-        </button>
-        <button onClick={pasteSelected} style={buttonStyle} title="Paste (Ctrl+V)">
-          <IconPaste />
-        </button>
-        <button
-          onClick={duplicateSelected}
-          disabled={!hasSelection}
-          style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
-          title="Duplicate (Ctrl+D)"
-        >
-          <IconDuplicate />
-        </button>
-        <button
-          onClick={removeSelected}
-          disabled={!hasSelection}
-          style={{
-            ...buttonStyle,
-            opacity: hasSelection ? 1 : 0.4,
-            color: hasSelection ? '#f87171' : '#71717a',
-          }}
-          title="Delete (Delete / Backspace)"
-        >
-          <IconTrash />
-        </button>
-      </div>
-
-      <div style={dividerStyle} />
-
-      {/* Retract Floating Bar Button */}
-      <button
-        onClick={toggleControls}
-        style={{ ...buttonStyle, color: '#a1a1aa' }}
-        title="Collapse CAD Floating Bar"
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
     </div>
   );
 }
@@ -568,8 +571,8 @@ const selectStyle: React.CSSProperties = {
   backgroundColor: '#27272a',
   color: '#e4e4e7',
   border: '1px solid #3f3f46',
-  borderRadius: 6,
-  padding: '3px 8px',
+  borderRadius: 4,
+  padding: '2px 5px',
   fontSize: 11,
   cursor: 'pointer',
   outline: 'none',
@@ -578,12 +581,12 @@ const selectStyle: React.CSSProperties = {
 const buttonStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 4,
+  gap: 3,
   backgroundColor: 'transparent',
   color: '#e4e4e7',
   border: '1px solid transparent',
-  borderRadius: 6,
-  padding: '4px 8px',
+  borderRadius: 4,
+  padding: '3px 5px',
   fontSize: 11,
   cursor: 'pointer',
   transition: 'all 0.15s ease',
@@ -591,7 +594,7 @@ const buttonStyle: React.CSSProperties = {
 
 const dividerStyle: React.CSSProperties = {
   width: 1,
-  height: 18,
+  height: 14,
   backgroundColor: '#3f3f46',
   margin: '0 2px',
 };

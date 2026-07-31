@@ -16,6 +16,8 @@ export function ExportModal() {
   const toggleShowExportBox = useCanvasStore((s) => s.toggleShowExportBox);
   const recalculateAutoExportBox = useCanvasStore((s) => s.recalculateAutoExportBox);
 
+  const [localPadding, setLocalPadding] = useState(exportBox.padding ?? 60);
+
   if (!isExportModalOpen) return null;
 
   async function handleExport() {
@@ -279,16 +281,18 @@ export function ExportModal() {
             >
               <span>Adequate Canvas Padding</span>
               <span style={{ color: '#38bdf8', fontWeight: 600 }}>
-                {exportBox.padding ?? 60} px
+                {localPadding} px
               </span>
             </div>
             <input
               type="range"
               min="20"
               max="150"
-              value={exportBox.padding ?? 60}
+              value={localPadding}
               onChange={(e) => {
-                setExportBox({ padding: Number(e.target.value) });
+                const val = Number(e.target.value);
+                setLocalPadding(val);
+                setExportBox({ padding: val });
                 recalculateAutoExportBox();
               }}
               style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}

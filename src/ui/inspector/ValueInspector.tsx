@@ -13,7 +13,7 @@
  * - Real-time Wiring Diagnostics & Linter feedback
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { lintCircuit } from '@lint/linter';
@@ -49,6 +49,9 @@ export function ValueInspector() {
   const selectInstance = useCanvasStore((s) => s.selectInstance);
   const removeComponent = useCircuitStore((s) => s.removeComponent);
 
+  const setInspectorWidth = useCanvasStore((s) => s.setInspectorWidth);
+  const [isResizing, setIsResizing] = useState(false);
+
   const diagnostics = lintCircuit(graph);
 
   const inst = instances.find((i) => i.id === selectedId);
@@ -62,6 +65,31 @@ export function ValueInspector() {
       setLabelInput(component.label || inst?.label || '');
     }
   }, [component, inst]);
+
+  function handleResizeStart(e: React.MouseEvent) {
+    e.preventDefault();
+    setIsResizing(true);
+    document.body.classList.add('is-resizing');
+
+    let currentWidth = useCanvasStore.getState().inspectorWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const calculatedWidth = Math.max(220, Math.min(650, window.innerWidth - moveEvent.clientX - 12));
+      currentWidth = calculatedWidth;
+      document.documentElement.style.setProperty('--inspector-width', `${calculatedWidth}px`);
+    };
+
+    const onMouseUp = () => {
+      setIsResizing(false);
+      document.body.classList.remove('is-resizing');
+      setInspectorWidth(currentWidth);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
+    window.addEventListener('mouseup', onMouseUp);
+  }
 
   function handleLabelBlur() {
     if (component && labelInput.trim()) {
@@ -87,6 +115,13 @@ export function ValueInspector() {
 
   return (
     <aside className="inspector neu-panel" id="inspector-panel">
+      {/* Draggable Side Panel Divider Handle */}
+      <div
+        className={`inspector-resizer ${isResizing ? 'inspector-resizer--active' : ''}`}
+        onMouseDown={handleResizeStart}
+        title="Drag to adjust inspector panel width"
+      />
+
       <div
         className="inspector__header"
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
@@ -551,13 +586,36 @@ function PotentiometerInspector({
   const taper = value?.taper ?? 'audio';
   const position = value?.position ?? 1.0;
 
+  const [localPos, setLocalPos] = useState(position);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setLocalPos(position);
+  }, [position]);
+
+  function handleSliderChange(val: number) {
+    setLocalPos(val);
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+    }
+    rafRef.current = requestAnimationFrame(() => {
+      onUpdate({
+        resistance_kohms: resistance,
+        taper,
+        position: val,
+      });
+    });
+  }
+
   return (
     <InspectorSection title="Potentiometer Settings">
       <InspectorRow label="Resistance">
         <select
           className="inspector-select"
           value={resistance}
-          onChange={(e) => onUpdate({ resistance_kohms: Number(e.target.value), taper, position })}
+          onChange={(e) =>
+            onUpdate({ resistance_kohms: Number(e.target.value), taper, position: localPos })
+          }
         >
           <option value={250}>250 kΩ (Single Coil Standard)</option>
           <option value={500}>500 kΩ (Humbucker Standard)</option>
@@ -574,7 +632,7 @@ function PotentiometerInspector({
             onUpdate({
               resistance_kohms: resistance,
               taper: e.target.value as PotentiometerValue['taper'],
-              position,
+              position: localPos,
             })
           }
         >
@@ -596,7 +654,7 @@ function PotentiometerInspector({
         >
           <span style={{ color: 'var(--color-text-secondary)' }}>Knob Shaft Rotation</span>
           <span className="inspector-mono" style={{ color: 'var(--color-accent-amber)' }}>
-            {Math.round(position * 100)}%
+            {Math.round(localPos * 100)}%
           </span>
         </div>
         <input
@@ -604,14 +662,8 @@ function PotentiometerInspector({
           min="0"
           max="1"
           step="0.01"
-          value={position}
-          onChange={(e) =>
-            onUpdate({
-              resistance_kohms: resistance,
-              taper,
-              position: parseFloat(e.target.value),
-            })
-          }
+          value={localPos}
+          onChange={(e) => handleSliderChange(parseFloat(e.target.value))}
           style={{ width: '100%', accentColor: 'var(--color-accent-amber)' }}
         />
       </div>
@@ -1182,6 +1234,18 @@ function ProjectCardInspector({ inst }: { inst: any }) {
 /* ─── Free Shape Styling & Dimensions Inspector ───────────────────────────── */
 function FreeShapeInspector({ inst }: { inst: any }) {
   const updateInstance = useCanvasStore((s) => s.updateInstance);
+  const pushHistory = useCanvasStore((s) => s.pushHistory);
+
+  const [localWidth, setLocalWidth] = useState(inst.strokeWidth ?? 2);
+  const [localRadius, setLocalRadius] = useState(inst.cornerRadius ?? 6);
+
+  useEffect(() => {
+    setLocalWidth(inst.strokeWidth ?? 2);
+  }, [inst.strokeWidth]);
+
+  useEffect(() => {
+    setLocalRadius(inst.cornerRadius ?? 6);
+  }, [inst.cornerRadius]);
 
   return (
     <InspectorSection title="Shape Formatting & Appearance">
@@ -1252,12 +1316,17 @@ function FreeShapeInspector({ inst }: { inst: any }) {
             min={1}
             max={10}
             step={0.5}
-            value={inst.strokeWidth ?? 2}
-            onChange={(e) => updateInstance(inst.id, { strokeWidth: Number(e.target.value) })}
+            value={localWidth}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              setLocalWidth(val);
+              updateInstance(inst.id, { strokeWidth: val }, true);
+            }}
+            onPointerUp={pushHistory}
             style={{ flex: 1 }}
           />
           <span style={{ fontSize: 10, color: 'var(--color-text-muted)', width: 24, textAlign: 'right' }}>
-            {inst.strokeWidth ?? 2}px
+            {localWidth}px
           </span>
         </div>
       </InspectorRow>
@@ -1284,12 +1353,17 @@ function FreeShapeInspector({ inst }: { inst: any }) {
               min={0}
               max={30}
               step={1}
-              value={inst.cornerRadius ?? 6}
-              onChange={(e) => updateInstance(inst.id, { cornerRadius: Number(e.target.value) })}
+              value={localRadius}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setLocalRadius(val);
+                updateInstance(inst.id, { cornerRadius: val }, true);
+              }}
+              onPointerUp={pushHistory}
               style={{ flex: 1 }}
             />
             <span style={{ fontSize: 10, color: 'var(--color-text-muted)', width: 24, textAlign: 'right' }}>
-              {inst.cornerRadius ?? 6}px
+              {localRadius}px
             </span>
           </div>
         </InspectorRow>

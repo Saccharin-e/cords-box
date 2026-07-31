@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
+import { useCircuitStore } from '@store/circuitStore';
+import { getShape } from '../canvas/shapes';
 import { HardwareIcon } from './HardwareIcon';
 
 interface ComponentItem {
@@ -179,6 +181,64 @@ export function ComponentLibrary() {
     setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
+  function handleItemClick(itemId: string) {
+    const state = useCanvasStore.getState();
+    const panX = state.panX;
+    const panY = state.panY;
+    const scale = state.scale;
+    const instances = state.instances;
+
+    // Calculate canvas center coordinates
+    const centerX = Math.round((window.innerWidth / 2 - panX) / scale);
+    const centerY = Math.round((window.innerHeight / 2 - panY) / scale);
+
+    if (itemId === 'wire' || itemId === 'hookup_wire') {
+      const j1Id = `j_${Date.now()}_1`;
+      const j2Id = `j_${Date.now()}_2`;
+
+      const { addNode, addEdge } = useCircuitStore.getState();
+      const { wireDrawOptions } = useCanvasStore.getState();
+
+      addNode({
+        id: j1Id,
+        type: 'junction',
+        componentId: 'canvas',
+        signalState: 'inactive',
+        position: { x: centerX - 40, y: centerY },
+      });
+
+      addNode({
+        id: j2Id,
+        type: 'junction',
+        componentId: 'canvas',
+        signalState: 'inactive',
+        position: { x: centerX + 40, y: centerY },
+      });
+
+      addEdge({
+        id: `wire_${Date.now()}`,
+        source: j1Id,
+        target: j2Id,
+        resistance: 0,
+        wireColor: wireDrawOptions.color,
+        connectionType: wireDrawOptions.connectionType,
+        wireType: wireDrawOptions.wireType,
+      });
+    } else {
+      const shape = getShape(itemId);
+      const count = instances.filter((i) => i.type === itemId).length + 1;
+      const newInst = {
+        id: `${itemId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: itemId,
+        x: centerX - Math.round(shape.width / 2),
+        y: centerY - Math.round(shape.height / 2),
+        label: `${shape.label} ${count}`,
+        value: shape.defaultValue,
+      };
+      state.addInstance(newInst);
+    }
+  }
+
   return (
     <aside className="sidebar neu-panel" id="component-library">
       <div
@@ -229,6 +289,7 @@ export function ComponentLibrary() {
                     key={item.id}
                     className="component-card"
                     draggable
+                    onClick={() => handleItemClick(item.id)}
                     onDragStart={(e) => {
                       setDragItem(item.id);
                       e.dataTransfer.setData('componentId', item.id);

@@ -9,6 +9,7 @@ import { Group, Rect, Circle, Text, Line, Path } from 'react-konva';
 import type Konva from 'konva';
 import type { CanvasComponentInstance } from '@store/canvasStore';
 import { getShape, getLugAbsolutePosition } from './shapes';
+import { resolveWireTarget } from './wireUtils';
 import { useCanvasStore } from '@store/canvasStore';
 
 interface Props {
@@ -91,6 +92,39 @@ export const ComponentNode = memo(function ComponentNode({
     });
   }
 
+  function handleComponentClick(e: Konva.KonvaEventObject<MouseEvent>) {
+    if ((window as any).__wireJustCompleted) {
+      (window as any).__wireJustCompleted = false;
+      return;
+    }
+
+    if (wiringMode) {
+      e.cancelBubble = true;
+      const stage = e.target.getStage();
+      const pointer = stage?.getPointerPosition();
+      if (!pointer) return;
+
+      const scale = useCanvasStore.getState().scale;
+      const panX = useCanvasStore.getState().panX;
+      const panY = useCanvasStore.getState().panY;
+
+      const canvasX = Math.round((pointer.x - panX) / scale);
+      const canvasY = Math.round((pointer.y - panY) / scale);
+
+      const pendingWire = useCanvasStore.getState().pendingWire;
+      if (pendingWire) {
+        const target = resolveWireTarget(canvasX, canvasY, pendingWire.from);
+        useCanvasStore.getState().completeWiring(target);
+      } else {
+        const target = resolveWireTarget(canvasX, canvasY);
+        useCanvasStore.getState().startWiring(target);
+      }
+      return;
+    }
+
+    onSelect(e);
+  }
+
   return (
     <Group
       id={instance.id}
@@ -102,7 +136,7 @@ export const ComponentNode = memo(function ComponentNode({
       offsetX={instance.flippedH ? nodeW : 0}
       offsetY={instance.flippedV ? nodeH : 0}
       draggable={!wiringMode}
-      onClick={onSelect}
+      onClick={handleComponentClick}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onTransformEnd={handleTransformEnd}
@@ -175,20 +209,135 @@ export const ComponentNode = memo(function ComponentNode({
 
       {/* Component Lugs / Wire Terminals */}
       {shape.lugs.map((lug) => {
-        // Compute unrotated relative position within the group
         const abs = getLugAbsolutePosition(shape, lug, 0, 0, 0, false, false);
         const displayLugLabel = instance.customLugLabels?.[lug.id] || lug.label;
+
+        const thisAnchor = {
+          componentId: instance.id,
+          lugId: lug.id,
+          x: instance.x + abs.x,
+          y: instance.y + abs.y,
+        };
+
+        const handleLugMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+          e.cancelBubble = true;
+          const cx = 'clientX' in e.evt ? e.evt.clientX : e.evt.touches[0]?.clientX ?? 0;
+          const cy = 'clientY' in e.evt ? e.evt.clientY : e.evt.touches[0]?.clientY ?? 0;
+          const startX = cx;
+          const startY = cy;
+
+          // Check if we already have a pending wire (click-click second click scenario)
+          const existingPending = useCanvasStore.getState().pendingWire;
+          if (existingPending) {
+            // Don't set up drag listeners — let click handle completion
+            return;
+          }
+
+          let hasDragged = false;
+          let wireStarted = false;
+
+          const onWindowMove = (moveEvt: MouseEvent) => {
+            const dx = moveEvt.clientX - startX;
+            const dy = moveEvt.clientY - startY;
+            const dist = Math.hypot(dx, dy);
+
+            if (dist > 6) {
+              hasDragged = true;
+
+              // Lazily start wiring on first drag movement
+              if (!wireStarted) {
+                wireStarted = true;
+                startWiring(thisAnchor);
+              }
+
+              // Update wire cursor position
+              const stage = e.target.getStage();
+              if (stage) {
+                const rect = stage.container().getBoundingClientRect();
+                const scale = useCanvasStore.getState().scale;
+                const panX = useCanvasStore.getState().panX;
+                const panY = useCanvasStore.getState().panY;
+                const canvasX = (moveEvt.clientX - rect.left - panX) / scale;
+                const canvasY = (moveEvt.clientY - rect.top - panY) / scale;
+                useCanvasStore.getState().updateWiringCursor(canvasX, canvasY);
+              }
+            }
+          };
+
+          const onWindowUp = (upEvt: MouseEvent) => {
+            window.removeEventListener('mousemove', onWindowMove);
+            window.removeEventListener('mouseup', onWindowUp);
+
+            if (hasDragged && wireStarted) {
+              const stage = e.target.getStage();
+              if (!stage) return;
+
+              const rect = stage.container().getBoundingClientRect();
+              const scale = useCanvasStore.getState().scale;
+              const panX = useCanvasStore.getState().panX;
+              const panY = useCanvasStore.getState().panY;
+
+              const canvasX = Math.round((upEvt.clientX - rect.left - panX) / scale);
+              const canvasY = Math.round((upEvt.clientY - rect.top - panY) / scale);
+
+              const pendingWire = useCanvasStore.getState().pendingWire;
+              if (pendingWire) {
+                const target = resolveWireTarget(canvasX, canvasY, pendingWire.from);
+                useCanvasStore.getState().completeWiring(target);
+              }
+              // Block the trailing click event from doing anything
+              (window as any).__wireJustCompleted = true;
+              setTimeout(() => {
+                (window as any).__wireJustCompleted = false;
+              }, 100);
+            }
+          };
+
+          window.addEventListener('mousemove', onWindowMove);
+          window.addEventListener('mouseup', onWindowUp);
+        };
+
+        const handleLugClick = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+          e.cancelBubble = true;
+
+          // Block trailing click after a drag-complete
+          if ((window as any).__wireJustCompleted) {
+            (window as any).__wireJustCompleted = false;
+            return;
+          }
+
+          const pendingWire = useCanvasStore.getState().pendingWire;
+          if (!pendingWire) {
+            // No pending wire — start a new wire from this lug (click-click mode)
+            startWiring(thisAnchor);
+          } else {
+            // Pending wire exists — check for self-wire
+            if (
+              pendingWire.from.componentId === instance.id &&
+              pendingWire.from.lugId === lug.id
+            ) {
+              // Clicking the same lug we started from — cancel the wire
+              useCanvasStore.getState().cancelWiring();
+              // Re-enable wiring mode since user likely wants to keep wiring
+              useCanvasStore.setState({ wiringMode: true });
+              return;
+            }
+            // Complete wire to this lug
+            useCanvasStore.getState().completeWiring(thisAnchor);
+          }
+        };
+
         return (
           <Group key={lug.id}>
             {/* Outer halo ring */}
             <Circle
               x={abs.x}
               y={abs.y}
-              radius={8}
+              radius={wiringMode ? 10 : 8}
               fill="transparent"
-              stroke={accentColor}
-              strokeWidth={1}
-              opacity={0.6}
+              stroke={wiringMode ? '#22c55e' : accentColor}
+              strokeWidth={wiringMode ? 2 : 1}
+              opacity={wiringMode ? 0.9 : 0.6}
             />
 
             {/* Solder Lug Outer Ring */}
@@ -199,8 +348,8 @@ export const ComponentNode = memo(function ComponentNode({
               fill="#d4d4d8"
               stroke="#27272a"
               strokeWidth={1}
-              shadowColor="#000"
-              shadowBlur={3}
+              shadowColor={wiringMode ? '#22c55e' : '#000'}
+              shadowBlur={wiringMode ? 8 : 3}
             />
 
             {/* Eyelet Solder Hole Center */}
@@ -209,19 +358,22 @@ export const ComponentNode = memo(function ComponentNode({
               y={abs.y}
               radius={2.5}
               fill="#18181b"
-              cursor="crosshair"
-              onClick={(e) => {
-                e.cancelBubble = true;
-                startWiring({
-                  componentId: instance.id,
-                  lugId: lug.id,
-                  x: instance.x + abs.x,
-                  y: instance.y + abs.y,
-                });
-              }}
             />
 
-            {/* Lug Label Suffix (Toggleable & Editable) */}
+            {/* LARGE INVISIBLE HIT TARGET FOR EASY CLICKING, DRAGGING & HOVERING */}
+            <Circle
+              x={abs.x}
+              y={abs.y}
+              radius={16}
+              fill="rgba(0,0,0,0.001)"
+              cursor="crosshair"
+              onMouseDown={handleLugMouseDown}
+              onPointerDown={handleLugMouseDown}
+              onClick={handleLugClick}
+              onTap={handleLugClick}
+            />
+
+            {/* Lug Label Suffix */}
             {showComponentLabels && (
               <Text
                 x={abs.x - 25}
@@ -230,7 +382,7 @@ export const ComponentNode = memo(function ComponentNode({
                 text={displayLugLabel}
                 fontSize={7}
                 fontFamily="sans-serif"
-                fill="#a1a1aa"
+                fill={wiringMode ? '#4ade80' : '#a1a1aa'}
                 align="center"
                 listening={false}
               />

@@ -16,17 +16,16 @@ import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { ComponentNode } from './ComponentNode';
 import { WireLayer } from './WireLayer';
-import { buildWireVisuals } from './wireUtils';
+import { buildWireVisuals, resolveWireTarget } from './wireUtils';
 import { GridBackground } from './GridBackground';
 import { CanvasControls } from './CanvasControls';
 import { WireOptionsPanel } from './WireOptionsPanel';
 import { ExportBoxOverlay } from './ExportBoxOverlay';
 import { useCanvasKeyboard } from './useCanvasKeyboard';
 import { ContextMenu, type ContextMenuState } from '@ui/contextmenu/ContextMenu';
-import { getShape, getAllCanvasLugs } from './shapes';
+import { getShape } from './shapes';
 import type { ComponentType } from '@graph/types';
 import { generateComponentId } from '@graph/types';
-import type { WireAnchor } from '@store/canvasStore';
 
 const DRAG_TYPE_MAP: Record<string, ComponentType> = {
   pickup_sc: 'pickup_single_coil',
@@ -232,11 +231,17 @@ export function PhysicalView({ width, height }: Props) {
   );
 
   const startWiring = useCanvasStore((s) => s.startWiring);
+  const completeWiring = useCanvasStore((s) => s.completeWiring);
 
   /* ─── Stage Click ────────────────────────────────────────────────── */
   const handleStageClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
-      if (e.target === stageRef.current) {
+      if (e.target === e.target.getStage()) {
+        if ((window as any).__wireJustCompleted) {
+          (window as any).__wireJustCompleted = false;
+          return;
+        }
+
         selectInstance(null);
         selectEdge(null);
         if (wiringMode) {
@@ -247,49 +252,18 @@ export function PhysicalView({ width, height }: Props) {
           const canvasX = Math.round((pos.x - panX) / scale);
           const canvasY = Math.round((pos.y - panY) / scale);
 
-          // Find if there's an existing lug nearby (within 20px)
-          const allLugs = getAllCanvasLugs(instances);
-          let targetAnchor: WireAnchor | null = null;
-          let minDistance = 20;
-
-          for (const lug of allLugs) {
-            const dx = lug.x - canvasX;
-            const dy = lug.y - canvasY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < minDistance) {
-              minDistance = dist;
-              targetAnchor = {
-                componentId: lug.componentId,
-                lugId: lug.lugId,
-                x: lug.x,
-                y: lug.y,
-              };
-            }
+          const pendingWire = useCanvasStore.getState().pendingWire;
+          if (pendingWire) {
+            const targetAnchor = resolveWireTarget(canvasX, canvasY, pendingWire.from);
+            completeWiring(targetAnchor);
+          } else {
+            const targetAnchor = resolveWireTarget(canvasX, canvasY);
+            startWiring(targetAnchor);
           }
-
-          // If no lug nearby, create a free canvas junction node anywhere on the canvas
-          if (!targetAnchor) {
-            const junctionId = `j_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-            useCircuitStore.getState().addNode({
-              id: junctionId,
-              type: 'junction',
-              componentId: 'canvas',
-              signalState: 'inactive',
-              position: { x: canvasX, y: canvasY },
-            });
-            targetAnchor = {
-              componentId: junctionId,
-              lugId: '',
-              x: canvasX,
-              y: canvasY,
-            };
-          }
-
-          startWiring(targetAnchor);
         }
       }
     },
-    [selectInstance, selectEdge, wiringMode, panX, panY, scale, instances, startWiring],
+    [selectInstance, selectEdge, wiringMode, panX, panY, scale, startWiring, completeWiring],
   );
 
   const selectionBoxRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
@@ -314,6 +288,69 @@ export function PhysicalView({ width, height }: Props) {
           panX,
           panY,
         };
+        return;
+      }
+
+      // Wiring mode: drag-to-connect from blank canvas
+      if (wiringMode && e.evt.button === 0 && e.target === e.target.getStage()) {
+        const stage = stageRef.current;
+        if (!stage) return;
+
+        const startClientX = e.evt.clientX;
+        const startClientY = e.evt.clientY;
+        const rect = stage.container().getBoundingClientRect();
+        const canvasX = Math.round((startClientX - rect.left - panX) / scale);
+        const canvasY = Math.round((startClientY - rect.top - panY) / scale);
+
+        let hasDragged = false;
+        let wireStarted = false;
+
+        const onMove = (moveEvt: MouseEvent) => {
+          const dx = moveEvt.clientX - startClientX;
+          const dy = moveEvt.clientY - startClientY;
+          if (Math.hypot(dx, dy) > 6) {
+            hasDragged = true;
+            if (!wireStarted) {
+              wireStarted = true;
+              const startAnchor = resolveWireTarget(canvasX, canvasY);
+              useCanvasStore.getState().startWiring(startAnchor);
+            }
+            // Update wire cursor
+            const r = stage.container().getBoundingClientRect();
+            const s = useCanvasStore.getState().scale;
+            const px = useCanvasStore.getState().panX;
+            const py = useCanvasStore.getState().panY;
+            useCanvasStore.getState().updateWiringCursor(
+              (moveEvt.clientX - r.left - px) / s,
+              (moveEvt.clientY - r.top - py) / s,
+            );
+          }
+        };
+
+        const onUp = (upEvt: MouseEvent) => {
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+          if (hasDragged && wireStarted) {
+            const r = stage.container().getBoundingClientRect();
+            const s = useCanvasStore.getState().scale;
+            const px = useCanvasStore.getState().panX;
+            const py = useCanvasStore.getState().panY;
+            const endX = Math.round((upEvt.clientX - r.left - px) / s);
+            const endY = Math.round((upEvt.clientY - r.top - py) / s);
+            const pw = useCanvasStore.getState().pendingWire;
+            if (pw) {
+              const target = resolveWireTarget(endX, endY, pw.from);
+              useCanvasStore.getState().completeWiring(target);
+            }
+            (window as any).__wireJustCompleted = true;
+            setTimeout(() => {
+              (window as any).__wireJustCompleted = false;
+            }, 100);
+          }
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
         return;
       }
 
@@ -496,13 +533,6 @@ export function PhysicalView({ width, height }: Props) {
           panY={panY}
         />
 
-        {/* Wire layer */}
-        <WireLayer
-          wires={wires}
-          selectedEdgeId={selectedEdgeId}
-          onSelectEdge={(edgeId) => selectEdge(edgeId)}
-        />
-
         {/* Component layer */}
         <Layer>
           {instances.map((inst) => (
@@ -535,6 +565,13 @@ export function PhysicalView({ width, height }: Props) {
             borderDash={[4, 4]}
           />
         </Layer>
+
+        {/* Wire layer (renders on top of components so wires overlap components as in real life!) */}
+        <WireLayer
+          wires={wires}
+          selectedEdgeId={selectedEdgeId}
+          onSelectEdge={(edgeId) => selectEdge(edgeId)}
+        />
 
         {/* Selection Box Overlay Layer */}
         {selectionBox && (

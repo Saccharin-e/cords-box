@@ -10,7 +10,14 @@
  */
 
 import { create } from 'zustand';
-import type { ComponentType } from '@graph/types';
+import { Graph } from '@graph/Graph';
+import type { CircuitGraph, ComponentType } from '@graph/types';
+import { useCircuitStore } from './circuitStore';
+
+export interface HistorySnapshot {
+  instances: CanvasComponentInstance[];
+  graphData: CircuitGraph | null;
+}
 
 export type CanvasTheme = 'dark' | 'light' | 'blueprint' | 'vintage';
 export type GridStyle = 'dots' | 'lines' | 'crosshatch' | 'isometric' | 'none';
@@ -113,6 +120,8 @@ export interface CanvasStore {
   isSidebarOpen: boolean;
   isInspectorOpen: boolean;
   isControlsOpen: boolean;
+  inspectorWidth: number;
+  setInspectorWidth: (width: number) => void;
 
   // Display & Grid Options
   themeMode: CanvasTheme;
@@ -123,7 +132,7 @@ export interface CanvasStore {
   toggleShowComponentLabels: () => void;
 
   // History & Clipboard
-  history: CanvasComponentInstance[][];
+  history: HistorySnapshot[];
   historyIndex: number;
   clipboard: CanvasComponentInstance[] | null;
 
@@ -135,7 +144,11 @@ export interface CanvasStore {
 
   // Actions
   addInstance: (inst: CanvasComponentInstance) => void;
-  updateInstance: (id: string, updates: Partial<CanvasComponentInstance>) => void;
+  updateInstance: (
+    id: string,
+    updates: Partial<CanvasComponentInstance>,
+    skipHistory?: boolean,
+  ) => void;
   moveInstance: (id: string, x: number, y: number) => void;
   moveInstances: (deltas: { id: string; x: number; y: number }[]) => void;
   removeInstance: (id: string) => void;
@@ -304,6 +317,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isSidebarOpen: true,
   isInspectorOpen: true,
   isControlsOpen: true,
+  inspectorWidth: 320,
+  setInspectorWidth: (width) =>
+    set({ inspectorWidth: Math.max(220, Math.min(650, width)) }),
 
   themeMode: 'dark',
   gridStyle: 'dots',
@@ -313,7 +329,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   toggleShowComponentLabels: () => set((s) => ({ showComponentLabels: !s.showComponentLabels })),
 
-  history: [[]],
+  history: [{ instances: [], graphData: null }],
   historyIndex: 0,
   clipboard: null,
 
@@ -324,8 +340,25 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   pushHistory: () => {
     const { instances, history, historyIndex } = get();
+    const graph = useCircuitStore.getState().graph;
+    const graphData = graph ? graph.toJSON() : null;
+
     const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(JSON.parse(JSON.stringify(instances)));
+    const clonedInstances =
+      typeof structuredClone === 'function'
+        ? structuredClone(instances)
+        : JSON.parse(JSON.stringify(instances));
+    const clonedGraph = graphData
+      ? typeof structuredClone === 'function'
+        ? structuredClone(graphData)
+        : JSON.parse(JSON.stringify(graphData))
+      : null;
+
+    newHistory.push({
+      instances: clonedInstances,
+      graphData: clonedGraph,
+    });
+
     set({ history: newHistory, historyIndex: newHistory.length - 1 });
   },
 
@@ -338,11 +371,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     get().pushHistory();
   },
 
-  updateInstance: (id, updates) => {
+  updateInstance: (id, updates, skipHistory = false) => {
     set((s) => ({
       instances: s.instances.map((i) => (i.id === id ? { ...i, ...updates } : i)),
     }));
-    get().pushHistory();
+    if (!skipHistory) {
+      get().pushHistory();
+    }
   },
 
   moveInstance: (id, x, y) => {
@@ -377,7 +412,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       selectedIds: s.selectedIds.filter((sid) => sid !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
     }));
-    get().pushHistory();
+    import('./circuitStore').then(({ useCircuitStore }) => {
+      useCircuitStore.getState().removeComponent(id);
+      get().pushHistory();
+    });
   },
 
   removeSelected: () => {
@@ -388,7 +426,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       selectedId: null,
       selectedIds: [],
     }));
-    get().pushHistory();
+    import('./circuitStore').then(({ useCircuitStore }) => {
+      selectedIds.forEach((id) => useCircuitStore.getState().removeComponent(id));
+      get().pushHistory();
+    });
   },
 
   selectInstance: (id, multi = false) => {
@@ -462,19 +503,22 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const sourceNodeId = pendingWire.from.componentId + pendingWire.from.lugId;
     const targetNodeId = to.componentId + to.lugId;
 
-    // Dynamically import circuitStore to avoid circular dependency at module evaluation time
+    // Prevent self-wiring
+    if (sourceNodeId === targetNodeId) {
+      set({ pendingWire: null });
+      return;
+    }
+
     const { wireDrawOptions } = get();
-    import('./circuitStore').then(({ useCircuitStore }) => {
-      const edgeId = `wire_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      useCircuitStore.getState().addEdge({
-        id: edgeId,
-        source: sourceNodeId,
-        target: targetNodeId,
-        resistance: 0,
-        wireColor: wireDrawOptions.color,
-        connectionType: wireDrawOptions.connectionType,
-        wireType: wireDrawOptions.wireType,
-      });
+    const edgeId = `wire_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    useCircuitStore.getState().addEdge({
+      id: edgeId,
+      source: sourceNodeId,
+      target: targetNodeId,
+      resistance: 0,
+      wireColor: wireDrawOptions.color,
+      connectionType: wireDrawOptions.connectionType,
+      wireType: wireDrawOptions.wireType,
     });
 
     // Stay in wiring mode so user can draw another wire immediately
@@ -655,8 +699,23 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const { history, historyIndex } = get();
     if (historyIndex > 0) {
       const prevIndex = historyIndex - 1;
-      const prevInstances = JSON.parse(JSON.stringify(history[prevIndex]));
+      const snapshot = history[prevIndex];
+      if (!snapshot) return;
+
+      const prevInstances =
+        typeof structuredClone === 'function'
+          ? structuredClone(snapshot.instances)
+          : JSON.parse(JSON.stringify(snapshot.instances));
+
       set({ instances: prevInstances, historyIndex: prevIndex });
+
+      if (snapshot.graphData) {
+        import('./circuitStore').then(({ useCircuitStore }) => {
+          const newGraph = Graph.fromJSON(snapshot.graphData!);
+          useCircuitStore.setState({ graph: newGraph, solverResult: null });
+          useCircuitStore.getState().solve();
+        });
+      }
     }
   },
 
@@ -664,12 +723,27 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const { history, historyIndex } = get();
     if (historyIndex < history.length - 1) {
       const nextIndex = historyIndex + 1;
-      const nextInstances = JSON.parse(JSON.stringify(history[nextIndex]));
+      const snapshot = history[nextIndex];
+      if (!snapshot) return;
+
+      const nextInstances =
+        typeof structuredClone === 'function'
+          ? structuredClone(snapshot.instances)
+          : JSON.parse(JSON.stringify(snapshot.instances));
+
       set({ instances: nextInstances, historyIndex: nextIndex });
+
+      if (snapshot.graphData) {
+        import('./circuitStore').then(({ useCircuitStore }) => {
+          const newGraph = Graph.fromJSON(snapshot.graphData!);
+          useCircuitStore.setState({ graph: newGraph, solverResult: null });
+          useCircuitStore.getState().solve();
+        });
+      }
     }
   },
 
-  resetCanvas: () =>
+  resetCanvas: () => {
     set({
       instances: [],
       scale: 1,
@@ -679,8 +753,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       selectedIds: [],
       wiringMode: false,
       pendingWire: null,
-      history: [[]],
-      historyIndex: 0,
+      history: [],
+      historyIndex: -1,
       clipboard: null,
-    }),
+    });
+    import('./circuitStore').then(({ useCircuitStore }) => {
+      useCircuitStore.getState().reset();
+      get().pushHistory();
+    });
+  },
 }));

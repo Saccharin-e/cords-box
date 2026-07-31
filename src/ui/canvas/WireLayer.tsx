@@ -277,6 +277,35 @@ export const WireLayer = memo(function WireLayer({ wires, selectedEdgeId, onSele
               lineJoin="round"
               onClick={(evt) => {
                 evt.cancelBubble = true;
+                if ((window as any).__wireJustCompleted) {
+                  (window as any).__wireJustCompleted = false;
+                  return;
+                }
+                const isWiringMode = useCanvasStore.getState().wiringMode;
+                if (isWiringMode) {
+                  const stage = evt.target.getStage();
+                  const pos = stage?.getPointerPosition();
+                  if (pos) {
+                    const scale = useCanvasStore.getState().scale;
+                    const panX = useCanvasStore.getState().panX;
+                    const panY = useCanvasStore.getState().panY;
+                    const canvasX = Math.round((pos.x - panX) / scale);
+                    const canvasY = Math.round((pos.y - panY) / scale);
+                    const pendingWire = useCanvasStore.getState().pendingWire;
+                    if (pendingWire) {
+                      import('./wireUtils').then(({ resolveWireTarget }) => {
+                        const target = resolveWireTarget(canvasX, canvasY, pendingWire.from);
+                        useCanvasStore.getState().completeWiring(target);
+                      });
+                    } else {
+                      import('./wireUtils').then(({ resolveWireTarget }) => {
+                        const target = resolveWireTarget(canvasX, canvasY);
+                        useCanvasStore.getState().startWiring(target);
+                      });
+                    }
+                  }
+                  return;
+                }
                 onSelectEdge?.(wire.id);
               }}
             />
