@@ -18,6 +18,9 @@ Thumbs.db
 # Env
 .env
 .env.local
+
+# Rust
+dsp/target/
 .env.*.local
 
 # Vite

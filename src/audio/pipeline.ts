@@ -50,7 +50,6 @@ export interface CircuitTopologyState {
 }
 
 export class AudioPipeline {
-  private inputNode: AudioNode | null = null;
   private masterGain: GainNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
   private analyserNode: AnalyserNode | null = null;
@@ -58,6 +57,10 @@ export class AudioPipeline {
   private micStream: MediaStream | null = null;
   private strumIntervalId: number | null = null;
   private autoStrumming = false;
+
+  private isWasmReady: boolean = false;
+  private workletNode: AudioWorkletNode | null = null;
+  private pendingWasmInitialization: Promise<void> | null = null;
 
   private activeNodes: Map<string, AudioNode> = new Map();
   private activeTopology: CircuitTopologyState = {
@@ -123,11 +126,10 @@ export class AudioPipeline {
     cabConePeak.connect(cabLowpass);
     cabLowpass.connect(this.compressorNode);
     this.compressorNode.connect(this.analyserNode);
-    this.analyserNode.connect(ctx.destination);    // Create source generator node (for mic passthrough if needed)
-    this.inputNode = this.createSourceNode(ctx);
-    if (this.inputNode) {
-      this.inputNode.connect(this.masterGain);
-    }
+    this.analyserNode.connect(ctx.destination);
+
+    // Initialize WASM processor asynchronously
+    void this.initializeWasm(ctx);
 
     // Evaluate active components in solved graph
     const activeComponents = graph
@@ -136,6 +138,38 @@ export class AudioPipeline {
 
     // Detect Active Pickup Characteristics & Topology
     this.detectActiveTopology(activeComponents, graph, solverResult);
+  }
+
+  public async initializeWasm(ctx: AudioContext) {
+    if (this.isWasmReady) return;
+    if (this.pendingWasmInitialization) return this.pendingWasmInitialization;
+
+    this.pendingWasmInitialization = (async () => {
+      try {
+        const response = await fetch('/dsp/dsp_bg.wasm');
+        const wasmBytes = await response.arrayBuffer();
+
+        this.workletNode = new AudioWorkletNode(ctx, 'guitar-processor', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1,
+            outputChannelCount: [1]
+        });
+
+        await new Promise<void>((resolve) => {
+          this.workletNode!.port.onmessage = (e) => {
+            if (e.data.type === 'ready') {
+              this.isWasmReady = true;
+              resolve();
+            }
+          };
+          this.workletNode!.port.postMessage({ type: 'init', wasmBytes });
+        });
+      } catch (err) {
+        console.error("WASM initialization failed:", err);
+      }
+    })();
+
+    await this.pendingWasmInitialization;
   }
 
   /**
@@ -260,79 +294,45 @@ export class AudioPipeline {
     if (ctx.state === 'suspended') {
       void ctx.resume();
     }
+    
+    // Check if graph needs building
     if (!this.masterGain) {
       this.updatePipeline(useCircuitStore.getState().graph, useCircuitStore.getState().solverResult);
     }
     if (!this.masterGain) return;
 
+    if (this.isWasmReady && this.workletNode) {
+      // Send pluck message to WASM Worklet thread
+      this.workletNode.port.postMessage({
+        type: 'pluck',
+        string_idx: 0,
+        freq: freq,
+        velocity: velocity
+      });
+
+      // Route the WASM output through the active pickup topology
+      this.routeWasmThroughTopology(ctx, velocity);
+    }
+  }
+
+  private routeWasmThroughTopology(ctx: AudioContext, velocity: number) {
+    if (!this.workletNode || !this.masterGain) return;
+
     const now = ctx.currentTime;
     const topology = this.activeTopology;
 
-    // 1. Raw String Excitation (Karplus-Strong String Synthesis)
-    // We generate a high-quality physical string vibration synchronously in JS
-    // and pitch-shift it to the requested frequency.
-    const baseFreq = 100.0; // Base frequency that divides cleanly into sampleRate
-    const duration = 4.0;
-    const sampleRate = ctx.sampleRate;
-    const ksLength = Math.floor(sampleRate * duration);
-    const ksBuffer = ctx.createBuffer(1, ksLength, sampleRate);
-    const ksData = ksBuffer.getChannelData(0);
-
-    const N = Math.round(sampleRate / baseFreq);
-    
-    // Fill the initial delay line with filtered noise (the pick attack)
-    for (let i = 0; i < N; i++) {
-      // White noise provides the broad frequency spectrum for a metallic pick
-      ksData[i] = (Math.random() * 2 - 1) * velocity;
-    }
-
-    // Karplus-Strong waveguide filter loop
-    const decay = 0.996; // Steel string sustain (very long)
-    const damping = 0.25; // High frequencies reflect strongly (metallic)
-
-    let prev = 0;
-    for (let i = N; i < ksLength; i++) {
-      const current = ksData[i - N];
-      // First order lowpass filter in the feedback loop
-      const filtered = current * (1 - damping) + prev * damping;
-      ksData[i] = filtered * decay;
-      prev = current;
-    }
-
-    const stringSource = ctx.createBufferSource();
-    stringSource.buffer = ksBuffer;
-    // Pitch shift the 100Hz base buffer to the exact requested frequency!
-    // This perfectly mimics how higher, tighter strings decay faster.
-    stringSource.playbackRate.value = freq / baseFreq;
-
-    // Add a very subtle soft-clipper to mimic a preamp/magnetic pickup compression
-    const distortion = ctx.createWaveShaper();
-    function makeDistortionCurve(amount = 20) {
-      const k = typeof amount === 'number' ? amount : 50;
-      const n_samples = 44100;
-      const curve = new Float32Array(n_samples);
-      for (let i = 0; i < n_samples; ++i) {
-        const x = (i * 2) / n_samples - 1;
-        // Soft tube-like clipping
-        curve[i] = (3 + k) * x * 20 * (Math.PI / 180) / (Math.PI + k * Math.abs(x));
-      }
-      return curve;
-    }
-    distortion.curve = makeDistortionCurve(10);
-    distortion.oversample = '2x';
-
     const rawStringMix = ctx.createGain();
-    rawStringMix.gain.setValueAtTime(1.2, now); // Makeup gain
-
-    stringSource.connect(distortion);
-    distortion.connect(rawStringMix);
+    rawStringMix.gain.setValueAtTime(1.0, now);
+    // Worklet output is the raw distorted physical string model
+    this.workletNode.disconnect();
+    this.workletNode.connect(rawStringMix);
 
     // 2. Pickup Branches (Parallel physical filtering)
     const pickupMixNode = ctx.createGain();
     pickupMixNode.gain.setValueAtTime(1.0, now);
 
     if (topology.pickups.length === 0) {
-      stringSource.start(now);
+      // Circuit is dead/open
       return;
     }
 
@@ -349,16 +349,20 @@ export class AudioPipeline {
       pickupResonance.type = 'peaking';
       pickupResonance.frequency.setValueAtTime(pickup.resonantFreq * seriesFreqShift, now);
       pickupResonance.Q.setValueAtTime(pickup.resonantQ, now);
-      pickupResonance.gain.setValueAtTime(6.0, now); // The RLC resonant peak of electric pickups
+      pickupResonance.gain.setValueAtTime(6.0, now); // RLC resonant peak
       delayNode.connect(pickupResonance);
 
       const branchGain = ctx.createGain();
       let gainVal = pickup.blendGain * seriesBoost;
-      if (pickup.isOutofPhase) gainVal *= -1; // Phase inversion!
+      if (pickup.isOutofPhase) gainVal *= -1;
       branchGain.gain.setValueAtTime(gainVal, now);
 
       pickupResonance.connect(branchGain);
       branchGain.connect(pickupMixNode);
+      
+      this.activeNodes.set(`pickup-${pickup.id}-${now}`, delayNode);
+      this.activeNodes.set(`pickupRes-${pickup.id}-${now}`, pickupResonance);
+      this.activeNodes.set(`pickupGain-${pickup.id}-${now}`, branchGain);
     }
 
     // Master Tone
@@ -370,29 +374,21 @@ export class AudioPipeline {
     masterToneFilter.Q.setValueAtTime(1.0, now);
     pickupMixNode.connect(masterToneFilter);
 
-    // Master Volume & Pluck Envelope
+    // Master Volume & Envelope
     const env = ctx.createGain();
     const peakGain = Math.min(0.8, Math.max(0.04, velocity * topology.masterVolume));
     env.gain.setValueAtTime(0.0001, now);
-    env.gain.linearRampToValueAtTime(peakGain, now + 0.002); // Sharp snapping attack
-    env.gain.exponentialRampToValueAtTime(0.0001, now + 4.5); // Natural Karplus-Strong sustain handles the rest
+    env.gain.linearRampToValueAtTime(peakGain, now + 0.002);
+    env.gain.exponentialRampToValueAtTime(0.0001, now + 4.5);
 
     masterToneFilter.connect(env);
+    
+    env.connect(this.masterGain);
 
-    if (this.inputNode) {
-      env.connect(this.inputNode);
-    } else {
-      env.connect(this.masterGain);
-    }
-
-    pickSource.start(now);
-    osc1.start(now);
-    osc2.start(now);
-    osc3.start(now);
-
-    osc1.stop(now + 4.1);
-    osc2.stop(now + 4.1);
-    osc3.stop(now + 4.1);
+    this.activeNodes.set(`rawMix-${now}`, rawStringMix);
+    this.activeNodes.set(`pickupMix-${now}`, pickupMixNode);
+    this.activeNodes.set(`tone-${now}`, masterToneFilter);
+    this.activeNodes.set(`env-${now}`, env);
   }
 
   /**
@@ -453,17 +449,6 @@ export class AudioPipeline {
     }
   }
 
-  private createSourceNode(ctx: AudioContext): AudioNode | null {
-    if (this.currentSourceType === 'mic' && this.micStream) {
-      return ctx.createMediaStreamSource(this.micStream);
-    }
-
-    // Default pass-through gain node for synthesized plucks / inputs
-    const inputGain = ctx.createGain();
-    inputGain.gain.value = 1.0;
-    return inputGain;
-  }
-
   public cleanupNodes() {
     for (const node of this.activeNodes.values()) {
       try {
@@ -473,15 +458,6 @@ export class AudioPipeline {
       }
     }
     this.activeNodes.clear();
-
-    if (this.inputNode) {
-      try {
-        this.inputNode.disconnect();
-      } catch {
-        // Ignored
-      }
-      this.inputNode = null;
-    }
 
     if (this.analyserNode) {
       try {

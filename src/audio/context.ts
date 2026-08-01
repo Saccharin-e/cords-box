@@ -12,6 +12,12 @@ export class AudioEngine {
   async initialize(): Promise<void> {
     if (!this.context) {
       this.context = new AudioContext({ sampleRate: 44100, latencyHint: 'interactive' });
+      // Pre-load the WASM AudioWorklet processor
+      try {
+        await this.context.audioWorklet.addModule('/dsp/processor.js');
+      } catch (err) {
+        console.error("Failed to load WASM AudioWorklet processor:", err);
+      }
     }
     if (this.context.state === 'suspended') {
       await this.context.resume();
