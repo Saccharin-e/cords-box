@@ -35,6 +35,7 @@ export interface CanvasComponentInstance {
   flippedV?: boolean;
   groupId?: string;
   // Customization & Editable Fields
+  value?: unknown;
   customLabel?: string;
   customLugLabels?: Record<string, string>;
   textValue?: string;
@@ -120,6 +121,7 @@ export interface CanvasStore {
   isSidebarOpen: boolean;
   isInspectorOpen: boolean;
   isControlsOpen: boolean;
+  isTestPanelOpen: boolean;
   inspectorWidth: number;
   setInspectorWidth: (width: number) => void;
 
@@ -141,6 +143,7 @@ export interface CanvasStore {
   toggleSidebar: () => void;
   toggleInspector: () => void;
   toggleControls: () => void;
+  toggleTestPanel: () => void;
 
   // Actions
   addInstance: (inst: CanvasComponentInstance) => void;
@@ -317,6 +320,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isSidebarOpen: true,
   isInspectorOpen: true,
   isControlsOpen: true,
+  isTestPanelOpen: false,
   inspectorWidth: 320,
   setInspectorWidth: (width) =>
     set({ inspectorWidth: Math.max(220, Math.min(650, width)) }),
@@ -337,6 +341,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   toggleSidebar: () => set((s) => ({ isSidebarOpen: !s.isSidebarOpen })),
   toggleInspector: () => set((s) => ({ isInspectorOpen: !s.isInspectorOpen })),
   toggleControls: () => set((s) => ({ isControlsOpen: !s.isControlsOpen })),
+  toggleTestPanel: () => set((s) => ({ isTestPanelOpen: !s.isTestPanelOpen })),
 
   pushHistory: () => {
     const { instances, history, historyIndex } = get();
@@ -412,10 +417,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       selectedIds: s.selectedIds.filter((sid) => sid !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
     }));
-    import('./circuitStore').then(({ useCircuitStore }) => {
-      useCircuitStore.getState().removeComponent(id);
-      get().pushHistory();
-    });
+    useCircuitStore.getState().removeComponent(id);
+    get().pushHistory();
   },
 
   removeSelected: () => {
@@ -426,10 +429,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       selectedId: null,
       selectedIds: [],
     }));
-    import('./circuitStore').then(({ useCircuitStore }) => {
-      selectedIds.forEach((id) => useCircuitStore.getState().removeComponent(id));
-      get().pushHistory();
-    });
+    selectedIds.forEach((id) => useCircuitStore.getState().removeComponent(id));
+    get().pushHistory();
   },
 
   selectInstance: (id, multi = false) => {
@@ -757,9 +758,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       historyIndex: -1,
       clipboard: null,
     });
-    import('./circuitStore').then(({ useCircuitStore }) => {
-      useCircuitStore.getState().reset();
-      get().pushHistory();
-    });
+    useCircuitStore.getState().reset();
+    get().pushHistory();
   },
 }));

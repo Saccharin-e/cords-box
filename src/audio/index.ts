@@ -1,3 +1,3 @@
 export { audioEngine } from './context';
-export { audioPipeline } from './pipeline';
+export { audioPipeline, GUITAR_STRINGS, GUITAR_CHORDS } from './pipeline';
 export type { InputSourceType } from './pipeline';

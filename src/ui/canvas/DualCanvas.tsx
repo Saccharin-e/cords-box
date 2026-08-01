@@ -9,6 +9,8 @@ import { useCircuitStore } from '@store/circuitStore';
 import { lintCircuit } from '@lint/linter';
 import { PhysicalView } from './PhysicalView';
 import { SchematicView } from './SchematicView';
+import { GuitarSoundTestPanel } from '../toolbar/GuitarSoundTestPanel';
+import { loadPresetById } from '@presets/presetLibrary';
 
 type ViewMode = 'physical' | 'schematic';
 
@@ -20,6 +22,8 @@ export function DualCanvas() {
   const instancesCount = useCanvasStore((s) => s.instances.length);
   const wiringMode = useCanvasStore((s) => s.wiringMode);
   const selectedId = useCanvasStore((s) => s.selectedId);
+  const isTestPanelOpen = useCanvasStore((s) => s.isTestPanelOpen);
+  const toggleTestPanel = useCanvasStore((s) => s.toggleTestPanel);
   const selectedEdgeId = useCircuitStore((s) => s.selectedEdgeId);
   const graph = useCircuitStore((s) => s.graph);
   const solverResult = useCircuitStore((s) => s.solverResult);
@@ -117,8 +121,15 @@ export function DualCanvas() {
     setPan(size.width / 2, size.height / 2);
   }
 
+  function handleLoadTestBench() {
+    loadPresetById('guitar_sound_test_template');
+    if (!isTestPanelOpen) {
+      toggleTestPanel();
+    }
+  }
+
   return (
-    <section className="canvas-area" ref={containerRef} id="canvas-area">
+    <section className="canvas-area" ref={containerRef} id="canvas-area" style={{ position: 'relative' }}>
       {/* Dot grid background */}
       <div className="canvas-area__bg" />
 
@@ -205,9 +216,23 @@ export function DualCanvas() {
         </>
       )}
 
+      {/* Floating Guitar Audio Sound Test Panel */}
+      {isTestPanelOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 50,
+            right: 20,
+            zIndex: 100,
+          }}
+        >
+          <GuitarSoundTestPanel />
+        </div>
+      )}
+
       {/* Empty state overlay */}
       {isEmpty && (
-        <div className="canvas-empty" style={{ pointerEvents: 'none' }}>
+        <div className="canvas-empty" style={{ pointerEvents: 'auto' }}>
           <div className="canvas-empty__icon" style={{ opacity: 0.4 }}>
             <svg
               width="40"
@@ -224,7 +249,32 @@ export function DualCanvas() {
               <line x1="8" y1="12" x2="16" y2="12" />
             </svg>
           </div>
-          <p className="canvas-empty__text">drag and drop to start designing</p>
+          <p className="canvas-empty__text">drag and drop components or test guitar sound</p>
+          <button
+            onClick={handleLoadTestBench}
+            style={{
+              marginTop: 12,
+              padding: '8px 16px',
+              backgroundColor: '#d97706',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: '0 4px 14px rgba(217, 119, 6, 0.4)',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+            </svg>
+            ⚡ Load Guitar Sound Test Bench
+          </button>
         </div>
       )}
 

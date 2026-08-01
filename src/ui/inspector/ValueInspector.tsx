@@ -39,6 +39,7 @@ export function ValueInspector() {
   const sendBackward = useCanvasStore((s) => s.sendBackward);
 
   const graph = useCircuitStore((s) => s.graph);
+  useCircuitStore((s) => s.version);
   const selectedEdgeId = useCircuitStore((s) => s.selectedEdgeId);
   const updateComponentValue = useCircuitStore((s) => s.updateComponentValue);
   const updateComponentLabel = useCircuitStore((s) => s.updateComponentLabel);
@@ -223,14 +224,16 @@ export function ValueInspector() {
             {(component.type === 'switch_3way' ||
               component.type === 'switch_4way' ||
               component.type === 'switch_5way' ||
-              component.type === 'switch_dpdt') && (
+              component.type === 'switch_dpdt' ||
+              component.type === 'pot_pushpull') && (
               <SwitchInspector compId={component.id} type={component.type} />
             )}
 
             {(component.type === 'pot_volume' ||
               component.type === 'pot_tone' ||
               component.type === 'pot_blend' ||
-              component.type === 'pot_concentric') && (
+              component.type === 'pot_concentric' ||
+              component.type === 'pot_pushpull') && (
               <PotentiometerInspector
                 compId={component.id}
                 value={component.value as PotentiometerValue | undefined}
@@ -492,6 +495,7 @@ function PickupInspector({ compId: _compId, type }: { compId: string; type: stri
 
 function SwitchInspector({ compId, type }: { compId: string; type: string }) {
   const graph = useCircuitStore((s) => s.graph);
+  useCircuitStore((s) => s.version);
   const setSwitchState = useCircuitStore((s) => s.setSwitchState);
 
   const totalPos =
@@ -509,8 +513,10 @@ function SwitchInspector({ compId, type }: { compId: string; type: string }) {
     });
   }
 
+  const isPushPull = type === 'pot_pushpull';
+
   return (
-    <InspectorSection title="Switch Controls">
+    <InspectorSection title={isPushPull ? 'Push-Pull DPDT Switch' : 'Switch Controls'}>
       <div style={{ marginBottom: 8 }}>
         <div
           style={{
@@ -524,7 +530,11 @@ function SwitchInspector({ compId, type }: { compId: string; type: string }) {
         >
           <span>Active Position:</span>
           <span className="inspector-mono" style={{ color: 'var(--color-accent-blue)' }}>
-            Position {currentPos}
+            {isPushPull
+              ? currentPos === 1
+                ? 'Pushed (Normal)'
+                : 'Pulled (Phase Flip)'
+              : `Position ${currentPos}`}
           </span>
         </div>
 
@@ -542,7 +552,7 @@ function SwitchInspector({ compId, type }: { compId: string; type: string }) {
               }}
               onClick={() => handlePosClick(pos)}
             >
-              P{pos}
+              {isPushPull ? (pos === 1 ? 'Pushed' : 'Pulled') : `P${pos}`}
             </button>
           ))}
         </div>

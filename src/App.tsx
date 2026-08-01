@@ -13,6 +13,7 @@ import { ValueInspector } from './ui/inspector/ValueInspector';
 import { ExportModal } from './ui/export/ExportModal';
 import { SettingsModal } from './ui/settings/SettingsModal';
 import { useCanvasStore } from '@store/canvasStore';
+import { loadPresetById } from '@presets/presetLibrary';
 
 export default function App() {
   const isSidebarOpen = useCanvasStore((s) => s.isSidebarOpen);
@@ -21,6 +22,12 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.style.setProperty('--inspector-width', `${inspectorWidth}px`);
+
+    // Auto-load functional Guitar Sound Test Bench circuit & open test bench panel on initial load
+    if (useCanvasStore.getState().instances.length === 0) {
+      loadPresetById('guitar_sound_test_template');
+      useCanvasStore.setState({ isTestPanelOpen: true });
+    }
   }, [inspectorWidth]);
 
   const gridCols = `${isSidebarOpen ? '280px' : '0px'} 1fr ${isInspectorOpen ? 'var(--inspector-width, 320px)' : '0px'}`;

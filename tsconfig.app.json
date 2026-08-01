@@ -13,6 +13,7 @@
       "@audio/*": ["./src/audio/*"],
       "@store/*": ["./src/store/*"],
       "@ui/*": ["./src/ui/*"],
+      "@presets/*": ["./src/presets/*"],
       "@lint/*": ["./src/lint/*"]
     },
 

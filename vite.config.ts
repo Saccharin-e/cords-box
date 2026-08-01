@@ -12,6 +12,7 @@ export default defineConfig({
       '@audio': resolve(__dirname, 'src/audio'),
       '@store': resolve(__dirname, 'src/store'),
       '@ui': resolve(__dirname, 'src/ui'),
+      '@presets': resolve(__dirname, 'src/presets'),
       '@lint': resolve(__dirname, 'src/lint'),
     },
   },

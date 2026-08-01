@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
-import { useKeybindingsStore } from '@store/keybindingsStore';
 import { audioEngine, audioPipeline } from '@audio/index';
-import { lintCircuit } from '@lint/linter';
+import { PRESETS, loadPresetById, type PresetDefinition } from '@presets/presetLibrary';
 
 export function Toolbar() {
   const {
@@ -16,21 +15,23 @@ export function Toolbar() {
     toggleInspector,
     isControlsOpen,
     toggleControls,
+    isTestPanelOpen,
+    toggleTestPanel,
     toggleExportModal,
   } = useCanvasStore();
 
-  const { exportJSON, importJSON, reset: resetGraph, graph } = useCircuitStore();
+  const { exportJSON, importJSON, reset: resetGraph } = useCircuitStore();
   const [audioActive, setAudioActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Dropdown Open States
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
   const [isAudioMenuOpen, setIsAudioMenuOpen] = useState(false);
+  const [isPresetMenuOpen, setIsPresetMenuOpen] = useState(false);
 
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const audioMenuRef = useRef<HTMLDivElement>(null);
-
-  const diagnostics = lintCircuit(graph);
+  const presetMenuRef = useRef<HTMLDivElement>(null);
 
   // Listen to fullscreen changes
   useEffect(() => {
@@ -57,6 +58,9 @@ export function Toolbar() {
       }
       if (audioMenuRef.current && !audioMenuRef.current.contains(e.target as Node)) {
         setIsAudioMenuOpen(false);
+      }
+      if (presetMenuRef.current && !presetMenuRef.current.contains(e.target as Node)) {
+        setIsPresetMenuOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -118,6 +122,11 @@ export function Toolbar() {
       resetCanvas();
       resetGraph();
     }
+  }
+
+  function handleLoadPreset(presetId: string) {
+    loadPresetById(presetId);
+    setIsPresetMenuOpen(false);
   }
 
   return (
@@ -207,6 +216,7 @@ export function Toolbar() {
             onClick={() => {
               setIsFileMenuOpen(!isFileMenuOpen);
               setIsAudioMenuOpen(false);
+              setIsPresetMenuOpen(false);
             }}
             style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
           >
@@ -328,13 +338,68 @@ export function Toolbar() {
           )}
         </div>
 
-        {/* 2. Audio Engine Dropdown */}
+        {/* 2. Circuit Presets / Templates Dropdown */}
+        <div ref={presetMenuRef} style={{ position: 'relative' }}>
+          <button
+            className={`btn btn--sm ${isPresetMenuOpen ? 'btn--primary' : ''}`}
+            onClick={() => {
+              setIsPresetMenuOpen(!isPresetMenuOpen);
+              setIsFileMenuOpen(false);
+              setIsAudioMenuOpen(false);
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polygon points="12 2 2 7 12 12 22 7 12 2" />
+              <polyline points="2 17 12 22 22 17" />
+              <polyline points="2 12 12 17 22 12" />
+            </svg>
+            <span>Templates</span>
+            <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
+          </button>
+
+          {isPresetMenuOpen && (
+            <div style={{ ...dropdownStyle, width: 280 }}>
+              <div style={{ padding: '6px 12px', fontSize: 10, fontWeight: 700, color: '#a1a1aa', textTransform: 'uppercase' }}>
+                Preset Circuit Templates
+              </div>
+              {PRESETS.map((preset: PresetDefinition) => (
+                <button
+                  key={preset.id}
+                  style={dropdownItemStyle}
+                  onClick={() => handleLoadPreset(preset.id)}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, textAlign: 'left' }}>
+                    <span style={{ fontWeight: 600, color: preset.id === 'guitar_sound_test_template' ? '#f59e0b' : '#f4f4f5' }}>
+                      {preset.name}
+                    </span>
+                    <span style={{ fontSize: 10, color: '#9ca3af', lineHeight: 1.2 }}>
+                      {preset.description.slice(0, 75)}…
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 3. Audio Engine Dropdown */}
         <div ref={audioMenuRef} style={{ position: 'relative' }}>
           <button
             className={`btn btn--sm ${audioActive ? 'btn--primary' : ''}`}
             onClick={() => {
               setIsAudioMenuOpen(!isAudioMenuOpen);
               setIsFileMenuOpen(false);
+              setIsPresetMenuOpen(false);
             }}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
@@ -401,9 +466,51 @@ export function Toolbar() {
                 </svg>
                 <span>Pluck Guitar String</span>
               </button>
+
+              <div style={dropdownDividerStyle} />
+
+              <button
+                style={{ ...dropdownItemStyle, color: '#f59e0b', fontWeight: 600 }}
+                onClick={() => {
+                  setIsAudioMenuOpen(false);
+                  if (!isTestPanelOpen) toggleTestPanel();
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 2v20M2 12h20" />
+                </svg>
+                <span>Open Guitar Test Bench Panel</span>
+              </button>
             </div>
           )}
         </div>
+
+        {/* Quick Pluck Sound Button */}
+        <button
+          className="btn btn--sm"
+          onClick={handlePluck}
+          title="Click to pluck guitar string and test sound output"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontWeight: 700,
+            backgroundColor: '#78350f',
+            color: '#fef3c7',
+            border: '1px solid #d97706',
+          }}
+        >
+          <span>⚡ Pluck Sound</span>
+        </button>
 
         <div style={{ width: 1, height: 16, backgroundColor: '#3f3f46', margin: '0 4px' }} />
 
@@ -428,6 +535,38 @@ export function Toolbar() {
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
           <span>{wiringMode ? 'Wiring Active…' : 'Wire Mode'}</span>
+        </button>
+
+        {/* Sound Test Bench Floating Widget Toggle */}
+        <button
+          className={`btn btn--sm ${isTestPanelOpen ? 'btn--primary' : ''}`}
+          onClick={toggleTestPanel}
+          title="Toggle Floating Guitar Audio Test Bench Panel"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 11,
+            fontWeight: 700,
+            backgroundColor: isTestPanelOpen ? '#d97706' : '#27272a',
+            color: '#ffffff',
+            border: '1px solid #3f3f46',
+          }}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+          </svg>
+          <span>Sound Bench</span>
         </button>
       </nav>
 
@@ -456,11 +595,11 @@ export function Toolbar() {
           <span>CAD Tools</span>
         </button>
 
-        {/* Toggle Value Inspector Panel */}
+        {/* Toggle Inspector Panel */}
         <button
           className={`btn btn--sm ${isInspectorOpen ? 'btn--primary' : ''}`}
           onClick={toggleInspector}
-          title="Toggle Component Inspector Panel"
+          title="Toggle Value Inspector Panel"
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
         >
           <svg
@@ -473,31 +612,24 @@ export function Toolbar() {
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <rect x="4" y="4" width="16" height="16" rx="2" />
-            <line x1="9" y1="9" x2="15" y2="9" />
-            <line x1="9" y1="13" x2="15" y2="13" />
-            <line x1="9" y1="17" x2="13" y2="17" />
+            <line x1="4" y1="21" x2="4" y2="14" />
+            <line x1="4" y1="10" x2="4" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12" y2="3" />
+            <line x1="20" y1="21" x2="20" y2="16" />
+            <line x1="20" y1="12" x2="20" y2="3" />
+            <line x1="1" y1="14" x2="7" y2="14" />
+            <line x1="9" y1="8" x2="15" y2="8" />
+            <line x1="17" y1="16" x2="23" y2="16" />
           </svg>
           <span>Inspector</span>
-          {diagnostics.length > 0 && (
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                backgroundColor: '#f59e0b',
-                boxShadow: '0 0 6px #f59e0b',
-              }}
-            />
-          )}
         </button>
 
-        {/* Shortcuts & Settings Modal Button */}
         <button
           className="btn btn--sm"
-          onClick={() => useKeybindingsStore.getState().openSettings()}
-          title="CAD Shortcuts & Controls Reference (Key: ?)"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#38bdf8' }}
+          onClick={toggleFullscreen}
+          title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px' }}
         >
           <svg
             width="14"
@@ -509,85 +641,53 @@ export function Toolbar() {
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <circle cx="12" cy="12" r="10" />
-            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
+            {isFullscreen ? (
+              <>
+                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+              </>
+            ) : (
+              <>
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+              </>
+            )}
           </svg>
-          <span>Shortcuts</span>
-        </button>
-
-        {/* Fullscreen Toggle Button */}
-        <button
-          className={`btn btn--sm ${isFullscreen ? 'btn--primary' : ''}`}
-          onClick={toggleFullscreen}
-          title={isFullscreen ? 'Exit Fullscreen Mode (Shift+F)' : 'Enter Fullscreen Mode (Shift+F)'}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
-        >
-          {isFullscreen ? (
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
-            </svg>
-          ) : (
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-            </svg>
-          )}
-          <span>{isFullscreen ? 'Exit' : 'Fullscreen'}</span>
         </button>
       </div>
     </header>
   );
 }
 
-// ─── Dropdown Menu Styles ───────────────────────────────────────────────────
-
 const dropdownStyle: React.CSSProperties = {
   position: 'absolute',
   top: 'calc(100% + 6px)',
   left: 0,
-  minWidth: 190,
+  zIndex: 1000,
+  width: 210,
   backgroundColor: '#18181b',
   border: '1px solid #3f3f46',
   borderRadius: 8,
-  padding: '6px 0',
-  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.7)',
-  zIndex: 100,
+  padding: '6px',
+  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
   display: 'flex',
   flexDirection: 'column',
+  gap: 2,
 };
 
 const dropdownItemStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 10,
-  padding: '8px 14px',
-  backgroundColor: 'transparent',
-  border: 'none',
-  color: '#e4e4e7',
+  padding: '8px 10px',
   fontSize: 12,
   fontWeight: 500,
-  textAlign: 'left',
+  color: '#e4e4e7',
+  backgroundColor: 'transparent',
+  border: 'none',
+  borderRadius: 6,
   cursor: 'pointer',
-  transition: 'background-color 0.15s ease',
+  textAlign: 'left',
   width: '100%',
+  transition: 'background-color 0.15s ease',
 };
 
 const dropdownDividerStyle: React.CSSProperties = {

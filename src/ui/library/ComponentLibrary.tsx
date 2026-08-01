@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
+import { loadPresetById } from '@presets/presetLibrary';
 import { getShape } from '../canvas/shapes';
 import { HardwareIcon } from './HardwareIcon';
+import type { ComponentType } from '@graph/types';
 
 interface ComponentItem {
   id: string;
@@ -10,6 +12,33 @@ interface ComponentItem {
   description: string;
   category: 'pickup' | 'switch' | 'pot' | 'passive' | 'doc' | 'shapes' | 'output';
 }
+
+const ITEM_TYPE_MAP: Record<string, ComponentType> = {
+  pickup_sc: 'pickup_single_coil',
+  pickup_p90: 'pickup_p90',
+  pickup_hb: 'pickup_humbucker',
+  switch_3way: 'switch_3way',
+  switch_4way: 'switch_4way',
+  switch_5way: 'switch_5way',
+  switch_dpdt: 'switch_dpdt',
+  pot_volume: 'pot_volume',
+  pot_tone: 'pot_tone',
+  pot_blend: 'pot_blend',
+  pot_concentric: 'pot_concentric',
+  pot_pushpull: 'pot_pushpull',
+  battery_9v: 'battery_9v',
+  ground_terminal: 'ground_terminal',
+  treble_bleed: 'treble_bleed',
+  text_box: 'text_box',
+  project_card: 'project_card',
+  shape_rect: 'shape_rect',
+  shape_circle: 'shape_circle',
+  shape_line: 'shape_line',
+  shape_arrow: 'shape_arrow',
+  capacitor: 'capacitor',
+  resistor: 'resistor',
+  output_jack: 'output_jack',
+};
 
 const COMPONENTS: ComponentItem[] = [
   {
@@ -174,11 +203,18 @@ export function ComponentLibrary() {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const isSidebarOpen = useCanvasStore((s) => s.isSidebarOpen);
   const toggleSidebar = useCanvasStore((s) => s.toggleSidebar);
+  const isTestPanelOpen = useCanvasStore((s) => s.isTestPanelOpen);
+  const toggleTestPanel = useCanvasStore((s) => s.toggleTestPanel);
 
   if (!isSidebarOpen) return null;
 
   function toggleGroup(key: string) {
     setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function handleLoadSoundTest() {
+    loadPresetById('guitar_sound_test_template');
+    if (!isTestPanelOpen) toggleTestPanel();
   }
 
   function handleItemClick(itemId: string) {
@@ -225,15 +261,21 @@ export function ComponentLibrary() {
         wireType: wireDrawOptions.wireType,
       });
     } else {
-      const shape = getShape(itemId);
-      const count = instances.filter((i) => i.type === itemId).length + 1;
+      const compType = ITEM_TYPE_MAP[itemId] ?? (itemId as ComponentType);
+      const shape = getShape(compType);
+      const count = instances.filter((i) => i.type === compType).length + 1;
+      const width = shape?.width ?? 120;
+      const height = shape?.height ?? 80;
+      const label = shape?.label ?? 'Component';
+
       const newInst = {
         id: `${itemId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        type: itemId,
-        x: centerX - Math.round(shape.width / 2),
-        y: centerY - Math.round(shape.height / 2),
-        label: `${shape.label} ${count}`,
-        value: shape.defaultValue,
+        type: compType,
+        x: centerX - Math.round(width / 2),
+        y: centerY - Math.round(height / 2),
+        width,
+        height,
+        label: `${label} ${count}`,
       };
       state.addInstance(newInst);
     }
@@ -252,6 +294,31 @@ export function ComponentLibrary() {
           title="Close Component Library Panel"
         >
           ✕
+        </button>
+      </div>
+
+      {/* Quick Test Bench Template Load Button */}
+      <div style={{ padding: '0 0 10px 0', borderBottom: '1px solid #27272a', marginBottom: 8 }}>
+        <button
+          onClick={handleLoadSoundTest}
+          style={{
+            width: '100%',
+            padding: '8px 10px',
+            backgroundColor: '#78350f',
+            color: '#fef3c7',
+            border: '1px solid #d97706',
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <span>⚡ Load Guitar Sound Test Bench</span>
         </button>
       </div>
 

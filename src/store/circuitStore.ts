@@ -20,6 +20,7 @@ export interface CircuitStore {
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
   selectedComponentId: string | null;
+  version: number;
 
   // Mutations
   addNode: (node: CircuitNode) => void;
@@ -54,45 +55,51 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
   selectedNodeId: null,
   selectedEdgeId: null,
   selectedComponentId: null,
+  version: 0,
 
   addNode: (node) => {
     get().graph.addNode(node);
     get().solve();
-    set({});
+    set((s) => ({ version: s.version + 1 }));
     useCanvasStore.getState().pushHistory();
   },
   removeNode: (nodeId) => {
     get().graph.removeNode(nodeId);
     get().solve();
-    set({});
+    set((s) => ({ version: s.version + 1 }));
     useCanvasStore.getState().pushHistory();
   },
   addEdge: (edge) => {
     get().graph.addEdge(edge);
     get().solve();
-    set({});
+    set((s) => ({ version: s.version + 1 }));
     useCanvasStore.getState().pushHistory();
   },
   removeEdge: (edgeId) => {
     get().graph.removeEdge(edgeId);
     get().solve();
-    set({});
+    set((s) => ({ version: s.version + 1 }));
     useCanvasStore.getState().pushHistory();
   },
   addComponent: (component) => {
     get().graph.addComponent(component);
-    set({});
+    set((s) => ({ version: s.version + 1 }));
     useCanvasStore.getState().pushHistory();
   },
   updateComponentValue: (componentId, value) => {
     get().graph.updateComponentValue(componentId, value);
+    useCanvasStore.setState((s) => ({
+      instances: s.instances.map((inst) =>
+        inst.id === componentId ? { ...inst, value } : inst,
+      ),
+    }));
     get().solve();
-    set({});
+    set((s) => ({ version: s.version + 1 }));
     useCanvasStore.getState().pushHistory();
   },
   updateComponentLabel: (componentId, label) => {
     get().graph.updateComponentLabel(componentId, label);
-    set({});
+    set((s) => ({ version: s.version + 1 }));
     useCanvasStore.getState().pushHistory();
   },
   updateEdge: (edgeId, updates, skipSolve = false) => {
@@ -100,19 +107,19 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
     if (!skipSolve) {
       get().solve();
     }
-    set({});
+    set((s) => ({ version: s.version + 1 }));
     useCanvasStore.getState().pushHistory();
   },
   removeComponent: (componentId: string) => {
     get().graph.removeComponent(componentId);
     get().solve();
-    set({});
+    set((s) => ({ version: s.version + 1 }));
     useCanvasStore.getState().pushHistory();
   },
   setSwitchState: (state) => {
     get().graph.setSwitchState(state);
     get().solve();
-    set({});
+    set((s) => ({ version: s.version + 1 }));
     useCanvasStore.getState().pushHistory();
   },
 
@@ -129,18 +136,18 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
     const graph = get().graph;
     const result = solveSignalPaths(graph);
     audioPipeline.updatePipeline(graph, result);
-    set({ solverResult: result });
+    set((s) => ({ solverResult: result, version: s.version + 1 }));
   },
 
   exportJSON: () => JSON.stringify(get().graph.toJSON(), null, 2),
   importJSON: (json) => {
     const data = JSON.parse(json);
     const graph = Graph.fromJSON(data);
-    set({ graph, solverResult: null });
+    set((s) => ({ graph, solverResult: null, version: s.version + 1 }));
     get().solve();
   },
   reset: () => {
-    set({ graph: new Graph('Guitar'), solverResult: null });
+    set((s) => ({ graph: new Graph('Guitar'), solverResult: null, version: s.version + 1 }));
     get().clearSelection();
   },
 }));

@@ -30,18 +30,111 @@ export interface SolverResult {
 }
 
 /**
+ * Synchronize internal switch contact edges based on each switch component's current position.
+ */
+export function syncSwitchInternalEdges(graph: Graph): void {
+  const components = graph.getComponents();
+  const switchComps = components.filter((c) => c.type.startsWith('switch_') || c.type === 'pot_pushpull');
+
+  for (const comp of switchComps) {
+    const swState = graph.getSwitchState(comp.id);
+    const pos = swState?.currentPosition ?? 1;
+
+    // Remove existing internal switch edges for this component
+    const existingEdges = graph
+      .getEdges()
+      .filter((e) => e.id.startsWith(`internal_sw_${comp.id}_`));
+    for (const e of existingEdges) {
+      graph.removeEdge(e.id);
+    }
+
+    const contacts: [string, string][] = [];
+
+    if (comp.type === 'switch_3way') {
+      if (pos === 1) {
+        contacts.push([`${comp.id}_pos1`, `${comp.id}_common`]);
+      } else if (pos === 2) {
+        contacts.push([`${comp.id}_pos1`, `${comp.id}_common`]);
+        contacts.push([`${comp.id}_pos3`, `${comp.id}_common`]);
+      } else if (pos === 3) {
+        contacts.push([`${comp.id}_pos3`, `${comp.id}_common`]);
+      }
+    } else if (comp.type === 'switch_4way') {
+      // Real Oak Grigsby 2-pole 4-position: both poles always connect,
+      // one lug per pole per position. Selection depends on wiring.
+      contacts.push([`${comp.id}_poleA_pos${pos}`, `${comp.id}_poleA_common`]);
+      contacts.push([`${comp.id}_poleB_pos${pos}`, `${comp.id}_poleB_common`]);
+    } else if (comp.type === 'switch_5way') {
+      if (pos === 1) {
+        contacts.push([`${comp.id}_poleA_pos1`, `${comp.id}_poleA_common`]);
+      } else if (pos === 2) {
+        contacts.push([`${comp.id}_poleA_pos1`, `${comp.id}_poleA_common`]);
+        contacts.push([`${comp.id}_poleA_pos2`, `${comp.id}_poleA_common`]);
+      } else if (pos === 3) {
+        contacts.push([`${comp.id}_poleA_pos2`, `${comp.id}_poleA_common`]);
+      } else if (pos === 4) {
+        contacts.push([`${comp.id}_poleA_pos2`, `${comp.id}_poleA_common`]);
+        contacts.push([`${comp.id}_poleA_pos3`, `${comp.id}_poleA_common`]);
+      } else if (pos === 5) {
+        contacts.push([`${comp.id}_poleA_pos3`, `${comp.id}_poleA_common`]);
+      }
+    } else if (comp.type === 'switch_dpdt') {
+      if (pos === 1) {
+        contacts.push([`${comp.id}_poleA_common`, `${comp.id}_poleA_pos1`]);
+        contacts.push([`${comp.id}_poleB_common`, `${comp.id}_poleB_pos1`]);
+      } else if (pos === 2) {
+        contacts.push([`${comp.id}_poleA_common`, `${comp.id}_poleA_pos2`]);
+        contacts.push([`${comp.id}_poleB_common`, `${comp.id}_poleB_pos2`]);
+      }
+    } else if (comp.type === 'pot_pushpull') {
+      // Push-pull pot has an integrated DPDT switch.
+      // _swA2 / _swB2 are the commons; _swA1/_swB1 are pos1, _swA3/_swB3 are pos2.
+      // pos 1 = pushed (normal), pos 2 = pulled
+      if (pos === 1) {
+        contacts.push([`${comp.id}_swA2`, `${comp.id}_swA1`]);
+        contacts.push([`${comp.id}_swB2`, `${comp.id}_swB1`]);
+      } else if (pos === 2) {
+        contacts.push([`${comp.id}_swA2`, `${comp.id}_swA3`]);
+        contacts.push([`${comp.id}_swB2`, `${comp.id}_swB3`]);
+      }
+    }
+
+    contacts.forEach(([src, tgt], idx) => {
+      if (graph.getNode(src) && graph.getNode(tgt)) {
+        try {
+          graph.addEdge({
+            id: `internal_sw_${comp.id}_${idx}`,
+            source: src,
+            target: tgt,
+            resistance: 0.001,
+            wireColor: '#ffffff',
+            connectionType: 'solder',
+            wireType: 'vintage_cloth_pushback',
+          });
+        } catch {
+          // Edge already exists
+        }
+      }
+    });
+  }
+}
+
+/**
  * Solve the active signal paths in the circuit graph.
  *
  * Starting from all pickup terminals (source nodes), finds all paths
  * that reach the output jack through the current switch/pot configuration.
  */
 export function solveSignalPaths(graph: Graph): SolverResult {
+  // Sync internal switch contacts before solving path graph
+  syncSwitchInternalEdges(graph);
+
   const nodes = graph.getNodes();
   const edges = graph.getEdges();
 
-  // Find source nodes (pickup terminals with 'hot' role)
+  // Find source nodes (pickup terminals: hot or ground leads that generate AC guitar voltage)
   const sourceNodes = nodes.filter(
-    (n) => n.type === 'terminal' && n.role === 'hot' && n.signalState === 'active',
+    (n) => n.componentId.startsWith('pickup_') && (n.role === 'hot' || n.role === 'ground'),
   );
 
   // Find destination nodes (output jack terminals)
@@ -70,10 +163,11 @@ export function solveSignalPaths(graph: Graph): SolverResult {
     }
 
     if (!sourceReachesOutput) {
-      // Source doesn't reach any output — mark its reachable set as dead-end
+      // Source doesn't reach any output — mark its non-ground reachable set as dead-end
       const reachable = graph.getConnectedComponent(source.id);
       for (const nodeId of reachable) {
-        if (!activeNodes.has(nodeId)) {
+        const node = graph.getNode(nodeId);
+        if (!activeNodes.has(nodeId) && node?.type !== 'ground' && node?.role !== 'ground') {
           deadEndNodes.add(nodeId);
         }
       }

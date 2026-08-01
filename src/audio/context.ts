@@ -8,12 +8,14 @@
 
 export class AudioEngine {
   private context: AudioContext | null = null;
-  private isInitialized = false;
 
   async initialize(): Promise<void> {
-    if (this.isInitialized) return;
-    this.context = new AudioContext({ sampleRate: 44100, latencyHint: 'interactive' });
-    this.isInitialized = true;
+    if (!this.context) {
+      this.context = new AudioContext({ sampleRate: 44100, latencyHint: 'interactive' });
+    }
+    if (this.context.state === 'suspended') {
+      await this.context.resume();
+    }
   }
 
   getContext(): AudioContext | null {
@@ -21,7 +23,7 @@ export class AudioEngine {
   }
 
   isReady(): boolean {
-    return this.isInitialized && this.context?.state === 'running';
+    return !!this.context;
   }
 
   async resume(): Promise<void> {
@@ -40,7 +42,6 @@ export class AudioEngine {
     if (this.context) {
       void this.context.close();
       this.context = null;
-      this.isInitialized = false;
     }
   }
 }
