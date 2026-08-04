@@ -1,0 +1,703 @@
+/**
+ * PlayableFretboardPanel.tsx — Real-Time Playable Guitar Fretboard
+ *
+ * Interactive 6-string 15-fret guitar neck simulation.
+ * Features:
+ * - Real-time pitch calculation for 6 strings (E2..E4) x 15 frets
+ * - Web Audio DSP routing directly into pickup circuit & tube amp pipeline
+ * - Visual string vibration feedback
+ * - Interactive chord presets & single-click strumming
+ * - Keyboard shortcuts for live playing (1-6 for open strings, A-K for frets)
+ */
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCanvasStore } from '@store/canvasStore';
+import { audioEngine, audioPipeline } from '@audio/index';
+
+export interface GuitarStringDef {
+  index: number;
+  name: string;
+  openFreq: number;
+  openMidi: number;
+  thickness: number;
+  isWound: boolean;
+}
+
+export const GUITAR_STRINGS: GuitarStringDef[] = [
+  { index: 0, name: 'E4 (High E)', openFreq: 329.63, openMidi: 64, thickness: 1.0, isWound: false },
+  { index: 1, name: 'B3',          openFreq: 246.94, openMidi: 59, thickness: 1.4, isWound: false },
+  { index: 2, name: 'G3',          openFreq: 196.00, openMidi: 55, thickness: 1.8, isWound: false },
+  { index: 3, name: 'D3',          openFreq: 146.83, openMidi: 50, thickness: 2.4, isWound: true },
+  { index: 4, name: 'A2',          openFreq: 110.00, openMidi: 45, thickness: 3.0, isWound: true },
+  { index: 5, name: 'E2 (Low E)',  openFreq: 82.41,  openMidi: 40, thickness: 3.8, isWound: true },
+];
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+export function midiToNoteName(midi: number): string {
+  const octave = Math.floor(midi / 12) - 1;
+  const noteIndex = Math.floor(midi) % 12;
+  return `${NOTE_NAMES[noteIndex]}${octave}`;
+}
+
+export function calcFretFrequency(openFreq: number, fret: number): number {
+  return openFreq * Math.pow(2, fret / 12);
+}
+
+export function calcFretMidi(openMidi: number, fret: number): number {
+  return openMidi + fret;
+}
+
+// Inlay marker frets
+const SINGLE_DOT_FRETS = [3, 5, 7, 9, 15, 17, 19];
+const DOUBLE_DOT_FRETS = [12];
+
+export interface ChordPreset {
+  name: string;
+  // Frets for strings 0..5 (High E down to Low E), null means muted / X
+  frets: (number | null)[];
+}
+
+export const CHORD_PRESETS: ChordPreset[] = [
+  { name: 'E Major', frets: [0, 0, 1, 2, 2, 0] },
+  { name: 'A Major', frets: [0, 2, 2, 2, 0, null] },
+  { name: 'C Major', frets: [0, 1, 0, 2, 3, null] },
+  { name: 'G Major', frets: [3, 0, 0, 0, 2, 3] },
+  { name: 'D Major', frets: [2, 3, 2, 0, null, null] },
+  { name: 'E Minor', frets: [0, 0, 0, 2, 2, 0] },
+  { name: 'A Minor', frets: [0, 1, 2, 2, 0, null] },
+  { name: 'E5 Power', frets: [null, null, null, 2, 2, 0] },
+];
+
+export function PlayableFretboardPanel() {
+  const { toggleFretboard } = useCanvasStore();
+
+  const [activeFret, setActiveFret] = useState<{
+    stringIdx: number;
+    fret: number;
+    noteName: string;
+    freq: number;
+  } | null>(null);
+
+  const [vibratingStrings, setVibratingStrings] = useState<Record<number, boolean>>({});
+  const [selectedChord, setSelectedChord] = useState<ChordPreset | null>(CHORD_PRESETS[0]);
+  const [strumSpeed, setStrumSpeed] = useState<number>(30); // ms per string
+
+  const [hoveredFret, setHoveredFret] = useState<{ stringIdx: number; fret: number } | null>(null);
+  const [isMouseDown, setIsMouseDown] = useState(false);
+
+  // Global mouseup listener for drag sliding
+  useEffect(() => {
+    function handleMouseUp() {
+      setIsMouseDown(false);
+    }
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => window.removeEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  // Ensure AudioContext is initialized & active when plucking
+  const triggerNote = useCallback(
+    async (stringIdx: number, fret: number) => {
+      const stringDef = GUITAR_STRINGS[stringIdx];
+      if (!stringDef) return;
+
+      const freq = calcFretFrequency(stringDef.openFreq, fret);
+      const midi = calcFretMidi(stringDef.openMidi, fret);
+      const noteName = midiToNoteName(midi);
+
+      setActiveFret({ stringIdx, fret, noteName, freq });
+
+      // Trigger string vibration visual animation
+      setVibratingStrings((prev) => ({ ...prev, [stringIdx]: true }));
+      setTimeout(() => {
+        setVibratingStrings((prev) => ({ ...prev, [stringIdx]: false }));
+      }, 500);
+
+      // Trigger Web Audio pipeline
+      let ctx = audioEngine.getContext();
+      if (!ctx) {
+        await audioEngine.initialize();
+        await audioEngine.resume();
+        ctx = audioEngine.getContext();
+      } else if (ctx.state === 'suspended') {
+        await audioEngine.resume();
+      }
+
+      await audioPipeline.triggerPluck(freq, 0.65, stringIdx);
+    },
+    []
+  );
+
+  // Strum a chord across all active fretted strings
+  const strumChord = useCallback(
+    async (chord: ChordPreset) => {
+      setSelectedChord(chord);
+
+      let ctx = audioEngine.getContext();
+      if (!ctx) {
+        await audioEngine.initialize();
+        await audioEngine.resume();
+        ctx = audioEngine.getContext();
+      } else if (ctx.state === 'suspended') {
+        await audioEngine.resume();
+      }
+
+      // Collect active notes from Low E (5) to High E (0) for natural down-strum
+      const activeNotes: { stringIdx: number; fret: number }[] = [];
+      for (let s = 5; s >= 0; s--) {
+        const fret = chord.frets[s];
+        if (fret !== null) {
+          activeNotes.push({ stringIdx: s, fret });
+        }
+      }
+
+      activeNotes.forEach(({ stringIdx, fret }, i) => {
+        setTimeout(() => {
+          void triggerNote(stringIdx, fret);
+        }, i * strumSpeed);
+      });
+    },
+    [triggerNote, strumSpeed]
+  );
+
+  // Keyboard accessibility / performance controls
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Keys 1..6 -> Open strings High E to Low E
+      if (e.key >= '1' && e.key <= '6') {
+        const stringIdx = parseInt(e.key, 10) - 1;
+        const currentFret = selectedChord?.frets[stringIdx] ?? 0;
+        void triggerNote(stringIdx, currentFret);
+      } else if (e.key === ' ' || e.key === 'Enter') {
+        // Space / Enter -> Strum currently selected chord
+        e.preventDefault();
+        if (selectedChord) {
+          void strumChord(selectedChord);
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [triggerNote, strumChord, selectedChord]);
+
+  const numFrets = 15;
+  const fretArray = useMemo(() => Array.from({ length: numFrets + 1 }, (_, i) => i), []);
+
+  return (
+    <div
+      style={{
+        width: 860,
+        backgroundColor: '#121318',
+        borderRadius: 12,
+        border: '1px solid #27272a',
+        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 2px rgba(251, 191, 36, 0.2)',
+        overflow: 'hidden',
+        color: '#f4f4f5',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        userSelect: 'none',
+      }}
+    >
+      {/* Panel Header */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 18px',
+          backgroundColor: '#18181b',
+          borderBottom: '1px solid #27272a',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 6,
+              backgroundColor: '#78350f',
+              border: '1px solid #d97706',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 15,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fef3c7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18V5l12-2v13" />
+              <circle cx="6" cy="18" r="3" />
+              <circle cx="18" cy="16" r="3" />
+            </svg>
+          </div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#fef3c7' }}>
+              Playable Guitar Fretboard
+            </h3>
+            <span style={{ fontSize: 11, color: '#a1a1aa' }}>
+              Standard Tuning (E2-E4) &bull; Click any fret or press keys 1-6 / Space to strum
+            </span>
+          </div>
+        </div>
+
+        {/* Note Status Badge & Close Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {activeFret ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '4px 10px',
+                backgroundColor: '#27272a',
+                border: '1px solid #d97706',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#fbbf24',
+              }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 800 }}>{activeFret.noteName}</span>
+              <span style={{ color: '#a1a1aa', fontSize: 11 }}>
+                ({activeFret.freq.toFixed(1)} Hz &bull; Fret {activeFret.fret})
+              </span>
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: '4px 10px',
+                backgroundColor: '#27272a',
+                borderRadius: 6,
+                fontSize: 11,
+                color: '#71717a',
+              }}
+            >
+              Ready to play
+            </div>
+          )}
+
+          <button
+            onClick={toggleFretboard}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#a1a1aa',
+              fontSize: 18,
+              cursor: 'pointer',
+              padding: '2px 8px',
+              borderRadius: 4,
+            }}
+            title="Close Fretboard"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* Chord Preset Bar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 18px',
+          backgroundColor: '#0f0f12',
+          borderBottom: '1px solid #27272a',
+          gap: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600, marginRight: 4 }}>
+            Chords:
+          </span>
+          {CHORD_PRESETS.map((chord) => {
+            const isSelected = selectedChord?.name === chord.name;
+            return (
+              <button
+                key={chord.name}
+                onClick={() => void strumChord(chord)}
+                className="btn btn--sm"
+                style={{
+                  padding: '4px 10px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  backgroundColor: isSelected ? '#d97706' : '#27272a',
+                  color: isSelected ? '#ffffff' : '#e4e4e7',
+                  border: isSelected ? '1px solid #f59e0b' : '1px solid #3f3f46',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {chord.name}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Strum Speed Control */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, color: '#a1a1aa' }}>Strum:</span>
+          <input
+            type="range"
+            min={10}
+            max={70}
+            value={strumSpeed}
+            onChange={(e) => setStrumSpeed(Number(e.target.value))}
+            style={{ width: 70, accentColor: '#d97706', cursor: 'pointer' }}
+            title="Strum timing speed"
+          />
+        </div>
+      </div>
+
+      {/* Main Fretboard Graphic View */}
+      <div
+        style={{
+          padding: '24px 20px',
+          backgroundColor: '#1c130d',
+          backgroundImage:
+            'radial-gradient(ellipse at 50% 50%, #2a1c12 0%, #150d08 100%)',
+          position: 'relative',
+        }}
+      >
+        {/* Rosewood Guitar Neck Canvas */}
+        <div
+          style={{
+            position: 'relative',
+            backgroundColor: '#26170e',
+            borderRadius: 6,
+            boxShadow: 'inset 0 0 15px rgba(0,0,0,0.8), 0 4px 12px rgba(0,0,0,0.5)',
+            border: '2px solid #3d2618',
+            padding: '10px 0',
+          }}
+        >
+          {/* Fret Numbers Header */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '50px repeat(15, 1fr)',
+              textAlign: 'center',
+              fontSize: 10,
+              color: '#8c7365',
+              fontWeight: 700,
+              marginBottom: 4,
+            }}
+          >
+            <div>Open</div>
+            {fretArray.slice(1).map((f) => (
+              <div key={f}>{f}</div>
+            ))}
+          </div>
+
+          {/* Guitar Strings Container */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, position: 'relative' }}>
+            {/* Inlay Position Dots Layer */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: 50,
+                right: 0,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(15, 1fr)',
+                pointerEvents: 'none',
+              }}
+            >
+              {fretArray.slice(1).map((fret) => {
+                const isSingle = SINGLE_DOT_FRETS.includes(fret);
+                const isDouble = DOUBLE_DOT_FRETS.includes(fret);
+                return (
+                  <div
+                    key={fret}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 36,
+                    }}
+                  >
+                    {isSingle && (
+                      <div
+                        style={{
+                          width: 9,
+                          height: 9,
+                          borderRadius: '50%',
+                          backgroundColor: '#e5e7eb',
+                          boxShadow: '0 0 4px rgba(255,255,255,0.6)',
+                          opacity: 0.75,
+                        }}
+                      />
+                    )}
+                    {isDouble && (
+                      <>
+                        <div
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            backgroundColor: '#e5e7eb',
+                            boxShadow: '0 0 4px rgba(255,255,255,0.6)',
+                            opacity: 0.75,
+                          }}
+                        />
+                        <div
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            backgroundColor: '#e5e7eb',
+                            boxShadow: '0 0 4px rgba(255,255,255,0.6)',
+                            opacity: 0.75,
+                          }}
+                        />
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Continuous Unified Nickel-Silver Fret Wires Layer */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: 50,
+                right: 0,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(15, 1fr)',
+                pointerEvents: 'none',
+                zIndex: 3,
+              }}
+            >
+              {fretArray.slice(1).map((fret) => (
+                <div
+                  key={fret}
+                  style={{
+                    position: 'relative',
+                    height: '100%',
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                  }}
+                >
+                  {/* Subtle Nickel-Silver Fret Bar Crown */}
+                  <div
+                    style={{
+                      width: 2.5,
+                      height: '100%',
+                      backgroundColor: '#71717a',
+                      backgroundImage:
+                        'linear-gradient(90deg, #3f3f46 0%, #a1a1aa 45%, #71717a 80%, #27272a 100%)',
+                      boxShadow: '1px 0 2px rgba(0, 0, 0, 0.7), -1px 0 1px rgba(255, 255, 255, 0.15)',
+                      borderRadius: 1,
+                      opacity: 0.85,
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Solid Bone/Brass Nut Bar */}
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: 48,
+                width: 6,
+                backgroundColor: '#eab308',
+                backgroundImage:
+                  'linear-gradient(90deg, #854d0e 0%, #fef08a 50%, #ca8a04 100%)',
+                borderRadius: 2,
+                boxShadow: '0 0 6px rgba(0, 0, 0, 0.6)',
+                zIndex: 4,
+                opacity: 0.9,
+              }}
+            />
+
+            {/* Render 6 Strings */}
+            {GUITAR_STRINGS.map((stringDef) => {
+              const isVibrating = vibratingStrings[stringDef.index];
+              const chordFret = selectedChord?.frets[stringDef.index];
+
+              return (
+                <div
+                  key={stringDef.index}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '50px repeat(15, 1fr)',
+                    alignItems: 'center',
+                    height: 24,
+                    position: 'relative',
+                    zIndex: 5,
+                  }}
+                >
+                  {/* String Label */}
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: '#d4d4d8',
+                      paddingLeft: 6,
+                    }}
+                  >
+                    {stringDef.name.split(' ')[0]}
+                  </div>
+
+                  {/* Frets for this string */}
+                  {fretArray.map((fret) => {
+                    const freq = calcFretFrequency(stringDef.openFreq, fret);
+                    const midi = calcFretMidi(stringDef.openMidi, fret);
+                    const noteName = midiToNoteName(midi);
+                    const isFrettedByChord = chordFret === fret;
+                    const isActivePlay =
+                      activeFret?.stringIdx === stringDef.index && activeFret?.fret === fret;
+                    const isHovered =
+                      hoveredFret?.stringIdx === stringDef.index && hoveredFret?.fret === fret;
+
+                    return (
+                      <div
+                        key={fret}
+                        onMouseDown={() => {
+                          setIsMouseDown(true);
+                          void triggerNote(stringDef.index, fret);
+                        }}
+                        onMouseEnter={() => {
+                          setHoveredFret({ stringIdx: stringDef.index, fret });
+                          if (isMouseDown) {
+                            void triggerNote(stringDef.index, fret);
+                          }
+                        }}
+                        onMouseLeave={() => {
+                          setHoveredFret(null);
+                        }}
+                        style={{
+                          position: 'relative',
+                          height: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                        }}
+                        title={`${stringDef.name} Fret ${fret}: ${noteName} (${freq.toFixed(1)} Hz)`}
+                      >
+                        {/* Realistic 3D Metallic Guitar String */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            right: 0,
+                            height: stringDef.thickness,
+                            backgroundColor: isVibrating ? '#fbbf24' : stringDef.isWound ? '#a1a1aa' : '#e4e4e7',
+                            backgroundImage: isVibrating
+                              ? 'linear-gradient(180deg, #fef08a 0%, #f59e0b 50%, #d97706 100%)'
+                              : stringDef.isWound
+                              ? 'linear-gradient(180deg, #f4f4f5 0%, #a1a1aa 40%, #71717a 75%, #3f3f46 100%), repeating-linear-gradient(90deg, rgba(0,0,0,0.4) 0px, rgba(0,0,0,0.4) 1px, transparent 1px, transparent 3px)'
+                              : 'linear-gradient(180deg, #ffffff 0%, #e4e4e7 45%, #a1a1aa 80%, #52525b 100%)',
+                            backgroundBlendMode: stringDef.isWound ? 'overlay' : 'normal',
+                            boxShadow: isVibrating
+                              ? '0 0 10px #fbbf24, 0 0 16px #f59e0b, 0 3px 6px rgba(0,0,0,0.9)'
+                              : '0 3px 5px rgba(0, 0, 0, 0.95), 0 1px 2px rgba(0, 0, 0, 0.8)',
+                            borderRadius: stringDef.thickness / 2,
+                            transform: isVibrating ? 'scaleY(2.2)' : 'none',
+                            transition: 'all 0.08s ease',
+                          }}
+                        />
+
+                        {/* Movable Hover Target Halo */}
+                        {isHovered && !isActivePlay && !isFrettedByChord && (
+                          <div
+                            style={{
+                              width: 22,
+                              height: 22,
+                              borderRadius: '50%',
+                              border: '2px solid #38bdf8',
+                              backgroundColor: 'rgba(56, 189, 248, 0.25)',
+                              boxShadow: '0 0 12px #38bdf8, 0 0 4px rgba(255,255,255,0.8)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 9,
+                              fontWeight: 800,
+                              color: '#e0f2fe',
+                              zIndex: 6,
+                              pointerEvents: 'none',
+                            }}
+                          >
+                            {noteName.replace(/\d/, '')}
+                          </div>
+                        )}
+
+                        {/* Pressed / Active Movable Finger Indicator Badge */}
+                        {(isFrettedByChord || isActivePlay) && (
+                          <div
+                            style={{
+                              width: isActivePlay ? 24 : 18,
+                              height: isActivePlay ? 24 : 18,
+                              borderRadius: '50%',
+                              backgroundColor: isActivePlay
+                                ? '#f59e0b'
+                                : isFrettedByChord
+                                ? '#0284c7'
+                                : '#3f3f46',
+                              backgroundImage: isActivePlay
+                                ? 'radial-gradient(circle at 35% 35%, #fef08a 0%, #f59e0b 60%, #b45309 100%)'
+                                : 'none',
+                              color: '#ffffff',
+                              fontSize: isActivePlay ? 10 : 9,
+                              fontWeight: 800,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: isActivePlay
+                                ? '0 0 14px #f59e0b, 0 0 6px rgba(0,0,0,0.8)'
+                                : '0 0 6px rgba(0,0,0,0.6)',
+                              border: isActivePlay ? '2px solid #fffbeb' : 'none',
+                              zIndex: isActivePlay ? 7 : 5,
+                            }}
+                          >
+                            {noteName.replace(/\d/, '')}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer Instructions */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 18px',
+          backgroundColor: '#18181b',
+          borderTop: '1px solid #27272a',
+          fontSize: 11,
+          color: '#a1a1aa',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
+            <path d="M9 18h6" />
+            <path d="M10 22h4" />
+          </svg>
+          <span><strong>Tip:</strong> Click any string fret to play. Press <code>1-6</code> for open strings, or <code>Space</code> to strum the current chord!</span>
+        </div>
+        <div style={{ color: '#71717a' }}>Cords Box Audio DSP Engine Live</div>
+      </div>
+    </div>
+  );
+}

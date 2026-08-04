@@ -3,7 +3,7 @@
  *
  * Converts solved circuit graph paths into dynamic Web Audio API nodes:
  * - Pickup Sources: Authentic Physical Modeling (Tele twang, Strat chime, Gibson humbucker)
- * - Amp Cabinet Simulation Stage: 12" Speaker Impulse Filter Chain (75Hz HPF, 1.8kHz cone peak, 4.8kHz roll-off)
+ * - Pedalboard, tube preamp, tone stack, power amp, speaker cabinet, and room return
  * - Potentiometers: Volume (Audio taper pos^2.5), Tone (Lowpass RC roll-off), Concentric, Blend & Push-Pull
  * - Dynamics Processor: Soft-knee compressor preventing digital clipping
  */
@@ -14,6 +14,16 @@ import type { Graph } from '@graph/Graph';
 import { useCircuitStore } from '@store/circuitStore';
 
 export type InputSourceType = 'pluck' | 'strum' | 'mic';
+
+export const GUITAR_DEMO_GENRES = [
+  { id: 'rock', label: 'Rock' },
+  { id: 'blues', label: 'Blues' },
+  { id: 'hard-rock', label: 'Hard Rock' },
+  { id: 'alternative-rock', label: 'Alternative Rock' },
+  { id: 'dream-pop', label: 'Dream Pop' },
+] as const;
+
+export type GuitarDemoGenre = (typeof GUITAR_DEMO_GENRES)[number]['id'];
 
 export const GUITAR_STRINGS: Record<string, number> = {
   E2: 82.41, // Low E
@@ -27,7 +37,18 @@ export const GUITAR_STRINGS: Record<string, number> = {
 export const GUITAR_CHORDS: Record<string, readonly number[]> = {
   E_MAJOR: [82.41, 123.47, 164.81, 207.65, 246.94, 329.63],
   A_MINOR: [110.0, 164.81, 220.0, 261.63, 329.63],
+  A_MINOR7: [110.0, 164.81, 220.0, 261.63, 329.63, 392.0],
+  A7: [110.0, 164.81, 196.0, 277.18, 329.63],
+  E_MINOR7: [82.41, 146.83, 196.0, 246.94, 293.66, 329.63],
+  D_SUS2_F_SHARP: [92.5, 146.83, 220.0, 293.66, 369.99],
+  C_MAJOR7: [65.41, 130.81, 196.0, 261.63, 329.63, 392.0],
+  G_SIX: [98.0, 146.83, 196.0, 246.94, 329.63, 392.0],
   G_MAJOR: [98.0, 123.47, 146.83, 196.0, 246.94, 392.0],
+  D7: [146.83, 220.0, 261.63, 293.66, 369.99],
+  E7: [82.41, 123.47, 146.83, 196.0, 246.94, 329.63],
+  A5_POWER: [110.0, 164.81, 220.0],
+  D5_POWER: [146.83, 220.0, 293.66],
+  G5_POWER: [98.0, 146.83, 196.0],
   D_MAJOR: [146.83, 220.0, 293.66, 369.99],
   E5_POWER: [82.41, 123.47, 164.81],
 };
@@ -49,18 +70,200 @@ export interface CircuitTopologyState {
   masterTone: number;
 }
 
+export type AmpModelType = 'clean_twin' | 'crunch_800' | 'high_gain' | 'vox_chime';
+export type CabinetModelType = '1x12_open' | '2x12_tweed' | '4x12_stack' | '4x12_metal';
+export type DriveType = 'overdrive' | 'tube_screamer' | 'distortion';
+
+export interface AmpPedalboardState {
+  // Stompbox Pedals
+  compressorEnabled: boolean;
+  compressorSustain: number;
+  compressorLevel: number;
+
+  overdriveEnabled: boolean;
+  overdriveType: DriveType;
+  overdriveDrive: number;
+  overdriveTone: number;
+  overdriveLevel: number;
+
+  chorusEnabled: boolean;
+  chorusRate: number;
+  chorusDepth: number;
+  chorusMix: number;
+
+  delayEnabled: boolean;
+  delayTimeMs: number;
+  delayFeedback: number;
+  delayMix: number;
+
+  reverbEnabled: boolean;
+  reverbSize: number;
+  reverbDecay: number;
+  reverbMix: number;
+
+  // Tube Amp Head
+  ampModel: AmpModelType;
+  ampGain: number;
+  ampBass: number;
+  ampMid: number;
+  ampTreble: number;
+  ampPresence: number;
+  ampMaster: number;
+
+  // Speaker Cabinet
+  cabModel: CabinetModelType;
+  micDistance: number;
+}
+
+export const DEFAULT_AMP_PEDALBOARD_STATE: AmpPedalboardState = {
+  compressorEnabled: false,
+  compressorSustain: 0.4,
+  compressorLevel: 0.8,
+
+  overdriveEnabled: false,
+  overdriveType: 'overdrive',
+  overdriveDrive: 0.5,
+  overdriveTone: 0.6,
+  overdriveLevel: 0.7,
+
+  chorusEnabled: false,
+  chorusRate: 1.2,
+  chorusDepth: 0.4,
+  chorusMix: 0.35,
+
+  delayEnabled: false,
+  delayTimeMs: 320,
+  delayFeedback: 0.38,
+  delayMix: 0.3,
+
+  reverbEnabled: true,
+  reverbSize: 0.4,
+  reverbDecay: 0.3,
+  reverbMix: 0.15,
+
+  ampModel: 'clean_twin',
+  ampGain: 0.4,
+  ampBass: 0.5,
+  ampMid: 0.5,
+  ampTreble: 0.5,
+  ampPresence: 0.5,
+  ampMaster: 0.7,
+
+  cabModel: '1x12_open',
+  micDistance: 0.2,
+};
+
+function createCleanTubeCurve(): Float32Array<ArrayBuffer> {
+  const samples = 2048;
+  const curve = new Float32Array(new ArrayBuffer(samples * Float32Array.BYTES_PER_ELEMENT));
+
+  for (let i = 0; i < samples; i += 1) {
+    const input = (i * 2) / (samples - 1) - 1;
+    // Pristine 1:1 linear clean response for input amplitudes up to 0.85
+    if (Math.abs(input) <= 0.85) {
+      curve[i] = input;
+    } else {
+      const sign = input < 0 ? -1 : 1;
+      const mag = Math.abs(input);
+      curve[i] = sign * (0.85 + Math.tanh((mag - 0.85) * 1.5) * 0.15);
+    }
+  }
+
+  return curve;
+}
+
+function createOverdriveCurve(): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(new ArrayBuffer(2048 * Float32Array.BYTES_PER_ELEMENT));
+
+  for (let i = 0; i < curve.length; i += 1) {
+    const input = (i * 2) / (curve.length - 1) - 1;
+    const sign = input < 0 ? -1 : 1;
+    const magnitude = Math.abs(input);
+    const softKnee = magnitude < 0.24
+      ? magnitude * 1.12
+      : 0.24 + (1 - Math.exp(-(magnitude - 0.24) * 2.2)) * 0.76;
+    curve[i] = sign * softKnee;
+  }
+
+  return curve;
+}
+
+function createCabinetImpulseResponse(ctx: AudioContext): AudioBuffer {
+  const length = Math.floor(ctx.sampleRate * 0.045);
+  const impulse = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = impulse.getChannelData(0);
+
+  // A compact deterministic 1x12 cabinet response: direct speaker attack,
+  // cone breakup, and a short mechanical tail.
+  for (let i = 0; i < length; i += 1) {
+    const time = i / ctx.sampleRate;
+    const tail = Math.exp(-time * 115);
+    const cone = Math.sin(2 * Math.PI * 1850 * time) * 0.34;
+    const body = Math.sin(2 * Math.PI * 145 * time) * 0.12;
+    data[i] = (cone + body) * tail;
+  }
+  data[0] += 0.72;
+  return impulse;
+}
+
+function createRoomImpulseResponse(ctx: AudioContext): AudioBuffer {
+  const length = Math.floor(ctx.sampleRate * 0.28);
+  const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+  const left = impulse.getChannelData(0);
+  const right = impulse.getChannelData(1);
+
+  const leftReflections = [
+    [0.014, 0.36],
+    [0.046, 0.25],
+    [0.086, 0.16],
+    [0.132, 0.09],
+    [0.188, 0.05],
+  ];
+  const rightReflections = [
+    [0.022, 0.32],
+    [0.058, 0.21],
+    [0.101, 0.14],
+    [0.149, 0.08],
+    [0.208, 0.04],
+  ];
+
+  left[0] = 0.78;
+  right[0] = 0.72;
+
+  for (let i = 1; i < length; i += 1) {
+    const time = i / ctx.sampleRate;
+    left[i] += Math.sin(2 * Math.PI * 720 * time) * Math.exp(-time * 22) * 0.026;
+    right[i] += Math.sin(2 * Math.PI * 770 * time) * Math.exp(-time * 22) * 0.026;
+  }
+
+  for (const [delaySeconds, gain] of leftReflections) {
+    const index = Math.floor(delaySeconds * ctx.sampleRate);
+    if (index < left.length) left[index] += gain;
+  }
+  for (const [delaySeconds, gain] of rightReflections) {
+    const index = Math.floor(delaySeconds * ctx.sampleRate);
+    if (index < right.length) right[index] += gain;
+  }
+
+  return impulse;
+}
+
 export class AudioPipeline {
   private masterGain: GainNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
   private analyserNode: AnalyserNode | null = null;
-  private currentSourceType: InputSourceType = 'pluck';
   private micStream: MediaStream | null = null;
   private strumIntervalId: number | null = null;
   private autoStrumming = false;
+  private songTimeoutIds: number[] = [];
+  private demoSongPlaying = false;
 
-  private isWasmReady: boolean = false;
-  private workletNode: AudioWorkletNode | null = null;
-  private pendingWasmInitialization: Promise<void> | null = null;
+  private inputNode: GainNode | null = null;
+  private topologyRouted = false;
+  private sampleBankReady = false;
+  private pendingSampleBankInitialization: Promise<void> | null = null;
+  private activeSampleSources = new Set<AudioBufferSourceNode>();
+  private sampleBuffers = new Map<number, AudioBuffer>();
 
   private activeNodes: Map<string, AudioNode> = new Map();
   private activeTopology: CircuitTopologyState = {
@@ -69,6 +272,83 @@ export class AudioPipeline {
     masterVolume: 1.0,
     masterTone: 1.0,
   };
+  private ampPedalState: AmpPedalboardState = { ...DEFAULT_AMP_PEDALBOARD_STATE };
+
+  public getAmpPedalboardState(): AmpPedalboardState {
+    return { ...this.ampPedalState };
+  }
+
+  public updateAmpPedalboardState(updates: Partial<AmpPedalboardState>): void {
+    this.ampPedalState = { ...this.ampPedalState, ...updates };
+    const ctx = audioEngine.getContext();
+    if (ctx && this.masterGain) {
+      this.applyPedalboardStateToNodes(ctx);
+    }
+  }
+
+  private applyPedalboardStateToNodes(ctx: AudioContext): void {
+    const s = this.ampPedalState;
+    const now = ctx.currentTime;
+
+    const toneBass = this.activeNodes.get('tone-bass') as BiquadFilterNode | undefined;
+    const toneMid = this.activeNodes.get('tone-mid') as BiquadFilterNode | undefined;
+    const toneTreble = this.activeNodes.get('tone-treble') as BiquadFilterNode | undefined;
+    const presence = this.activeNodes.get('amp-presence') as BiquadFilterNode | undefined;
+    const preampGain = this.activeNodes.get('preamp-gain') as GainNode | undefined;
+    const pedalCompressor = this.activeNodes.get('pedal-compressor') as DynamicsCompressorNode | undefined;
+    const pedalDry = this.activeNodes.get('pedal-dry') as GainNode | undefined;
+    const overdriveWet = this.activeNodes.get('pedal-wet') as GainNode | undefined;
+    const roomSend = this.activeNodes.get('room-send') as GainNode | undefined;
+    const roomReturn = this.activeNodes.get('room-return') as GainNode | undefined;
+
+    if (toneBass) toneBass.gain.setValueAtTime((s.ampBass - 0.5) * 10, now);
+    if (toneMid) toneMid.gain.setValueAtTime((s.ampMid - 0.5) * 10, now);
+    if (toneTreble) toneTreble.gain.setValueAtTime((s.ampTreble - 0.5) * 10, now);
+    if (presence) presence.gain.setValueAtTime((s.ampPresence - 0.5) * 8, now);
+
+    if (preampGain) {
+      let gainBase = 0.5;
+      let gainMult = 0.8;
+      if (s.ampModel === 'crunch_800') {
+        gainBase = 0.7; gainMult = 1.6;
+      } else if (s.ampModel === 'high_gain') {
+        gainBase = 0.9; gainMult = 2.4;
+      } else if (s.ampModel === 'vox_chime') {
+        gainBase = 0.6; gainMult = 1.1;
+      }
+      preampGain.gain.setValueAtTime(gainBase + s.ampGain * gainMult, now);
+    }
+
+    if (pedalCompressor) {
+      if (s.compressorEnabled) {
+        pedalCompressor.threshold.setValueAtTime(-10 - s.compressorSustain * 25, now);
+        pedalCompressor.ratio.setValueAtTime(1.5 + s.compressorSustain * 4.5, now);
+      } else {
+        pedalCompressor.threshold.setValueAtTime(0, now);
+        pedalCompressor.ratio.setValueAtTime(1.0, now); // Pristine 1:1 linear pass-through
+      }
+    }
+
+    if (pedalDry && overdriveWet) {
+      if (s.overdriveEnabled) {
+        pedalDry.gain.setValueAtTime(0.3, now);
+        overdriveWet.gain.setValueAtTime(s.overdriveLevel * 0.7, now);
+      } else {
+        pedalDry.gain.setValueAtTime(1.0, now); // 100% clean bypass
+        overdriveWet.gain.setValueAtTime(0.0, now); // 0% overdrive leakage
+      }
+    }
+
+    if (roomSend && roomReturn) {
+      const roomVal = s.reverbEnabled ? 0.05 + s.reverbMix * 0.3 : 0.0;
+      roomSend.gain.setValueAtTime(roomVal, now);
+      roomReturn.gain.setValueAtTime(roomVal * 1.2, now);
+    }
+
+    if (this.masterGain) {
+      this.masterGain.gain.setValueAtTime((0.4 + s.ampMaster * 1.0) * 1.5, now);
+    }
+  }
 
   /**
    * Rebuild or update Web Audio nodes based on the latest solved circuit state
@@ -84,92 +364,378 @@ export class AudioPipeline {
     // Disconnect old nodes
     this.cleanupNodes();
 
-    if (!solverResult || solverResult.activePaths.length === 0) {
-      // Open circuit / no active output
-      return;
-    }
-
-    // 1. Master Output Gain Stage
+    // 1. Master output trim (boosted +50%).
     this.masterGain = ctx.createGain();
-    this.masterGain.gain.value = 0.4;
+    this.masterGain.gain.value = 1.5;
 
-    // 2. Electric Guitar Speaker Cabinet Simulation Stage (12" Guitar Speaker Emulation)
+    // 2. Magnetic pickup model: smooth coil resonance without harsh high spikes.
+    const pickupHighpass = ctx.createBiquadFilter();
+    pickupHighpass.type = 'highpass';
+    pickupHighpass.frequency.value = 105;
+    pickupHighpass.Q.value = 0.75;
+
+    const pickupCoil = ctx.createBiquadFilter();
+    pickupCoil.type = 'peaking';
+    pickupCoil.frequency.value = 3400;
+    pickupCoil.Q.value = 0.85;
+    pickupCoil.gain.value = 2.2;
+
+    // 3. Stompbox pedalboard: a restrained compressor and transparent
+    // overdrive before the amp. The dry blend keeps pick attack intact.
+    const pedalCompressor = ctx.createDynamicsCompressor();
+    pedalCompressor.threshold.setValueAtTime(-25, ctx.currentTime);
+    pedalCompressor.knee.setValueAtTime(18, ctx.currentTime);
+    pedalCompressor.ratio.setValueAtTime(3, ctx.currentTime);
+    pedalCompressor.attack.setValueAtTime(0.028, ctx.currentTime);
+    pedalCompressor.release.setValueAtTime(0.09, ctx.currentTime);
+
+    const pedalDry = ctx.createGain();
+    pedalDry.gain.value = 0.82;
+    const pedalDrive = ctx.createGain();
+    pedalDrive.gain.value = 1.05;
+    const overdrive = ctx.createWaveShaper();
+    overdrive.curve = createOverdriveCurve();
+    overdrive.oversample = '4x';
+    const overdriveTone = ctx.createBiquadFilter();
+    overdriveTone.type = 'lowpass';
+    overdriveTone.frequency.value = 5200;
+    overdriveTone.Q.value = 0.35;
+    const pedalWet = ctx.createGain();
+    pedalWet.gain.value = 0.12;
+    const pedalMix = ctx.createGain();
+
+    // 4. Two-stage tube preamp and a simple Fender/Marshall-like tone stack.
+    const preampInput = ctx.createBiquadFilter();
+    preampInput.type = 'highpass';
+    preampInput.frequency.value = 95;
+    preampInput.Q.value = 0.65;
+
+    const preampGain = ctx.createGain();
+    preampGain.gain.value = 1.35;
+    const preampTube = ctx.createWaveShaper();
+    preampTube.curve = createCleanTubeCurve();
+    preampTube.oversample = '4x';
+
+    const interstage = ctx.createBiquadFilter();
+    interstage.type = 'peaking';
+    interstage.frequency.value = 720;
+    interstage.Q.value = 0.7;
+    interstage.gain.value = 1.2;
+
+    const secondTubeGain = ctx.createGain();
+    secondTubeGain.gain.value = 1.05;
+    const secondTube = ctx.createWaveShaper();
+    secondTube.curve = createCleanTubeCurve();
+    secondTube.oversample = '4x';
+
+    const toneBass = ctx.createBiquadFilter();
+    toneBass.type = 'lowshelf';
+    toneBass.frequency.value = 160;
+    toneBass.gain.value = -0.5;
+
+    // Low-mid mud scoop filter (clears out 340 Hz boxiness)
+    const toneMid = ctx.createBiquadFilter();
+    toneMid.type = 'peaking';
+    toneMid.frequency.value = 340;
+    toneMid.Q.value = 0.95;
+    toneMid.gain.value = -2.5;
+
+    const toneTreble = ctx.createBiquadFilter();
+    toneTreble.type = 'highshelf';
+    toneTreble.frequency.value = 2800;
+    toneTreble.gain.value = 1.8;
+
+    // 5. Power amp: gentle sag/compression followed by a second tube stage.
+    const powerAmpGain = ctx.createGain();
+    powerAmpGain.gain.value = 1.05;
+    const powerAmpTube = ctx.createWaveShaper();
+    powerAmpTube.curve = createCleanTubeCurve();
+    powerAmpTube.oversample = '4x';
+    const powerSag = ctx.createDynamicsCompressor();
+    powerSag.threshold.setValueAtTime(-22, ctx.currentTime);
+    powerSag.knee.setValueAtTime(20, ctx.currentTime);
+    powerSag.ratio.setValueAtTime(1.5, ctx.currentTime);
+    powerSag.attack.setValueAtTime(0.04, ctx.currentTime);
+    powerSag.release.setValueAtTime(0.22, ctx.currentTime);
+
+    // 6. 1x12 speaker/cabinet impulse response and speaker roll-off.
+    const cabinet = ctx.createConvolver();
+    cabinet.buffer = createCabinetImpulseResponse(ctx);
+    cabinet.normalize = false;
     const cabHighpass = ctx.createBiquadFilter();
     cabHighpass.type = 'highpass';
-    cabHighpass.frequency.value = 75; // Cut sub-bass rumble
-
+    cabHighpass.frequency.value = 68;
+    cabHighpass.Q.value = 0.65;
+    const cabBody = ctx.createBiquadFilter();
+    cabBody.type = 'peaking';
+    cabBody.frequency.value = 155;
+    cabBody.Q.value = 0.75;
+    cabBody.gain.value = 0.3;
     const cabConePeak = ctx.createBiquadFilter();
     cabConePeak.type = 'peaking';
-    cabConePeak.frequency.value = 1800;
-    cabConePeak.Q.value = 1.2;
-    cabConePeak.gain.value = 2.5; // Speaker cone midrange presence
-
+    cabConePeak.frequency.value = 2100;
+    cabConePeak.Q.value = 0.7;
+    cabConePeak.gain.value = 1.2;
+    const ampPresence = ctx.createBiquadFilter();
+    ampPresence.type = 'peaking';
+    ampPresence.frequency.value = 3200;
+    ampPresence.Q.value = 0.75;
+    ampPresence.gain.value = 0.8;
     const cabLowpass = ctx.createBiquadFilter();
     cabLowpass.type = 'lowpass';
-    cabLowpass.frequency.value = 4800; // Smooth 12" speaker high-end roll-off
+    cabLowpass.frequency.value = 5600;
+    cabLowpass.Q.value = 0.6;
 
-    // 3. Dynamics Compressor (Prevents digital clipping crackle)
+    // 7. Stereo Room & 3D Haas Width Expander Stage (boosted +50%)
+    const ampBus = ctx.createGain();
+    ampBus.gain.value = 2.1;
+    const roomSend = ctx.createGain();
+    roomSend.gain.value = 0.24;
+    const room = ctx.createConvolver();
+    room.buffer = createRoomImpulseResponse(ctx);
+    room.normalize = false;
+    const roomReturn = ctx.createGain();
+    roomReturn.gain.value = 0.35;
+
+    // Stereo expander nodes (Haas effect 15ms right-channel decorrelation)
+    const haasDelay = ctx.createDelay(0.04);
+    haasDelay.delayTime.setValueAtTime(0.015, ctx.currentTime);
+    const stereoMerger = ctx.createChannelMerger(2);
+
+    // 8. Final anti-clipping dynamics limiter.
     this.compressorNode = ctx.createDynamicsCompressor();
-    this.compressorNode.threshold.setValueAtTime(-14, ctx.currentTime);
-    this.compressorNode.knee.setValueAtTime(10, ctx.currentTime);
-    this.compressorNode.ratio.setValueAtTime(8, ctx.currentTime);
-    this.compressorNode.attack.setValueAtTime(0.003, ctx.currentTime);
-    this.compressorNode.release.setValueAtTime(0.2, ctx.currentTime);
+    this.compressorNode.threshold.setValueAtTime(-8, ctx.currentTime);
+    this.compressorNode.knee.setValueAtTime(6, ctx.currentTime);
+    this.compressorNode.ratio.setValueAtTime(4.0, ctx.currentTime);
+    this.compressorNode.attack.setValueAtTime(0.005, ctx.currentTime);
+    this.compressorNode.release.setValueAtTime(0.08, ctx.currentTime);
 
-    // 4. Analyser Node for Visual Oscilloscope
+    // 6. Analyser Node for Visual Oscilloscope
     this.analyserNode = ctx.createAnalyser();
     this.analyserNode.fftSize = 256;
 
-    // Connect Cabinet Sim -> Compressor -> Analyser -> Destination
-    this.masterGain.connect(cabHighpass);
-    cabHighpass.connect(cabConePeak);
-    cabConePeak.connect(cabLowpass);
-    cabLowpass.connect(this.compressorNode);
+    // Register active nodes for live parameter updates
+    this.activeNodes.set('pedal-compressor', pedalCompressor);
+    this.activeNodes.set('pedal-dry', pedalDry);
+    this.activeNodes.set('pedal-wet', pedalWet);
+    this.activeNodes.set('preamp-gain', preampGain);
+    this.activeNodes.set('tone-bass', toneBass);
+    this.activeNodes.set('tone-mid', toneMid);
+    this.activeNodes.set('tone-treble', toneTreble);
+    this.activeNodes.set('amp-presence', ampPresence);
+    this.activeNodes.set('room-send', roomSend);
+    this.activeNodes.set('room-return', roomReturn);
+
+    // Connect pickup -> pedals -> tube amp -> cabinet -> stereo Haas expander & room -> output.
+    this.masterGain.connect(pickupHighpass);
+    pickupHighpass.connect(pickupCoil);
+    pickupCoil.connect(pedalCompressor);
+    pedalCompressor.connect(pedalDry);
+    pedalCompressor.connect(pedalDrive);
+    pedalDrive.connect(overdrive);
+    overdrive.connect(overdriveTone);
+    overdriveTone.connect(pedalWet);
+    pedalDry.connect(pedalMix);
+    pedalWet.connect(pedalMix);
+    pedalMix.connect(preampInput);
+    preampInput.connect(preampGain);
+    preampGain.connect(preampTube);
+    preampTube.connect(interstage);
+    interstage.connect(secondTubeGain);
+    secondTubeGain.connect(secondTube);
+    secondTube.connect(toneBass);
+    toneBass.connect(toneMid);
+    toneMid.connect(toneTreble);
+    toneTreble.connect(powerAmpGain);
+    powerAmpGain.connect(powerAmpTube);
+    powerAmpTube.connect(powerSag);
+    powerSag.connect(cabinet);
+    cabinet.connect(cabHighpass);
+    cabHighpass.connect(cabBody);
+    cabBody.connect(cabConePeak);
+    cabConePeak.connect(ampPresence);
+    ampPresence.connect(cabLowpass);
+    cabLowpass.connect(ampBus);
+    cabLowpass.connect(roomSend);
+    roomSend.connect(room);
+    room.connect(roomReturn);
+
+    // Build wide stereo image: Direct to Left, 15ms Haas delay to Right, 2-ch Room Return to Stereo Merger
+    ampBus.connect(stereoMerger, 0, 0); // Left channel
+    ampBus.connect(haasDelay);
+    haasDelay.connect(stereoMerger, 0, 1); // Right channel
+    roomReturn.connect(stereoMerger);
+
+    stereoMerger.connect(this.compressorNode);
     this.compressorNode.connect(this.analyserNode);
     this.analyserNode.connect(ctx.destination);
 
-    // Initialize WASM processor asynchronously
-    void this.initializeWasm(ctx);
+    // Preload the real-guitar sample bank while the graph is being solved.
+    void this.initializeSampleBank(ctx);
 
     // Evaluate active components in solved graph
-    const activeComponents = graph
-      .getComponents()
-      .filter((c) => graph.getComponentNodes(c.id).some((n) => solverResult.activeNodes.has(n.id)));
+    const activeNodes = solverResult?.activeNodes;
+    const activeComponents = activeNodes
+      ? graph.getComponents().filter((c) => graph.getComponentNodes(c.id).some((n) => activeNodes.has(n.id)))
+      : [];
+
+    const result: SolverResult = solverResult ?? {
+      activeNodes: new Set(),
+      activePaths: [],
+      deadEndNodes: new Set(),
+    };
 
     // Detect Active Pickup Characteristics & Topology
-    this.detectActiveTopology(activeComponents, graph, solverResult);
+    this.detectActiveTopology(activeComponents, graph, result);
+    this.applyPedalboardStateToNodes(ctx);
   }
 
-  public async initializeWasm(ctx: AudioContext) {
-    if (this.isWasmReady) return;
-    if (this.pendingWasmInitialization) return this.pendingWasmInitialization;
+  public setUseSamples(_use: boolean): void {
+    // Exclusively sample-based audio engine
+  }
 
-    this.pendingWasmInitialization = (async () => {
+  public isUsingSamples(): boolean {
+    return true;
+  }
+
+  public isSampleBankReady(): boolean {
+    return this.sampleBankReady && this.sampleBuffers.size > 0;
+  }
+
+  private async initializeSampleBank(ctx: AudioContext): Promise<void> {
+    if (this.sampleBankReady) return;
+    if (this.pendingSampleBankInitialization) return this.pendingSampleBankInitialization;
+
+    const initialization = (async () => {
       try {
-        const response = await fetch('/dsp/dsp_bg.wasm');
-        const wasmBytes = await response.arrayBuffer();
+        const cdnUrl = 'https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/electric_guitar_clean-mp3.js';
+        const response = await fetch(cdnUrl);
+        if (!response.ok) throw new Error(`Failed to fetch clean guitar soundfont (${response.status})`);
+        const text = await response.text();
 
-        this.workletNode = new AudioWorkletNode(ctx, 'guitar-processor', {
-            numberOfInputs: 0,
-            numberOfOutputs: 1,
-            outputChannelCount: [1]
-        });
+        // Extract and execute the MIDI.js soundfont loader script
+        const fn = new Function(`${text}\nreturn (typeof MIDI !== 'undefined' && MIDI.Soundfont && MIDI.Soundfont.electric_guitar_clean) ? MIDI.Soundfont.electric_guitar_clean : null;`);
+        const soundfont = fn() as Record<string, string> | null;
 
-        await new Promise<void>((resolve) => {
-          this.workletNode!.port.onmessage = (e) => {
-            if (e.data.type === 'ready') {
-              this.isWasmReady = true;
-              resolve();
+        if (!soundfont || typeof soundfont !== 'object') {
+          throw new Error('Invalid soundfont format received from CDN');
+        }
+
+        const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+        const entries = Object.entries(soundfont);
+
+        // Decode base64 MP3 notes into Web Audio AudioBuffers
+        await Promise.all(
+          entries.map(async ([noteName, base64Uri]) => {
+            try {
+              const base64Data = base64Uri.includes(',') ? base64Uri.split(',')[1] : base64Uri;
+              const binaryString = atob(base64Data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              const buffer = await ctx.decodeAudioData(bytes.buffer);
+
+              const match = noteName.match(/^([A-Ga-g][b#]?)(-?\d+)$/);
+              if (match) {
+                let name = match[1];
+                if (name === 'C#') name = 'Db';
+                if (name === 'D#') name = 'Eb';
+                if (name === 'F#') name = 'Gb';
+                if (name === 'G#') name = 'Ab';
+                if (name === 'A#') name = 'Bb';
+                const oct = parseInt(match[2], 10);
+                const noteIndex = NOTE_NAMES.indexOf(name);
+                if (noteIndex !== -1) {
+                  const midiNote = (oct + 1) * 12 + noteIndex;
+                  this.sampleBuffers.set(midiNote, buffer);
+                }
+              }
+            } catch {
+              // Ignore individual note decoding errors
             }
-          };
-          this.workletNode!.port.postMessage({ type: 'init', wasmBytes });
-        });
+          }),
+        );
+
+        if (this.sampleBuffers.size > 0) {
+          this.sampleBankReady = true;
+        } else {
+          throw new Error('No valid note buffers decoded from soundfont');
+        }
       } catch (err) {
-        console.error("WASM initialization failed:", err);
+        this.sampleBankReady = false;
+        console.warn('Real guitar sample bank unavailable; using physical-model fallback:', err);
+      } finally {
+        this.pendingSampleBankInitialization = null;
       }
     })();
 
-    await this.pendingWasmInitialization;
+    this.pendingSampleBankInitialization = initialization;
+    await initialization;
+  }
+
+  private findGuitarSampleBuffer(targetMidi: number): { buffer: AudioBuffer; rootMidi: number } | null {
+    if (this.sampleBuffers.size === 0) return null;
+    let closestMidi: number | null = null;
+    let minDistance = Infinity;
+
+    for (const midi of this.sampleBuffers.keys()) {
+      const dist = Math.abs(midi - targetMidi);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestMidi = midi;
+      }
+    }
+
+    if (closestMidi === null) return null;
+    const buffer = this.sampleBuffers.get(closestMidi);
+    if (!buffer) return null;
+
+    return { buffer, rootMidi: closestMidi };
+  }
+
+  private triggerRecordedGuitar(ctx: AudioContext, freq: number, velocity: number): boolean {
+    const targetMidi = Math.round(69 + 12 * Math.log2(freq / 440));
+    const sample = this.findGuitarSampleBuffer(targetMidi);
+    if (!sample || !this.inputNode) return false;
+
+    const source = ctx.createBufferSource();
+    source.buffer = sample.buffer;
+    const exactTargetMidi = 69 + 12 * Math.log2(freq / 440);
+    const pitchShift = 2 ** ((exactTargetMidi - sample.rootMidi) / 12);
+    source.playbackRate.setValueAtTime(pitchShift, ctx.currentTime);
+
+    const sampleGain = ctx.createGain();
+    const pitchCompensation = Math.max(1.0, Math.sqrt(pitchShift));
+    const gainVal = Math.min(1.2, Math.max(0.3, (velocity * 1.35) / pitchCompensation));
+    sampleGain.gain.setValueAtTime(gainVal, ctx.currentTime);
+
+    // Round off extreme ultrasonic frequencies while preserving high-end detail
+    if (pitchShift > 1.05) {
+      const highDamp = ctx.createBiquadFilter();
+      highDamp.type = 'lowpass';
+      const cutoff = Math.max(4500, Math.min(6500, 7200 / Math.sqrt(pitchShift)));
+      highDamp.frequency.setValueAtTime(cutoff, ctx.currentTime);
+      highDamp.Q.setValueAtTime(0.55, ctx.currentTime);
+      source.connect(highDamp);
+      highDamp.connect(sampleGain);
+    } else {
+      source.connect(sampleGain);
+    }
+    sampleGain.connect(this.inputNode);
+    this.activeSampleSources.add(source);
+
+    source.onended = () => {
+      this.activeSampleSources.delete(source);
+      try {
+        source.disconnect();
+        sampleGain.disconnect();
+      } catch {
+        // Ignored: the source may already be disconnected during cleanup.
+      }
+    };
+    source.start(ctx.currentTime + 0.001);
+    return true;
   }
 
   /**
@@ -186,6 +752,26 @@ export class AudioPipeline {
         c.type === 'pickup_humbucker' ||
         c.type === 'pickup_p90'
     );
+
+    if (pickupComps.length === 0) {
+      this.activeTopology = {
+        pickups: [
+          {
+            id: 'fallback-single-coil',
+            type: 'pickup_single_coil',
+            resonantFreq: 3400,
+            resonantQ: 2.2,
+            isOutofPhase: false,
+            blendGain: 1.0,
+            delayTimeMs: 1.5,
+          },
+        ],
+        isSeries: false,
+        masterVolume: 1.0,
+        masterTone: 1.0,
+      };
+      return;
+    }
 
     // Parse Master Volume & Tone pots
     let masterVol = 1.0;
@@ -266,7 +852,6 @@ export class AudioPipeline {
    * Set input audio source type
    */
   async setSourceType(type: InputSourceType) {
-    this.currentSourceType = type;
     if (type === 'mic') {
       try {
         this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -282,9 +867,13 @@ export class AudioPipeline {
   }
 
   /**
-   * Trigger an authentic, organic physical-modeled electric guitar string pluck
+   * Trigger an authentic real-guitar string pluck from decoded sample bank
    */
-  triggerPluck(freq: number = 329.63, velocity: number = 0.35) {
+  async triggerPluck(
+    freq: number = 329.63,
+    velocity: number = 0.55,
+    _stringIndex: number = 0,
+  ): Promise<void> {
     let ctx = audioEngine.getContext();
     if (!ctx) {
       void audioEngine.initialize();
@@ -301,31 +890,25 @@ export class AudioPipeline {
     }
     if (!this.masterGain) return;
 
-    if (this.isWasmReady && this.workletNode) {
-      // Send pluck message to WASM Worklet thread
-      this.workletNode.port.postMessage({
-        type: 'pluck',
-        string_idx: 0,
-        freq: freq,
-        velocity: velocity
-      });
+    await this.initializeSampleBank(ctx);
+    this.routeInputThroughTopology(ctx, velocity);
 
-      // Route the WASM output through the active pickup topology
-      this.routeWasmThroughTopology(ctx, velocity);
-    }
+    this.triggerRecordedGuitar(ctx, freq, velocity);
   }
 
-  private routeWasmThroughTopology(ctx: AudioContext, velocity: number) {
-    if (!this.workletNode || !this.masterGain) return;
+  private routeInputThroughTopology(ctx: AudioContext, _velocity: number) {
+    if (!this.masterGain) return;
+    if (this.topologyRouted) return;
 
     const now = ctx.currentTime;
     const topology = this.activeTopology;
 
-    const rawStringMix = ctx.createGain();
-    rawStringMix.gain.setValueAtTime(1.0, now);
-    // Worklet output is the raw distorted physical string model
-    this.workletNode.disconnect();
-    this.workletNode.connect(rawStringMix);
+    if (!this.inputNode) {
+      this.inputNode = ctx.createGain();
+      this.inputNode.gain.setValueAtTime(1.0, now);
+      this.activeNodes.set('input-bus', this.inputNode);
+    }
+    const rawStringMix = this.inputNode;
 
     // 2. Pickup Branches (Parallel physical filtering)
     const pickupMixNode = ctx.createGain();
@@ -343,14 +926,21 @@ export class AudioPipeline {
     for (const pickup of topology.pickups) {
       const delayNode = ctx.createDelay(0.01);
       delayNode.delayTime.setValueAtTime(pickup.delayTimeMs / 1000, now);
+      const directPosition = ctx.createGain();
+      directPosition.gain.setValueAtTime(0.72, now);
+      const delayedPosition = ctx.createGain();
+      delayedPosition.gain.setValueAtTime(0.28, now);
+      rawStringMix.connect(directPosition);
       rawStringMix.connect(delayNode);
+      delayNode.connect(delayedPosition);
 
       const pickupResonance = ctx.createBiquadFilter();
       pickupResonance.type = 'peaking';
       pickupResonance.frequency.setValueAtTime(pickup.resonantFreq * seriesFreqShift, now);
       pickupResonance.Q.setValueAtTime(pickup.resonantQ, now);
-      pickupResonance.gain.setValueAtTime(6.0, now); // RLC resonant peak
-      delayNode.connect(pickupResonance);
+      pickupResonance.gain.setValueAtTime(1.8, now); // Smooth physical pickup resonant peak
+      directPosition.connect(pickupResonance);
+      delayedPosition.connect(pickupResonance);
 
       const branchGain = ctx.createGain();
       let gainVal = pickup.blendGain * seriesBoost;
@@ -361,6 +951,8 @@ export class AudioPipeline {
       branchGain.connect(pickupMixNode);
       
       this.activeNodes.set(`pickup-${pickup.id}-${now}`, delayNode);
+      this.activeNodes.set(`pickup-direct-${pickup.id}-${now}`, directPosition);
+      this.activeNodes.set(`pickup-delayed-${pickup.id}-${now}`, delayedPosition);
       this.activeNodes.set(`pickupRes-${pickup.id}-${now}`, pickupResonance);
       this.activeNodes.set(`pickupGain-${pickup.id}-${now}`, branchGain);
     }
@@ -374,31 +966,31 @@ export class AudioPipeline {
     masterToneFilter.Q.setValueAtTime(1.0, now);
     pickupMixNode.connect(masterToneFilter);
 
-    // Master Volume & Envelope
-    const env = ctx.createGain();
-    const peakGain = Math.min(0.8, Math.max(0.04, velocity * topology.masterVolume));
-    env.gain.setValueAtTime(0.0001, now);
-    env.gain.linearRampToValueAtTime(peakGain, now + 0.002);
-    env.gain.exponentialRampToValueAtTime(0.0001, now + 4.5);
+    // The WASM string model owns each note's natural attack and decay. Use a
+    // single stable output gain for the solved circuit instead of creating a
+    // new full-mix envelope for every chord note.
+    const outputGain = ctx.createGain();
+    outputGain.gain.setValueAtTime(topology.masterVolume, now);
+    masterToneFilter.connect(outputGain);
+    outputGain.connect(this.masterGain);
 
-    masterToneFilter.connect(env);
-    
-    env.connect(this.masterGain);
-
-    this.activeNodes.set(`rawMix-${now}`, rawStringMix);
     this.activeNodes.set(`pickupMix-${now}`, pickupMixNode);
     this.activeNodes.set(`tone-${now}`, masterToneFilter);
-    this.activeNodes.set(`env-${now}`, env);
+    this.activeNodes.set(`outputGain-${now}`, outputGain);
+    this.topologyRouted = true;
   }
 
   /**
    * Trigger a guitar chord strum with normalized velocity & staggered timing
    */
   triggerStrum(freqs: readonly number[] = GUITAR_CHORDS.E_MAJOR, delayMs: number = 35) {
-    const chordVelocity = Math.max(0.12, 0.32 / Math.sqrt(freqs.length));
+    // Keep the combined chord energy close to a single pluck while giving
+    // every note its own physical-model string. Reusing slot 0 made each
+    // staggered note overwrite the previous one, which made chords quiet.
+    const chordVelocity = 0.55 / Math.sqrt(freqs.length / 2.0);
     freqs.forEach((freq, idx) => {
       setTimeout(() => {
-        this.triggerPluck(freq, chordVelocity);
+        this.triggerPluck(freq, chordVelocity, idx % 6);
       }, idx * delayMs);
     });
   }
@@ -436,6 +1028,243 @@ export class AudioPipeline {
 
   isAutoStrumming(): boolean {
     return this.autoStrumming;
+  }
+
+  /**
+   * Original song-style genre demo with distinct sections and arrangements.
+   */
+  playGenreDemo(genre: GuitarDemoGenre = 'rock'): boolean {
+    this.stopDemoSong();
+    this.toggleAutoStrum(false);
+
+    const beatDurationMs = 520;
+    const barDurationMs = beatDurationMs * 4;
+
+    const scheduleStrum = (chord: readonly number[], startMs: number, velocity: number, noteDelayMs = 24) => {
+      this.songTimeoutIds.push(
+        window.setTimeout(() => {
+          chord.forEach((note, noteIndex) => {
+            this.songTimeoutIds.push(
+              window.setTimeout(
+                () => void this.triggerPluck(note, velocity, noteIndex % 6),
+                noteIndex * noteDelayMs,
+              ),
+            );
+          });
+        }, startMs),
+      );
+    };
+
+    const scheduleArpeggio = (
+      chord: readonly number[],
+      startMs: number,
+      velocity: number,
+      stepMs: number,
+      order: readonly number[],
+    ) => {
+      order.forEach((chordIndex, noteIndex) => {
+        this.songTimeoutIds.push(
+          window.setTimeout(
+            () => void this.triggerPluck(chord[chordIndex % chord.length], velocity, chordIndex % 6),
+            startMs + noteIndex * stepMs,
+          ),
+        );
+      });
+    };
+
+    const scheduleNote = (frequency: number, startMs: number, velocity: number, stringIndex = 0) => {
+      this.songTimeoutIds.push(
+        window.setTimeout(() => void this.triggerPluck(frequency, velocity, stringIndex % 6), startMs),
+      );
+    };
+
+    const scheduleBassLine = (notes: readonly number[], startMs: number, stepMs: number, velocity = 0.13) => {
+      notes.forEach((note, noteIndex) => {
+        scheduleNote(note, startMs + noteIndex * stepMs, velocity, noteIndex % 3);
+      });
+    };
+
+    const scheduleFourBarSection = (
+      chords: readonly (readonly number[])[],
+      startMs: number,
+      beats: readonly number[],
+      velocity: number,
+      noteDelayMs = 24,
+    ) => {
+      chords.forEach((chord, barIndex) => {
+        beats.forEach((beat, beatIndex) => {
+          scheduleStrum(
+            chord,
+            startMs + barIndex * barDurationMs + beat * beatDurationMs,
+            beatIndex === 0 ? velocity * 1.12 : velocity,
+            noteDelayMs,
+          );
+        });
+      });
+    };
+
+    // Every arrangement is 16 bars: intro, verse, chorus, bridge, final
+    // chorus/outro. The sections intentionally vary rhythm and single-note
+    // movement so this behaves like a small song rather than a chord test.
+    switch (genre) {
+      case 'rock': {
+        const intro = [82.41, 82.41, 98.0, 110.0, 82.41, 123.47];
+        scheduleBassLine(intro, 0, beatDurationMs / 2, 0.16);
+        scheduleBassLine(intro, barDurationMs, beatDurationMs / 2, 0.16);
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.E_MINOR7, GUITAR_CHORDS.G_MAJOR, GUITAR_CHORDS.D_MAJOR, GUITAR_CHORDS.A_MINOR],
+          barDurationMs * 2,
+          [0, 2.5],
+          0.1,
+        );
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_MAJOR, GUITAR_CHORDS.D_MAJOR, GUITAR_CHORDS.E_MINOR7],
+          barDurationMs * 6,
+          [0, 1, 2, 3],
+          0.12,
+        );
+        scheduleBassLine([65.41, 98.0, 73.42, 82.41], barDurationMs * 6, barDurationMs, 0.14);
+        scheduleArpeggio(GUITAR_CHORDS.A_MINOR7, barDurationMs * 10, 0.09, 180, [0, 2, 3, 4, 2, 3, 5, 3]);
+        scheduleArpeggio(GUITAR_CHORDS.C_MAJOR7, barDurationMs * 11, 0.09, 180, [0, 2, 3, 4, 2, 3, 5, 3]);
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_MAJOR, GUITAR_CHORDS.D_MAJOR, GUITAR_CHORDS.E_MINOR7],
+          barDurationMs * 12,
+          [0, 1, 2, 3],
+          0.13,
+        );
+        break;
+      }
+      case 'blues': {
+        const intro = [110.0, 130.81, 146.83, 164.81, 196.0, 164.81];
+        scheduleBassLine(intro, 0, beatDurationMs / 2, 0.14);
+        scheduleBassLine(intro.slice().reverse(), barDurationMs, beatDurationMs / 2, 0.14);
+        const twelveBarBlues = [
+          GUITAR_CHORDS.A7,
+          GUITAR_CHORDS.A7,
+          GUITAR_CHORDS.A7,
+          GUITAR_CHORDS.A7,
+          GUITAR_CHORDS.D7,
+          GUITAR_CHORDS.D7,
+          GUITAR_CHORDS.A7,
+          GUITAR_CHORDS.A7,
+          GUITAR_CHORDS.E7,
+          GUITAR_CHORDS.D7,
+          GUITAR_CHORDS.A7,
+          GUITAR_CHORDS.E7,
+        ];
+        scheduleFourBarSection(twelveBarBlues.slice(0, 4), barDurationMs * 2, [0, 1.5, 2, 3.5], 0.105);
+        scheduleFourBarSection(twelveBarBlues.slice(4, 8), barDurationMs * 6, [0, 1.5, 2, 3.5], 0.115);
+        scheduleFourBarSection(twelveBarBlues.slice(8), barDurationMs * 10, [0, 1.5, 2, 3.5], 0.12);
+        scheduleBassLine([220.0, 246.94, 261.63, 277.18, 293.66], barDurationMs * 6, beatDurationMs / 2, 0.1);
+        scheduleBassLine([293.66, 277.18, 261.63, 246.94, 220.0], barDurationMs * 10, beatDurationMs / 2, 0.1);
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.A7, GUITAR_CHORDS.D7, GUITAR_CHORDS.A7, GUITAR_CHORDS.E7],
+          barDurationMs * 14,
+          [0, 1.5, 2, 3.5],
+          0.11,
+        );
+        break;
+      }
+      case 'hard-rock': {
+        const riff = [82.41, 82.41, 123.47, 82.41, 146.83, 123.47];
+        scheduleBassLine(riff, 0, beatDurationMs / 2, 0.19);
+        scheduleBassLine(riff, barDurationMs, beatDurationMs / 2, 0.19);
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.E5_POWER, GUITAR_CHORDS.E5_POWER, GUITAR_CHORDS.A5_POWER, GUITAR_CHORDS.D5_POWER],
+          barDurationMs * 2,
+          [0, 1.5, 2.5, 3.5],
+          0.16,
+          16,
+        );
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.E5_POWER, GUITAR_CHORDS.G5_POWER, GUITAR_CHORDS.A5_POWER, GUITAR_CHORDS.D5_POWER],
+          barDurationMs * 6,
+          [0, 2],
+          0.18,
+          16,
+        );
+        scheduleBassLine([82.41, 82.41, 98.0, 110.0, 123.47, 110.0], barDurationMs * 10, beatDurationMs / 2, 0.17);
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.E5_POWER, GUITAR_CHORDS.G5_POWER, GUITAR_CHORDS.A5_POWER, GUITAR_CHORDS.D5_POWER],
+          barDurationMs * 12,
+          [0, 1.5, 2, 3.5],
+          0.18,
+          16,
+        );
+        break;
+      }
+      case 'alternative-rock': {
+        scheduleArpeggio(GUITAR_CHORDS.E_MINOR7, 0, 0.09, 180, [0, 2, 3, 4, 2, 3, 5, 3]);
+        scheduleArpeggio(GUITAR_CHORDS.C_MAJOR7, barDurationMs, 0.09, 180, [0, 2, 3, 4, 2, 3, 5, 3]);
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.E_MINOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.D_SUS2_F_SHARP],
+          barDurationMs * 2,
+          [0, 2.5],
+          0.095,
+          30,
+        );
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.D_SUS2_F_SHARP, GUITAR_CHORDS.E_MINOR7],
+          barDurationMs * 6,
+          [0, 1.5, 2.5, 3.5],
+          0.105,
+          30,
+        );
+        scheduleArpeggio(GUITAR_CHORDS.A_MINOR7, barDurationMs * 10, 0.085, 200, [0, 2, 3, 4, 5, 3, 2, 1]);
+        scheduleArpeggio(GUITAR_CHORDS.D_SUS2_F_SHARP, barDurationMs * 11, 0.085, 200, [0, 2, 3, 4, 2, 3, 4, 1]);
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.D_SUS2_F_SHARP, GUITAR_CHORDS.E_MINOR7],
+          barDurationMs * 12,
+          [0, 1.5, 2.5, 3.5],
+          0.11,
+          28,
+        );
+        break;
+      }
+      case 'dream-pop': {
+        const dreamOrder = [0, 2, 3, 5, 4, 3, 2, 1];
+        const introChords = [GUITAR_CHORDS.E_MINOR7, GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.D_SUS2_F_SHARP];
+        introChords.forEach((chord, barIndex) => scheduleArpeggio(chord, barIndex * barDurationMs, 0.075, 220, dreamOrder));
+        const verseChords = [GUITAR_CHORDS.A_MINOR7, GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.D_SUS2_F_SHARP];
+        verseChords.forEach((chord, barIndex) => scheduleArpeggio(chord, barDurationMs * 4 + barIndex * barDurationMs, 0.08, 210, dreamOrder));
+        scheduleFourBarSection(
+          [GUITAR_CHORDS.E_MINOR7, GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.D_SUS2_F_SHARP],
+          barDurationMs * 8,
+          [0, 2],
+          0.075,
+          34,
+        );
+        [329.63, 392.0, 440.0, 493.88].forEach((note, noteIndex) => {
+          scheduleNote(note, barDurationMs * 8 + noteIndex * beatDurationMs * 2, 0.065, 5);
+        });
+        const outroChords = [GUITAR_CHORDS.E_MINOR7, GUITAR_CHORDS.D_SUS2_F_SHARP, GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX];
+        outroChords.forEach((chord, barIndex) => scheduleArpeggio(chord, barDurationMs * 12 + barIndex * barDurationMs, 0.07, 250, dreamOrder));
+        break;
+      }
+    }
+
+    this.demoSongPlaying = true;
+
+    this.songTimeoutIds.push(
+      window.setTimeout(() => {
+        this.demoSongPlaying = false;
+        this.songTimeoutIds = [];
+      }, barDurationMs * 16 + 1800),
+    );
+
+    return true;
+  }
+
+  stopDemoSong(): void {
+    for (const timeoutId of this.songTimeoutIds) {
+      clearTimeout(timeoutId);
+    }
+    this.songTimeoutIds = [];
+    this.demoSongPlaying = false;
+  }
+
+  isDemoSongPlaying(): boolean {
+    return this.demoSongPlaying;
   }
 
   /**
@@ -485,10 +1314,24 @@ export class AudioPipeline {
       }
       this.masterGain = null;
     }
+
+    this.inputNode = null;
+    this.topologyRouted = false;
+
+    for (const source of this.activeSampleSources) {
+      try {
+        source.stop();
+        source.disconnect();
+      } catch {
+        // Ignored: a source may already have ended.
+      }
+    }
+    this.activeSampleSources.clear();
   }
 
   dispose() {
     this.autoStrumming = false;
+    this.stopDemoSong();
     if (this.strumIntervalId) {
       clearInterval(this.strumIntervalId);
       this.strumIntervalId = null;

@@ -533,21 +533,49 @@ export function PhysicalView({ width, height }: Props) {
           panY={panY}
         />
 
-        {/* Component layer */}
+        {/* Base hardware component layer (rendered below wires) */}
         <Layer>
-          {instances.map((inst) => (
-            <ComponentNode
-              key={inst.id}
-              instance={inst}
-              isSelected={selectedIds.includes(inst.id)}
-              onSelect={(evt) => {
-                const multiSelect = evt.evt.shiftKey;
-                selectInstance(inst.id, multiSelect);
-                selectEdge(null);
-              }}
-              onDragEnd={(x, y) => moveInstance(inst.id, x, y)}
-            />
-          ))}
+          {instances
+            .filter((inst) => inst.type !== 'project_card' && inst.type !== 'text_box')
+            .map((inst) => (
+              <ComponentNode
+                key={inst.id}
+                instance={inst}
+                isSelected={selectedIds.includes(inst.id)}
+                onSelect={(evt) => {
+                  const multiSelect = evt.evt.shiftKey;
+                  selectInstance(inst.id, multiSelect);
+                  selectEdge(null);
+                }}
+                onDragEnd={(x, y) => moveInstance(inst.id, x, y)}
+              />
+            ))}
+        </Layer>
+
+        {/* Wire layer (renders above hardware components) */}
+        <WireLayer
+          wires={wires}
+          selectedEdgeId={selectedEdgeId}
+          onSelectEdge={(edgeId) => selectEdge(edgeId)}
+        />
+
+        {/* Foreground card & documentation layer (Project Info Card & Text Boxes render on top of wires!) */}
+        <Layer>
+          {instances
+            .filter((inst) => inst.type === 'project_card' || inst.type === 'text_box')
+            .map((inst) => (
+              <ComponentNode
+                key={inst.id}
+                instance={inst}
+                isSelected={selectedIds.includes(inst.id)}
+                onSelect={(evt) => {
+                  const multiSelect = evt.evt.shiftKey;
+                  selectInstance(inst.id, multiSelect);
+                  selectEdge(null);
+                }}
+                onDragEnd={(x, y) => moveInstance(inst.id, x, y)}
+              />
+            ))}
           <Transformer
             ref={trRef}
             boundBoxFunc={(oldBox, newBox) => {
@@ -565,13 +593,6 @@ export function PhysicalView({ width, height }: Props) {
             borderDash={[4, 4]}
           />
         </Layer>
-
-        {/* Wire layer (renders on top of components so wires overlap components as in real life!) */}
-        <WireLayer
-          wires={wires}
-          selectedEdgeId={selectedEdgeId}
-          onSelectEdge={(edgeId) => selectEdge(edgeId)}
-        />
 
         {/* Selection Box Overlay Layer */}
         {selectionBox && (

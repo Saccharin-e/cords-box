@@ -6,7 +6,14 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { audioEngine, audioPipeline, GUITAR_STRINGS, GUITAR_CHORDS } from '@audio/index';
+import {
+  audioEngine,
+  audioPipeline,
+  GUITAR_STRINGS,
+  GUITAR_CHORDS,
+  GUITAR_DEMO_GENRES,
+  type GuitarDemoGenre,
+} from '@audio/index';
 import { useCircuitStore } from '@store/circuitStore';
 import { useCanvasStore } from '@store/canvasStore';
 import { PRESETS, loadPresetById, type PresetDefinition } from '@presets/presetLibrary';
@@ -14,7 +21,10 @@ import { PRESETS, loadPresetById, type PresetDefinition } from '@presets/presetL
 export function GuitarSoundTestPanel() {
   const [audioActive, setAudioActive] = useState(false);
   const [autoStrumming, setAutoStrumming] = useState(false);
+  const [demoSongPlaying, setDemoSongPlaying] = useState(false);
+  const [selectedDemoGenre, setSelectedDemoGenre] = useState<GuitarDemoGenre>('rock');
   const [selectedPresetId, setSelectedPresetId] = useState('guitar_sound_test_template');
+  const [sampleBankReady, setSampleBankReady] = useState(audioPipeline.isSampleBankReady());
 
   // Dragging State
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -69,6 +79,9 @@ export function GuitarSoundTestPanel() {
   useEffect(() => {
     const interval = setInterval(() => {
       setAudioActive(audioEngine.isReady());
+      setAutoStrumming(audioPipeline.isAutoStrumming());
+      setDemoSongPlaying(audioPipeline.isDemoSongPlaying());
+      setSampleBankReady(audioPipeline.isSampleBankReady());
     }, 500);
     return () => clearInterval(interval);
   }, []);
@@ -147,7 +160,7 @@ export function GuitarSoundTestPanel() {
 
   async function handlePluck(freq: number) {
     await ensureAudioReady();
-    audioPipeline.triggerPluck(freq);
+    await audioPipeline.triggerPluck(freq);
   }
 
   async function handleStrum(freqs: readonly number[]) {
@@ -159,6 +172,19 @@ export function GuitarSoundTestPanel() {
     await ensureAudioReady();
     const nextState = audioPipeline.toggleAutoStrum();
     setAutoStrumming(nextState);
+  }
+
+  async function handleGenreShowcase() {
+    await ensureAudioReady();
+    if (audioPipeline.isDemoSongPlaying()) {
+      audioPipeline.stopDemoSong();
+      setDemoSongPlaying(false);
+      return;
+    }
+
+    const nextState = audioPipeline.playGenreDemo(selectedDemoGenre);
+    setDemoSongPlaying(nextState);
+    setAutoStrumming(false);
   }
 
   function handleSelectPreset(presetId: string) {
@@ -276,6 +302,40 @@ export function GuitarSoundTestPanel() {
         </select>
       </div>
 
+      {/* Audio Engine Sound Source Status */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 8px',
+          backgroundColor: '#09090b',
+          border: '1px solid #27272a',
+          borderRadius: 6,
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 10, color: '#a1a1aa', fontWeight: 600 }}>Audio Sound Source:</span>
+          <span
+            style={{
+              fontSize: 11,
+              color: sampleBankReady ? '#38bdf8' : '#fbbf24',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18V5l12-2v13" />
+              <circle cx="6" cy="18" r="3" />
+              <circle cx="18" cy="16" r="3" />
+            </svg>
+            <span>{sampleBankReady ? 'Real Clean Electric Guitar (CDN Samples)' : 'Loading Real Guitar Samples...'}</span>
+          </span>
+        </div>
+      </div>
+
       {/* Live Oscilloscope Waveform Canvas */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -387,6 +447,67 @@ export function GuitarSoundTestPanel() {
       >
         <span>{autoStrumming ? '⏸ Stop Auto-Strum Loop' : '▶ Start Continuous Strumming Loop'}</span>
       </button>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <label style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600 }} htmlFor="guitar-demo-genre">
+          Song-style Demo Genre:
+        </label>
+        <select
+          id="guitar-demo-genre"
+          value={selectedDemoGenre}
+          onChange={(event) => setSelectedDemoGenre(event.target.value as GuitarDemoGenre)}
+          disabled={demoSongPlaying}
+          style={{
+            padding: '6px 8px',
+            backgroundColor: '#09090b',
+            color: '#f4f4f5',
+            border: '1px solid #3f3f46',
+            borderRadius: 4,
+            fontSize: 11,
+          }}
+        >
+          {GUITAR_DEMO_GENRES.map((genre) => (
+            <option key={genre.id} value={genre.id}>
+              {genre.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <button
+        onClick={handleGenreShowcase}
+        style={{
+          width: '100%',
+          padding: '8px',
+          borderRadius: 6,
+          fontWeight: 700,
+          fontSize: 12,
+          border: '1px solid #0e7490',
+          backgroundColor: demoSongPlaying ? '#083344' : '#102a35',
+          color: '#cffafe',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+        }}
+      >
+          {demoSongPlaying ? (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="6" width="12" height="12" rx="1" />
+              </svg>
+              <span>Stop Song Demo</span>
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+              <span>Play Song Demo</span>
+            </>
+          )}
+        </button>
     </div>
   );
 }

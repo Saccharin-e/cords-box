@@ -134,7 +134,7 @@ export function solveSignalPaths(graph: Graph): SolverResult {
 
   // Find source nodes (pickup terminals: hot or ground leads that generate AC guitar voltage)
   const sourceNodes = nodes.filter(
-    (n) => n.componentId.startsWith('pickup_') && (n.role === 'hot' || n.role === 'ground'),
+    (n) => n.componentId.startsWith('pickup') && (n.role === 'hot' || n.role === 'ground'),
   );
 
   // Find destination nodes (output jack terminals)

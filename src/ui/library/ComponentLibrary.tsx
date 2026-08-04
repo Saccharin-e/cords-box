@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
-import { loadPresetById } from '@presets/presetLibrary';
 import { getShape } from '../canvas/shapes';
 import { HardwareIcon } from './HardwareIcon';
 import type { ComponentType } from '@graph/types';
@@ -203,18 +202,11 @@ export function ComponentLibrary() {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const isSidebarOpen = useCanvasStore((s) => s.isSidebarOpen);
   const toggleSidebar = useCanvasStore((s) => s.toggleSidebar);
-  const isTestPanelOpen = useCanvasStore((s) => s.isTestPanelOpen);
-  const toggleTestPanel = useCanvasStore((s) => s.toggleTestPanel);
 
   if (!isSidebarOpen) return null;
 
   function toggleGroup(key: string) {
     setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
-
-  function handleLoadSoundTest() {
-    loadPresetById('guitar_sound_test_template');
-    if (!isTestPanelOpen) toggleTestPanel();
   }
 
   function handleItemClick(itemId: string) {
@@ -294,31 +286,6 @@ export function ComponentLibrary() {
           title="Close Component Library Panel"
         >
           ✕
-        </button>
-      </div>
-
-      {/* Quick Test Bench Template Load Button */}
-      <div style={{ padding: '0 0 10px 0', borderBottom: '1px solid #27272a', marginBottom: 8 }}>
-        <button
-          onClick={handleLoadSoundTest}
-          style={{
-            width: '100%',
-            padding: '8px 10px',
-            backgroundColor: '#78350f',
-            color: '#fef3c7',
-            border: '1px solid #d97706',
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <span>⚡ Load Guitar Sound Test Bench</span>
         </button>
       </div>
 

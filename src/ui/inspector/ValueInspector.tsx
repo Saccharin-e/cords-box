@@ -17,16 +17,15 @@ import { useState, useEffect, useRef } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { lintCircuit } from '@lint/linter';
-import type { LintDiagnostic } from '@lint/linter';
-import type { PotentiometerValue, CapacitorValue, ResistorValue, CircuitEdge } from '@graph/types';
-import { buildWireVisuals } from '@ui/canvas/wireUtils';
-import { getShape } from '@ui/canvas/shapes';
+import type { PotentiometerValue, CapacitorValue, ResistorValue } from '@graph/types';
+import { WiringDiagnosticsPanel } from './WiringDiagnosticsPanel';
 
 export function ValueInspector() {
   const selectedId = useCanvasStore((s) => s.selectedId);
   const instances = useCanvasStore((s) => s.instances);
   const isInspectorOpen = useCanvasStore((s) => s.isInspectorOpen);
   const toggleInspector = useCanvasStore((s) => s.toggleInspector);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const rotateSelected = useCanvasStore((s) => s.rotateSelected);
   const flipSelectedH = useCanvasStore((s) => s.flipSelectedH);
@@ -50,11 +49,6 @@ export function ValueInspector() {
   const selectInstance = useCanvasStore((s) => s.selectInstance);
   const removeComponent = useCircuitStore((s) => s.removeComponent);
 
-  const setInspectorWidth = useCanvasStore((s) => s.setInspectorWidth);
-  const [isResizing, setIsResizing] = useState(false);
-
-  const diagnostics = lintCircuit(graph);
-
   const inst = instances.find((i) => i.id === selectedId);
   const component = inst ? graph.getComponent(inst.id) : undefined;
   const edge = selectedEdgeId ? graph.getEdge(selectedEdgeId) : undefined;
@@ -66,31 +60,6 @@ export function ValueInspector() {
       setLabelInput(component.label || inst?.label || '');
     }
   }, [component, inst]);
-
-  function handleResizeStart(e: React.MouseEvent) {
-    e.preventDefault();
-    setIsResizing(true);
-    document.body.classList.add('is-resizing');
-
-    let currentWidth = useCanvasStore.getState().inspectorWidth;
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const calculatedWidth = Math.max(220, Math.min(650, window.innerWidth - moveEvent.clientX - 12));
-      currentWidth = calculatedWidth;
-      document.documentElement.style.setProperty('--inspector-width', `${calculatedWidth}px`);
-    };
-
-    const onMouseUp = () => {
-      setIsResizing(false);
-      document.body.classList.remove('is-resizing');
-      setInspectorWidth(currentWidth);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-
-    window.addEventListener('mousemove', onMouseMove, { passive: true });
-    window.addEventListener('mouseup', onMouseUp);
-  }
 
   function handleLabelBlur() {
     if (component && labelInput.trim()) {
@@ -115,288 +84,305 @@ export function ValueInspector() {
   if (!isInspectorOpen) return null;
 
   return (
-    <aside className="inspector neu-panel" id="inspector-panel">
-      {/* Draggable Side Panel Divider Handle */}
+    <div
+      style={{
+        backgroundColor: '#121318',
+        border: '1px solid #27272a',
+        borderRadius: 8,
+        display: 'flex',
+        flexDirection: 'column',
+        flex: isCollapsed ? '0 0 auto' : 1,
+        minHeight: 0,
+        overflow: 'hidden',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+      }}
+    >
+      {/* VS Code Accordion Header */}
       <div
-        className={`inspector-resizer ${isResizing ? 'inspector-resizer--active' : ''}`}
-        onMouseDown={handleResizeStart}
-        title="Drag to adjust inspector panel width"
-      />
-
-      <div
-        className="inspector__header"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-      >
-        <span className="inspector__title">Inspector</span>
-        <button onClick={toggleInspector} style={closeButtonStyle} title="Close Inspector Panel">
-          ✕
-        </button>
-      </div>
-
-      <div style={{ padding: '0 var(--space-4)', flex: 1, overflowY: 'auto' }}>
-        {/* Wire / Edge Inspector when wire is selected */}
-        {edge ? (
-          <WireInspector edge={edge} onUpdate={updateEdge} onDelete={handleDeleteWire} />
-        ) : component && inst ? (
-          <>
-            {/* General Identity & CAD Transform Section */}
-            <InspectorSection title="Identity & Position">
-              <InspectorRow label="ID">
-                <span className="inspector-mono">{component.id}</span>
-              </InspectorRow>
-              <InspectorRow label="Type">
-                <span className="inspector-mono" style={{ textTransform: 'capitalize' }}>
-                  {component.type.replace(/_/g, ' ')}
-                </span>
-              </InspectorRow>
-              <InspectorRow label="Label">
-                <input
-                  type="text"
-                  className="inspector-input"
-                  value={labelInput}
-                  onChange={(e) => setLabelInput(e.target.value)}
-                  onBlur={handleLabelBlur}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLabelBlur()}
-                  placeholder="Component Label"
-                />
-              </InspectorRow>
-
-              {/* Transform / Coordinates */}
-              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>X:</span>
-                    <input
-                      type="number"
-                      className="inspector-input"
-                      value={Math.round(inst.x)}
-                      onChange={(e) => moveInstance(inst.id, Number(e.target.value), inst.y)}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 10, color: 'var(--color-text-muted)' }}>Y:</span>
-                    <input
-                      type="number"
-                      className="inspector-input"
-                      value={Math.round(inst.y)}
-                      onChange={(e) => moveInstance(inst.id, inst.x, Number(e.target.value))}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                </div>
-
-                {/* Rotation & Flip Controls */}
-                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                  <button
-                    className="btn btn--sm"
-                    onClick={() => rotateSelected(90)}
-                    title="Rotate 90° CW"
-                    style={{ flex: 1, padding: '4px' }}
-                  >
-                    ↻ 90°
-                  </button>
-                  <button
-                    className="btn btn--sm"
-                    onClick={flipSelectedH}
-                    title="Flip Horizontal"
-                    style={{ flex: 1, padding: '4px' }}
-                  >
-                    ⇄ Flip H
-                  </button>
-                  <button
-                    className="btn btn--sm"
-                    onClick={flipSelectedV}
-                    title="Flip Vertical"
-                    style={{ flex: 1, padding: '4px' }}
-                  >
-                    ⇅ Flip V
-                  </button>
-                </div>
-              </div>
-            </InspectorSection>
-
-            {/* Type-Specific DIYLC Customizations */}
-            {(component.type === 'pickup_single_coil' || component.type === 'pickup_humbucker') && (
-              <PickupInspector compId={component.id} type={component.type} />
-            )}
-
-            {(component.type === 'switch_3way' ||
-              component.type === 'switch_4way' ||
-              component.type === 'switch_5way' ||
-              component.type === 'switch_dpdt' ||
-              component.type === 'pot_pushpull') && (
-              <SwitchInspector compId={component.id} type={component.type} />
-            )}
-
-            {(component.type === 'pot_volume' ||
-              component.type === 'pot_tone' ||
-              component.type === 'pot_blend' ||
-              component.type === 'pot_concentric' ||
-              component.type === 'pot_pushpull') && (
-              <PotentiometerInspector
-                compId={component.id}
-                value={component.value as PotentiometerValue | undefined}
-                onUpdate={(val) => updateComponentValue(component.id, val)}
-              />
-            )}
-
-            {component.type === 'capacitor' && (
-              <CapacitorInspector
-                value={component.value as CapacitorValue | undefined}
-                onUpdate={(val) => updateComponentValue(component.id, val)}
-              />
-            )}
-
-            {component.type === 'resistor' && (
-              <ResistorInspector
-                value={component.value as ResistorValue | undefined}
-                onUpdate={(val) => updateComponentValue(component.id, val)}
-              />
-            )}
-
-            {component.type === 'output_jack' && <OutputJackInspector />}
-
-            {component.type === 'text_box' && <TextBoxInspector inst={inst} />}
-
-            {component.type === 'project_card' && <ProjectCardInspector inst={inst} />}
-
-            {(component.type === 'shape_rect' ||
-              component.type === 'shape_circle' ||
-              component.type === 'shape_line' ||
-              component.type === 'shape_arrow' ||
-              component.type === 'text_box') && <FreeShapeInspector inst={inst} />}
-
-            {/* Editable Custom Labels, Finish Colors & Terminal Lugs Inspector */}
-            {component.type !== 'text_box' &&
-              component.type !== 'project_card' &&
-              !component.type.startsWith('shape_') && <CustomLabelsAndLugsInspector inst={inst} />}
-
-            {/* Layering Controls */}
-            <div
-              style={{
-                marginTop: 14,
-                marginBottom: 12,
-                borderTop: '1px solid #27272a',
-                paddingTop: 10,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  color: '#71717a',
-                  textTransform: 'uppercase',
-                  marginBottom: 6,
-                }}
-              >
-                Layering
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-                <button
-                  className="btn btn--secondary"
-                  style={{ fontSize: 10, padding: '4px 6px' }}
-                  onClick={() => bringToFront(component.id)}
-                >
-                  Bring to Front
-                </button>
-                <button
-                  className="btn btn--secondary"
-                  style={{ fontSize: 10, padding: '4px 6px' }}
-                  onClick={() => sendToBack(component.id)}
-                >
-                  Send to Back
-                </button>
-                <button
-                  className="btn btn--secondary"
-                  style={{ fontSize: 10, padding: '4px 6px' }}
-                  onClick={() => bringForward(component.id)}
-                >
-                  Bring Forward
-                </button>
-                <button
-                  className="btn btn--secondary"
-                  style={{ fontSize: 10, padding: '4px 6px' }}
-                  onClick={() => sendBackward(component.id)}
-                >
-                  Send Backward
-                </button>
-              </div>
-            </div>
-
-            {/* Delete Component Button */}
-            <div style={{ marginTop: 12, marginBottom: 16 }}>
-              <button
-                className="btn btn--primary"
-                style={{
-                  width: '100%',
-                  borderColor: 'rgba(239, 68, 68, 0.4)',
-                  color: '#ef4444',
-                }}
-                onClick={handleDeleteComponent}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                  Delete Component
-                </span>
-              </button>
-            </div>
-          </>
-        ) : (
-          <div
-            style={{
-              padding: 'var(--space-4)',
-              color: 'var(--color-text-muted)',
-              fontSize: 'var(--font-size-sm)',
-              textAlign: 'center',
-            }}
-          >
-            Select any component or wire on the canvas to customize its physical & electrical specs.
-          </div>
-        )}
-      </div>
-
-      {/* Diagnostics / Linter Section */}
-      <div
+        onClick={() => setIsCollapsed(!isCollapsed)}
         style={{
-          borderTop: '1px solid var(--color-bg-inset)',
-          padding: 'var(--space-3) var(--space-4)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 10px',
+          backgroundColor: '#18181b',
+          borderBottom: isCollapsed ? 'none' : '1px solid #27272a',
+          cursor: 'pointer',
+          userSelect: 'none',
         }}
       >
-        <div className="inspector__section-title">Wiring Diagnostics</div>
-        {diagnostics.length === 0 ? (
-          <div style={{ color: 'var(--color-accent-green)', fontSize: 11 }}>
-            ✓ Circuit verified — no defect warnings.
-          </div>
-        ) : (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
-              maxHeight: 110,
-              overflowY: 'auto',
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#f4f4f5' }}>
+            Property Inspector
+          </span>
+          {component && (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                padding: '1px 6px',
+                borderRadius: 4,
+                backgroundColor: '#0284c7',
+                color: '#e0f2fe',
+                maxWidth: 130,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {component.label || component.type}
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 10, color: '#71717a' }}>{isCollapsed ? '▲' : '▼'}</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleInspector();
             }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#a1a1aa',
+              fontSize: 14,
+              cursor: 'pointer',
+              padding: '0 4px',
+            }}
+            title="Close Inspector Sidebar"
           >
-            {diagnostics.map((d, i) => (
-              <DiagnosticItem key={i} diagnostic={d} />
-            ))}
-          </div>
-        )}
+            ✕
+          </button>
+        </div>
       </div>
-    </aside>
+
+      {!isCollapsed && (
+        <div style={{ padding: '8px 10px', flex: 1, overflowY: 'auto' }}>
+          {/* Wire / Edge Inspector when wire is selected */}
+          {edge ? (
+            <WireInspector edge={edge} onUpdate={updateEdge} onDelete={handleDeleteWire} />
+          ) : component && inst ? (
+            <>
+              {/* General Identity & CAD Transform Section */}
+              <InspectorSection title="Identity & Position">
+                <InspectorRow label="ID">
+                  <span className="inspector-mono">{component.id}</span>
+                </InspectorRow>
+                <InspectorRow label="Type">
+                  <span className="inspector-mono" style={{ textTransform: 'capitalize' }}>
+                    {component.type.replace(/_/g, ' ')}
+                  </span>
+                </InspectorRow>
+                <InspectorRow label="Label">
+                  <input
+                    type="text"
+                    className="inspector-input"
+                    value={labelInput}
+                    onChange={(e) => setLabelInput(e.target.value)}
+                    onBlur={handleLabelBlur}
+                    onKeyDown={(e) => e.key === 'Enter' && handleLabelBlur()}
+                    placeholder="Component Label"
+                  />
+                </InspectorRow>
+
+                {/* Transform & Order Actions */}
+                <div style={{ marginTop: 8 }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: '#71717a',
+                      textTransform: 'uppercase',
+                      marginBottom: 6,
+                    }}
+                  >
+                    CAD Actions & Orientation
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                    <button
+                      className="btn btn--sm"
+                      onClick={() => rotateSelected(90)}
+                      title="Rotate 90° Clockwise"
+                      style={{ flex: 1, padding: '4px' }}
+                    >
+                      ↻ Rotate 90°
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button
+                      className="btn btn--sm"
+                      onClick={flipSelectedH}
+                      title="Flip Horizontal"
+                      style={{ flex: 1, padding: '4px' }}
+                    >
+                      ⇄ Flip H
+                    </button>
+                    <button
+                      className="btn btn--sm"
+                      onClick={flipSelectedV}
+                      title="Flip Vertical"
+                      style={{ flex: 1, padding: '4px' }}
+                    >
+                      ⇅ Flip V
+                    </button>
+                  </div>
+                </div>
+              </InspectorSection>
+
+              {/* Type-Specific DIYLC Customizations */}
+              {(component.type === 'pickup_single_coil' || component.type === 'pickup_humbucker') && (
+                <PickupInspector compId={component.id} type={component.type} />
+              )}
+
+              {(component.type === 'switch_3way' ||
+                component.type === 'switch_4way' ||
+                component.type === 'switch_5way' ||
+                component.type === 'switch_dpdt' ||
+                component.type === 'pot_pushpull') && (
+                <SwitchInspector compId={component.id} type={component.type} />
+              )}
+
+              {(component.type === 'pot_volume' ||
+                component.type === 'pot_tone' ||
+                component.type === 'pot_blend' ||
+                component.type === 'pot_concentric' ||
+                component.type === 'pot_pushpull') && (
+                <PotentiometerInspector
+                  compId={component.id}
+                  value={component.value as PotentiometerValue | undefined}
+                  onUpdate={(val) => updateComponentValue(component.id, val)}
+                />
+              )}
+
+              {component.type === 'capacitor' && (
+                <CapacitorInspector
+                  value={component.value as CapacitorValue | undefined}
+                  onUpdate={(val) => updateComponentValue(component.id, val)}
+                />
+              )}
+
+              {component.type === 'resistor' && (
+                <ResistorInspector
+                  value={component.value as ResistorValue | undefined}
+                  onUpdate={(val) => updateComponentValue(component.id, val)}
+                />
+              )}
+
+              {component.type === 'output_jack' && <OutputJackInspector />}
+
+              {component.type === 'text_box' && <TextBoxInspector inst={inst} />}
+
+              {component.type === 'project_card' && <ProjectCardInspector inst={inst} />}
+
+              {(component.type === 'shape_rect' ||
+                component.type === 'shape_circle' ||
+                component.type === 'shape_line' ||
+                component.type === 'shape_arrow' ||
+                component.type === 'text_box') && <FreeShapeInspector inst={inst} />}
+
+              {/* Editable Custom Labels, Finish Colors & Terminal Lugs Inspector */}
+              {component.type !== 'text_box' &&
+                component.type !== 'project_card' &&
+                !component.type.startsWith('shape_') && <CustomLabelsAndLugsInspector inst={inst} />}
+
+              {/* Layering Controls */}
+              <div
+                style={{
+                  marginTop: 14,
+                  marginBottom: 12,
+                  borderTop: '1px solid #27272a',
+                  paddingTop: 10,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#71717a',
+                    textTransform: 'uppercase',
+                    marginBottom: 6,
+                  }}
+                >
+                  Layering
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                  <button
+                    className="btn btn--secondary"
+                    style={{ fontSize: 10, padding: '4px 6px' }}
+                    onClick={() => bringToFront(component.id)}
+                  >
+                    Bring to Front
+                  </button>
+                  <button
+                    className="btn btn--secondary"
+                    style={{ fontSize: 10, padding: '4px 6px' }}
+                    onClick={() => sendToBack(component.id)}
+                  >
+                    Send to Back
+                  </button>
+                  <button
+                    className="btn btn--secondary"
+                    style={{ fontSize: 10, padding: '4px 6px' }}
+                    onClick={() => bringForward(component.id)}
+                  >
+                    Bring Forward
+                  </button>
+                  <button
+                    className="btn btn--secondary"
+                    style={{ fontSize: 10, padding: '4px 6px' }}
+                    onClick={() => sendBackward(component.id)}
+                  >
+                    Send Backward
+                  </button>
+                </div>
+              </div>
+
+              {/* Delete Component Button */}
+              <div style={{ marginTop: 12, marginBottom: 16 }}>
+                <button
+                  className="btn btn--primary"
+                  style={{
+                    width: '100%',
+                    borderColor: 'rgba(239, 68, 68, 0.4)',
+                    color: '#ef4444',
+                  }}
+                  onClick={handleDeleteComponent}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    Delete Component
+                  </span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <div
+              style={{
+                padding: 'var(--space-4)',
+                color: 'var(--color-text-muted)',
+                fontSize: 'var(--font-size-sm)',
+                textAlign: 'center',
+              }}
+            >
+              Select any component or wire on the canvas to customize its physical & electrical specs.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -404,7 +390,7 @@ export function ValueInspector() {
 
 function InspectorSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 10 }}>
       <div className="inspector__section-title">{title}</div>
       {children}
     </div>

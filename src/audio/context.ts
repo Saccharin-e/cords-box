@@ -10,14 +10,13 @@ export class AudioEngine {
   private context: AudioContext | null = null;
 
   async initialize(): Promise<void> {
+    // AudioContext is not available in the headless test environment.
+    // Treat that as an unavailable audio device instead of creating an
+    // unhandled rejection while the graph is being solved.
+    if (typeof AudioContext === 'undefined') return;
+
     if (!this.context) {
       this.context = new AudioContext({ sampleRate: 44100, latencyHint: 'interactive' });
-      // Pre-load the WASM AudioWorklet processor
-      try {
-        await this.context.audioWorklet.addModule('/dsp/processor.js');
-      } catch (err) {
-        console.error("Failed to load WASM AudioWorklet processor:", err);
-      }
     }
     if (this.context.state === 'suspended') {
       await this.context.resume();

@@ -122,6 +122,9 @@ export interface CanvasStore {
   isInspectorOpen: boolean;
   isControlsOpen: boolean;
   isTestPanelOpen: boolean;
+  isAmpPanelOpen: boolean;
+  isFretboardOpen: boolean;
+  isSlotModalOpen: boolean;
   inspectorWidth: number;
   setInspectorWidth: (width: number) => void;
 
@@ -144,6 +147,9 @@ export interface CanvasStore {
   toggleInspector: () => void;
   toggleControls: () => void;
   toggleTestPanel: () => void;
+  toggleAmpPanel: () => void;
+  toggleFretboard: () => void;
+  toggleSlotModal: () => void;
 
   // Actions
   addInstance: (inst: CanvasComponentInstance) => void;
@@ -321,6 +327,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isInspectorOpen: true,
   isControlsOpen: true,
   isTestPanelOpen: false,
+  isAmpPanelOpen: false,
+  isFretboardOpen: false,
+  isSlotModalOpen: false,
   inspectorWidth: 320,
   setInspectorWidth: (width) =>
     set({ inspectorWidth: Math.max(220, Math.min(650, width)) }),
@@ -342,6 +351,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   toggleInspector: () => set((s) => ({ isInspectorOpen: !s.isInspectorOpen })),
   toggleControls: () => set((s) => ({ isControlsOpen: !s.isControlsOpen })),
   toggleTestPanel: () => set((s) => ({ isTestPanelOpen: !s.isTestPanelOpen })),
+  toggleAmpPanel: () => set((s) => ({ isAmpPanelOpen: !s.isAmpPanelOpen })),
+  toggleFretboard: () => set((s) => ({ isFretboardOpen: !s.isFretboardOpen })),
+  toggleSlotModal: () => set((s) => ({ isSlotModalOpen: !s.isSlotModalOpen })),
 
   pushHistory: () => {
     const { instances, history, historyIndex } = get();

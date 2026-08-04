@@ -36,24 +36,13 @@ function detectDeadShorts(graph: Graph): LintDiagnostic[] {
     for (const ground of groundNodes) {
       if (hot.id === ground.id) continue;
 
-      // Direct edge check
+      // Direct edge check (unresisted wire short directly connecting hot signal to ground)
       const directEdges = graph.getEdgesBetween(hot.id, ground.id);
       if (directEdges.length > 0) {
         diagnostics.push({
           severity: 'error',
           code: 'DEAD_SHORT',
           message: `Dead short: "${hot.id}" is directly connected to ground "${ground.id}"`,
-          nodeIds: [hot.id, ground.id],
-        });
-        continue;
-      }
-
-      // Transitive path check without load
-      if (graph.hasPath(hot.id, ground.id)) {
-        diagnostics.push({
-          severity: 'error',
-          code: 'TRANSITIVE_SHORT',
-          message: `Path short: Signal node "${hot.id}" has an unresisted path to ground "${ground.id}"`,
           nodeIds: [hot.id, ground.id],
         });
       }
@@ -99,12 +88,14 @@ function detectSamePoleJumpers(graph: Graph): LintDiagnostic[] {
   const components = graph.getComponents();
 
   for (const comp of components) {
-    if (comp.type.startsWith('switch_')) {
+    // Only check mini DPDT switches for redundant jumpers, skip multi-position blade selectors where position jumpers are standard
+    if (comp.type === 'switch_dpdt') {
       const nodes = graph.getComponentNodes(comp.id);
 
-      // Group lugs by pole
+      // Group lugs by pole (excluding common lugs)
       const poleGroups: Map<string, string[]> = new Map();
       for (const node of nodes) {
+        if (node.role === 'common') continue;
         const text = node.role || node.id;
         if (text.toLowerCase().includes('pole')) {
           const poleMatch = text.match(/(Pole\s+[A-D])/i);

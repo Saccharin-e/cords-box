@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
-import { audioEngine, audioPipeline } from '@audio/index';
-import { PRESETS, loadPresetById, type PresetDefinition } from '@presets/presetLibrary';
+import { audioEngine } from '@audio/index';
 
 export function Toolbar() {
   const {
@@ -17,6 +16,12 @@ export function Toolbar() {
     toggleControls,
     isTestPanelOpen,
     toggleTestPanel,
+    isAmpPanelOpen,
+    toggleAmpPanel,
+    isFretboardOpen,
+    toggleFretboard,
+    isSlotModalOpen,
+    toggleSlotModal,
     toggleExportModal,
   } = useCanvasStore();
 
@@ -27,11 +32,9 @@ export function Toolbar() {
   // Dropdown Open States
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
   const [isAudioMenuOpen, setIsAudioMenuOpen] = useState(false);
-  const [isPresetMenuOpen, setIsPresetMenuOpen] = useState(false);
 
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const audioMenuRef = useRef<HTMLDivElement>(null);
-  const presetMenuRef = useRef<HTMLDivElement>(null);
 
   // Listen to fullscreen changes
   useEffect(() => {
@@ -59,9 +62,6 @@ export function Toolbar() {
       if (audioMenuRef.current && !audioMenuRef.current.contains(e.target as Node)) {
         setIsAudioMenuOpen(false);
       }
-      if (presetMenuRef.current && !presetMenuRef.current.contains(e.target as Node)) {
-        setIsPresetMenuOpen(false);
-      }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -76,16 +76,6 @@ export function Toolbar() {
     } else {
       await audioEngine.suspend();
       setAudioActive(false);
-    }
-  }
-
-  function handlePluck() {
-    if (!audioActive) {
-      void handleAudioToggle().then(() => {
-        audioPipeline.triggerPluck();
-      });
-    } else {
-      audioPipeline.triggerPluck();
     }
   }
 
@@ -122,11 +112,6 @@ export function Toolbar() {
       resetCanvas();
       resetGraph();
     }
-  }
-
-  function handleLoadPreset(presetId: string) {
-    loadPresetById(presetId);
-    setIsPresetMenuOpen(false);
   }
 
   return (
@@ -216,7 +201,6 @@ export function Toolbar() {
             onClick={() => {
               setIsFileMenuOpen(!isFileMenuOpen);
               setIsAudioMenuOpen(false);
-              setIsPresetMenuOpen(false);
             }}
             style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
           >
@@ -338,60 +322,6 @@ export function Toolbar() {
           )}
         </div>
 
-        {/* 2. Circuit Presets / Templates Dropdown */}
-        <div ref={presetMenuRef} style={{ position: 'relative' }}>
-          <button
-            className={`btn btn--sm ${isPresetMenuOpen ? 'btn--primary' : ''}`}
-            onClick={() => {
-              setIsPresetMenuOpen(!isPresetMenuOpen);
-              setIsFileMenuOpen(false);
-              setIsAudioMenuOpen(false);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polygon points="12 2 2 7 12 12 22 7 12 2" />
-              <polyline points="2 17 12 22 22 17" />
-              <polyline points="2 12 12 17 22 12" />
-            </svg>
-            <span>Templates</span>
-            <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
-          </button>
-
-          {isPresetMenuOpen && (
-            <div style={{ ...dropdownStyle, width: 280 }}>
-              <div style={{ padding: '6px 12px', fontSize: 10, fontWeight: 700, color: '#a1a1aa', textTransform: 'uppercase' }}>
-                Preset Circuit Templates
-              </div>
-              {PRESETS.map((preset: PresetDefinition) => (
-                <button
-                  key={preset.id}
-                  style={dropdownItemStyle}
-                  onClick={() => handleLoadPreset(preset.id)}
-                >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, textAlign: 'left' }}>
-                    <span style={{ fontWeight: 600, color: preset.id === 'guitar_sound_test_template' ? '#f59e0b' : '#f4f4f5' }}>
-                      {preset.name}
-                    </span>
-                    <span style={{ fontSize: 10, color: '#9ca3af', lineHeight: 1.2 }}>
-                      {preset.description.slice(0, 75)}…
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
         {/* 3. Audio Engine Dropdown */}
         <div ref={audioMenuRef} style={{ position: 'relative' }}>
           <button
@@ -399,7 +329,6 @@ export function Toolbar() {
             onClick={() => {
               setIsAudioMenuOpen(!isAudioMenuOpen);
               setIsFileMenuOpen(false);
-              setIsPresetMenuOpen(false);
             }}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
@@ -444,29 +373,6 @@ export function Toolbar() {
                 <span>{audioActive ? 'Power OFF Audio DSP' : 'Power ON Audio DSP'}</span>
               </button>
 
-              <button
-                style={dropdownItemStyle}
-                onClick={() => {
-                  handlePluck();
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M9 18V5l12-2v13" />
-                  <circle cx="6" cy="18" r="3" />
-                  <circle cx="18" cy="16" r="3" />
-                </svg>
-                <span>Pluck Guitar String</span>
-              </button>
-
               <div style={dropdownDividerStyle} />
 
               <button
@@ -494,22 +400,79 @@ export function Toolbar() {
           )}
         </div>
 
-        {/* Quick Pluck Sound Button */}
+        {/* Amp & Pedalboard Panel Toggle */}
         <button
-          className="btn btn--sm"
-          onClick={handlePluck}
-          title="Click to pluck guitar string and test sound output"
+          className={`btn btn--sm ${isAmpPanelOpen ? 'btn--primary' : ''}`}
+          onClick={toggleAmpPanel}
+          title="Customizable Amp Simulator & Stompbox Pedalboard"
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 6,
             fontWeight: 700,
-            backgroundColor: '#78350f',
-            color: '#fef3c7',
-            border: '1px solid #d97706',
+            backgroundColor: isAmpPanelOpen ? '#0284c7' : '#27272a',
+            color: '#f4f4f5',
+            border: '1px solid #3f3f46',
           }}
         >
-          <span>⚡ Pluck Sound</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="4" y1="21" x2="4" y2="14" />
+            <line x1="4" y1="10" x2="4" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12" y2="3" />
+            <line x1="20" y1="21" x2="20" y2="16" />
+            <line x1="20" y1="12" x2="20" y2="3" />
+            <line x1="1" y1="14" x2="7" y2="14" />
+            <line x1="9" y1="8" x2="15" y2="8" />
+            <line x1="17" y1="16" x2="23" y2="16" />
+          </svg>
+          <span>Amp & Pedals</span>
+        </button>
+
+        {/* Playable Guitar Fretboard Panel Toggle */}
+        <button
+          className={`btn btn--sm ${isFretboardOpen ? 'btn--primary' : ''}`}
+          onClick={toggleFretboard}
+          title="Interactive Playable Guitar Fretboard Simulation"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontWeight: 700,
+            backgroundColor: isFretboardOpen ? '#b45309' : '#27272a',
+            color: '#fef3c7',
+            border: isFretboardOpen ? '1px solid #f59e0b' : '1px solid #3f3f46',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18V5l12-2v13" />
+            <circle cx="6" cy="18" r="3" />
+            <circle cx="18" cy="16" r="3" />
+          </svg>
+          <span>Playable Fretboard</span>
+        </button>
+
+        {/* Saveable Layout Slots Modal Toggle */}
+        <button
+          className={`btn btn--sm ${isSlotModalOpen ? 'btn--primary' : ''}`}
+          onClick={toggleSlotModal}
+          title="Save and Load Canvas Layout Slots & Circuit Templates"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontWeight: 700,
+            backgroundColor: isSlotModalOpen ? '#0369a1' : '#27272a',
+            color: '#e0f2fe',
+            border: isSlotModalOpen ? '1px solid #38bdf8' : '1px solid #3f3f46',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+          </svg>
+          <span>Layout Slots</span>
         </button>
 
         <div style={{ width: 1, height: 16, backgroundColor: '#3f3f46', margin: '0 4px' }} />
