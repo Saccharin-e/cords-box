@@ -9,7 +9,7 @@
  * - Multi-selection (Shift-click)
  */
 
-import { useRef, useCallback, useState, useEffect } from 'react';
+import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { Stage, Layer, Rect, Transformer } from 'react-konva';
 import type Konva from 'konva';
 import { useCanvasStore } from '@store/canvasStore';
@@ -102,7 +102,10 @@ export function PhysicalView({ width, height }: Props) {
   const trRef = useRef<Konva.Transformer>(null);
 
   const activeEdges = solverResult?.activeEdges ?? new Set<string>();
-  const wires = buildWireVisuals(() => graph.getEdges(), instances, activeEdges);
+  const wires = useMemo(
+    () => buildWireVisuals(() => graph.getEdges(), instances, activeEdges),
+    [graph, instances, activeEdges],
+  );
 
   useEffect(() => {
     if (trRef.current && stageRef.current) {

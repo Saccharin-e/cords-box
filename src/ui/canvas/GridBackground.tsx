@@ -11,6 +11,7 @@
  * - Dots, Lines, Crosshatch, Isometric, None
  */
 
+import { memo } from 'react';
 import { Layer, Rect, Line, Circle, Group } from 'react-konva';
 import type { CanvasTheme, GridStyle } from '@store/canvasStore';
 
@@ -33,7 +34,7 @@ const THEME_CONFIGS: Record<CanvasTheme, { bg: string; gridColor: string; subGri
     vintage: { bg: '#fef3c7', gridColor: '#d97706', subGridColor: '#fde68a' },
   };
 
-export function GridBackground({
+export const GridBackground = memo(function GridBackground({
   width,
   height,
   themeMode,
