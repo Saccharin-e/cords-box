@@ -249,42 +249,36 @@ function createRoomImpulseResponse(ctx: AudioContext): AudioBuffer {
   const cached = roomIrCache.get(ctx.sampleRate);
   if (cached) return cached;
 
-  const length = Math.floor(ctx.sampleRate * 0.28);
+  const length = Math.floor(ctx.sampleRate * 0.22);
   const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
   const left = impulse.getChannelData(0);
   const right = impulse.getChannelData(1);
 
-  const leftReflections = [
-    [0.014, 0.36],
-    [0.046, 0.25],
-    [0.086, 0.16],
-    [0.132, 0.09],
-    [0.188, 0.05],
-  ];
-  const rightReflections = [
-    [0.022, 0.32],
-    [0.058, 0.21],
-    [0.101, 0.14],
-    [0.149, 0.08],
-    [0.208, 0.04],
-  ];
-
-  left[0] = 0.78;
-  right[0] = 0.72;
-
-  for (let i = 1; i < length; i += 1) {
-    const time = i / ctx.sampleRate;
-    left[i] += Math.sin(2 * Math.PI * 720 * time) * Math.exp(-time * 22) * 0.026;
-    right[i] += Math.sin(2 * Math.PI * 770 * time) * Math.exp(-time * 22) * 0.026;
+  // Dense stereo broadband noise room reflections (studio acoustic ambience):
+  for (let i = 0; i < length; i++) {
+    const t = i / ctx.sampleRate;
+    const env = Math.exp(-t * 18);
+    left[i] = (Math.random() * 2 - 1) * env * 0.08;
+    right[i] = (Math.random() * 2 - 1) * env * 0.08;
   }
 
-  for (const [delaySeconds, gain] of leftReflections) {
-    const index = Math.floor(delaySeconds * ctx.sampleRate);
-    if (index < left.length) left[index] += gain;
-  }
-  for (const [delaySeconds, gain] of rightReflections) {
-    const index = Math.floor(delaySeconds * ctx.sampleRate);
-    if (index < right.length) right[index] += gain;
+  // Early reflections
+  const reflections = [
+    [0.012, 0.35],
+    [0.034, 0.22],
+    [0.068, 0.14],
+    [0.112, 0.08],
+  ];
+
+  left[0] = 0.8;
+  right[0] = 0.75;
+
+  for (const [delaySec, gain] of reflections) {
+    const idx = Math.floor(delaySec * ctx.sampleRate);
+    if (idx < length) {
+      left[idx] += gain;
+      right[idx] += gain * 0.9;
+    }
   }
 
   roomIrCache.set(ctx.sampleRate, impulse);
@@ -292,6 +286,7 @@ function createRoomImpulseResponse(ctx: AudioContext): AudioBuffer {
 }
 
 export class AudioPipeline {
+  private wdfWorkletNode: AudioWorkletNode | null = null;
   private masterGain: GainNode | null = null;
   private finalOutputGain: GainNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
@@ -474,6 +469,20 @@ export class AudioPipeline {
     // Detect Active Pickup Characteristics & Topology
     const topology = this.detectActiveTopology(activeComponents, graph, result);
     this.wdfSolver.buildFromGraph(graph, result);
+
+    if (audioEngine.isWorkletReady() && ctx.audioWorklet) {
+      if (!this.wdfWorkletNode) {
+        try {
+          this.wdfWorkletNode = new AudioWorkletNode(ctx, 'guitar-processor', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [1],
+          });
+        } catch {
+          this.wdfWorkletNode = null;
+        }
+      }
+    }
 
     // Topology signature: structural features only, excluding value knobs.
     // Blend gains and master volume/tone are live parameters applied below.
@@ -984,6 +993,16 @@ export class AudioPipeline {
     const topology = this.activeTopology;
     const now = ctx.currentTime;
 
+    if (this.wdfWorkletNode) {
+      this.wdfWorkletNode.port.postMessage({
+        type: 'wdf-update',
+        params: {
+          volumePos: topology.masterVolume,
+          tonePos: topology.masterTone,
+        },
+      });
+    }
+
     if (this.masterToneFilter) {
       const minFreq = 350;
       const maxFreq = 10000;
@@ -1088,9 +1107,17 @@ export class AudioPipeline {
     }
     const rawStringMix = this.inputNode;
 
-    // Real recorded DI guitar samples already contain authentic pickup character.
-    // Connect sampleInputNode directly to masterGain to prevent double-filtering.
-    this.sampleInputNode.connect(this.masterGain);
+    // Route signals through Worklet WDF passive circuit solver if available
+    if (this.wdfWorkletNode) {
+      try {
+        this.sampleInputNode.connect(this.wdfWorkletNode);
+        this.wdfWorkletNode.connect(this.masterGain);
+      } catch {
+        this.sampleInputNode.connect(this.masterGain);
+      }
+    } else {
+      this.sampleInputNode.connect(this.masterGain);
+    }
 
     // 2. Pickup Branches (Parallel physical filtering with power-normalized mix bus)
     const numPickups = Math.max(1, topology.pickups.length);
