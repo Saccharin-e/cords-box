@@ -8,33 +8,42 @@ class WdfPassiveCircuit {
     this.sampleRate = sampleRate;
     this.volumePos = 1.0;
     this.tonePos = 1.0;
+    this.volPotMaxR = 250000;
+    this.tonePotMaxR = 250000;
+    this.toneCapFarads = 47e-9;
+    this.pickupInductanceH = 2.4;
+    this.pickupResistanceR = 6500;
     this.toneCapState = 0;
-    this.cableCapState = 0;
-    this.updateParams({});
   }
 
   updateParams(p) {
     if (p.volumePos !== undefined) this.volumePos = Math.max(0.001, Math.min(1.0, p.volumePos));
     if (p.tonePos !== undefined) this.tonePos = Math.max(0.001, Math.min(1.0, p.tonePos));
+    if (p.volPotMaxR !== undefined) this.volPotMaxR = Math.max(1000, p.volPotMaxR);
+    if (p.tonePotMaxR !== undefined) this.tonePotMaxR = Math.max(1000, p.tonePotMaxR);
+    if (p.toneCapFarads !== undefined) this.toneCapFarads = Math.max(1e-12, p.toneCapFarads);
+    if (p.pickupInductanceH !== undefined) this.pickupInductanceH = Math.max(0.1, p.pickupInductanceH);
+    if (p.pickupResistanceR !== undefined) this.pickupResistanceR = Math.max(100, p.pickupResistanceR);
   }
 
   processSample(vin) {
-    const T = 1 / this.sampleRate;
-    const R_vol = 250000 * Math.pow(this.volumePos, 2.5); // Audio taper
-    const R_tone = 250000 * Math.pow(this.tonePos, 2.0);
-    const R_cap = T / (2 * 47e-9);
+    const dt = 1 / this.sampleRate;
+    const R_vol = this.volPotMaxR * Math.pow(this.volumePos, 2.5); // Audio logarithmic taper
+    const R_tone = this.tonePotMaxR * Math.pow(this.tonePos, 2.0);
+    const C = this.toneCapFarads;
 
-    // Tone circuit RC lowpass state update
-    const toneCutoff = 1 / (2 * Math.PI * (R_tone + R_cap) * 47e-9);
-    const alpha = (2 * Math.PI * toneCutoff * T) / (2 * Math.PI * toneCutoff * T + 1);
+    // Physical RC lowpass filter for tone control
+    const totalToneR = Math.max(50, R_tone);
+    const toneCutoff = 1 / (2 * Math.PI * totalToneR * C);
+    const alpha = (2 * Math.PI * toneCutoff * dt) / (2 * Math.PI * toneCutoff * dt + 1);
+
     this.toneCapState = this.toneCapState + alpha * (vin - this.toneCapState);
 
-    // Blend tone filtered signal with raw input based on tone pot position
     const toneFiltered = vin * (1 - alpha) + this.toneCapState * alpha;
-    const v_toned = vin * (1 - this.tonePos) * 0.4 + toneFiltered * this.tonePos;
+    const v_toned = vin * (1 - this.tonePos) * 0.35 + toneFiltered * this.tonePos;
 
-    // Volume pot attenuation
-    const v_out = v_toned * (R_vol / (R_vol + 6500));
+    // Voltage divider across volume pot loaded by pickup internal DC resistance
+    const v_out = v_toned * (R_vol / (R_vol + this.pickupResistanceR));
     return v_out;
   }
 
@@ -84,7 +93,6 @@ class GuitarProcessor extends AudioWorkletProcessor {
     if (!output || output.length === 0) return true;
 
     const outChan = output[0];
-    const bufferSize = outChan.length;
 
     // 1. If input audio signal is passed (e.g. from Web Audio string nodes), process through WDF
     if (input && input.length > 0 && input[0].length > 0) {

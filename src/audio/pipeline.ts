@@ -15,8 +15,6 @@ import type { SolverResult } from '@graph/solver';
 import type { Graph } from '@graph/Graph';
 import { useCircuitStore } from '@store/circuitStore';
 
-const wdfSolver = new WdfGuitarCircuitSolver();
-
 export type InputSourceType = 'pluck' | 'strum' | 'mic';
 
 export const GUITAR_DEMO_GENRES = [
@@ -304,6 +302,55 @@ export class AudioPipeline {
   private wdfSolver = new WdfGuitarCircuitSolver(48000);
   private activeSampleSources = new Set<AudioBufferSourceNode>();
 
+  constructor() {
+    audioEngine.subscribe(() => {
+      const ctx = audioEngine.getContext();
+      if (ctx && audioEngine.isWorkletReady() && !this.wdfWorkletNode) {
+        const currentGraph = useCircuitStore.getState().graph;
+        this.instantiateWdfWorklet(ctx, currentGraph);
+        this.topologyRouted = false;
+        this.routeInputThroughTopology(ctx, 1.0);
+      }
+    });
+  }
+
+  private instantiateWdfWorklet(ctx: AudioContext, graph?: Graph): void {
+    if (!audioEngine.isWorkletReady() || !ctx.audioWorklet) return;
+    if (this.wdfWorkletNode) return;
+    try {
+      this.wdfWorkletNode = new AudioWorkletNode(ctx, 'guitar-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+      });
+      this.postWdfUpdate(graph);
+    } catch {
+      this.wdfWorkletNode = null;
+    }
+  }
+
+  private postWdfUpdate(graph?: Graph): void {
+    if (!this.wdfWorkletNode) return;
+    const comps = graph ? graph.getComponents() : [];
+    const volPot = comps.find((c) => c.type === 'pot_volume');
+    const tonePot = comps.find((c) => c.type === 'pot_tone');
+    const toneCap = comps.find((c) => c.type === 'cap_tone');
+    const pickup = comps.find((c) => c.type.startsWith('pickup_'));
+
+    this.wdfWorkletNode.port.postMessage({
+      type: 'wdf-update',
+      params: {
+        volumePos: this.activeTopology.masterVolume,
+        tonePos: this.activeTopology.masterTone,
+        volPotMaxR: (volPot?.properties?.resistance as number) || 250000,
+        tonePotMaxR: (tonePot?.properties?.resistance as number) || 250000,
+        toneCapFarads: (toneCap?.properties?.capacitance as number) || 47e-9,
+        pickupInductanceH: (pickup?.properties?.inductance as number) || 2.4,
+        pickupResistanceR: (pickup?.properties?.resistance as number) || 6500,
+      },
+    });
+  }
+
   private activeNodes: Map<string, AudioNode> = new Map();
   private stateListeners = new Set<() => void>();
   private activeTopology: CircuitTopologyState = {
@@ -471,17 +518,7 @@ export class AudioPipeline {
     this.wdfSolver.buildFromGraph(graph, result);
 
     if (audioEngine.isWorkletReady() && ctx.audioWorklet) {
-      if (!this.wdfWorkletNode) {
-        try {
-          this.wdfWorkletNode = new AudioWorkletNode(ctx, 'guitar-processor', {
-            numberOfInputs: 1,
-            numberOfOutputs: 1,
-            outputChannelCount: [1],
-          });
-        } catch {
-          this.wdfWorkletNode = null;
-        }
-      }
+      this.instantiateWdfWorklet(ctx, graph);
     }
 
     // Topology signature: structural features only, excluding value knobs.
@@ -993,15 +1030,8 @@ export class AudioPipeline {
     const topology = this.activeTopology;
     const now = ctx.currentTime;
 
-    if (this.wdfWorkletNode) {
-      this.wdfWorkletNode.port.postMessage({
-        type: 'wdf-update',
-        params: {
-          volumePos: topology.masterVolume,
-          tonePos: topology.masterTone,
-        },
-      });
-    }
+    const currentGraph = useCircuitStore.getState().graph;
+    this.postWdfUpdate(currentGraph);
 
     if (this.masterToneFilter) {
       const minFreq = 350;
