@@ -334,19 +334,46 @@ export class AudioPipeline {
     const comps = graph ? graph.getComponents() : [];
     const volPot = comps.find((c) => c.type === 'pot_volume');
     const tonePot = comps.find((c) => c.type === 'pot_tone');
-    const toneCap = comps.find((c) => c.type === 'cap_tone');
+    const toneCap = comps.find((c) => c.type === 'capacitor');
     const pickup = comps.find((c) => c.type.startsWith('pickup_'));
+
+    let volPotMaxR = 250000;
+    if (volPot?.value && 'resistance_kohms' in volPot.value) {
+      volPotMaxR = (volPot.value.resistance_kohms ?? 250) * 1000;
+    }
+
+    let tonePotMaxR = 250000;
+    if (tonePot?.value && 'resistance_kohms' in tonePot.value) {
+      tonePotMaxR = (tonePot.value.resistance_kohms ?? 250) * 1000;
+    }
+
+    let toneCapFarads = 47e-9;
+    if (toneCap?.value && 'capacitance_pf' in toneCap.value) {
+      toneCapFarads = (toneCap.value.capacitance_pf ?? 47000) * 1e-12;
+    }
+
+    let pickupInductanceH = 2.4;
+    let pickupResistanceR = 6500;
+    if (pickup) {
+      if (pickup.type === 'pickup_humbucker') {
+        pickupInductanceH = 4.2;
+        pickupResistanceR = 8500;
+      } else if (pickup.type === 'pickup_p90') {
+        pickupInductanceH = 3.2;
+        pickupResistanceR = 7200;
+      }
+    }
 
     this.wdfWorkletNode.port.postMessage({
       type: 'wdf-update',
       params: {
         volumePos: this.activeTopology.masterVolume,
         tonePos: this.activeTopology.masterTone,
-        volPotMaxR: (volPot?.properties?.resistance as number) || 250000,
-        tonePotMaxR: (tonePot?.properties?.resistance as number) || 250000,
-        toneCapFarads: (toneCap?.properties?.capacitance as number) || 47e-9,
-        pickupInductanceH: (pickup?.properties?.inductance as number) || 2.4,
-        pickupResistanceR: (pickup?.properties?.resistance as number) || 6500,
+        volPotMaxR,
+        tonePotMaxR,
+        toneCapFarads,
+        pickupInductanceH,
+        pickupResistanceR,
       },
     });
   }
@@ -981,18 +1008,18 @@ export class AudioPipeline {
       let delayMs = 1.1; // Middle default
 
       if (p.type === 'pickup_humbucker') {
-        resonantFreq = isBridge ? 2800 : isNeck ? 2100 : 2400;
+        resonantFreq = isBridge ? 2800 : isNeck ? 2100 : isMiddle ? 2400 : 2400;
         resonantQ = 2.8;
-        delayMs = isBridge ? 0.3 : isNeck ? 2.0 : 1.1;
+        delayMs = isBridge ? 0.3 : isNeck ? 2.0 : isMiddle ? 1.1 : 1.1;
       } else if (p.type === 'pickup_p90') {
-        resonantFreq = isBridge ? 4100 : isNeck ? 2600 : 3200;
+        resonantFreq = isBridge ? 4100 : isNeck ? 2600 : isMiddle ? 3200 : 3200;
         resonantQ = 2.4;
-        delayMs = isBridge ? 0.2 : isNeck ? 2.1 : 1.2;
+        delayMs = isBridge ? 0.2 : isNeck ? 2.1 : isMiddle ? 1.2 : 1.2;
       } else {
         // Single Coil
-        resonantFreq = isBridge ? 4800 : isNeck ? 2800 : 3600;
+        resonantFreq = isBridge ? 4800 : isNeck ? 2800 : isMiddle ? 3600 : 3600;
         resonantQ = 3.2;
-        delayMs = isBridge ? 0.2 : isNeck ? 2.2 : 1.2;
+        delayMs = isBridge ? 0.2 : isNeck ? 2.2 : isMiddle ? 1.2 : 1.2;
       }
 
       // If it's the neck pickup on a phase-reversible circuit, invert phase
