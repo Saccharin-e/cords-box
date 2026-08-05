@@ -8,6 +8,23 @@
 
 export class AudioEngine {
   private context: AudioContext | null = null;
+  private stateListeners = new Set<() => void>();
+
+  /**
+   * Subscribe to audio context readiness changes. Returns an unsubscribe function.
+   */
+  subscribe(listener: () => void): () => void {
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
+  }
+
+  private emitStateChange(): void {
+    for (const listener of this.stateListeners) {
+      listener();
+    }
+  }
 
   async initialize(): Promise<void> {
     // AudioContext is not available in the headless test environment.
@@ -21,6 +38,7 @@ export class AudioEngine {
     if (this.context.state === 'suspended') {
       await this.context.resume();
     }
+    this.emitStateChange();
   }
 
   getContext(): AudioContext | null {
@@ -35,12 +53,14 @@ export class AudioEngine {
     if (this.context?.state === 'suspended') {
       await this.context.resume();
     }
+    this.emitStateChange();
   }
 
   async suspend(): Promise<void> {
     if (this.context?.state === 'running') {
       await this.context.suspend();
     }
+    this.emitStateChange();
   }
 
   dispose(): void {
@@ -48,6 +68,7 @@ export class AudioEngine {
       void this.context.close();
       this.context = null;
     }
+    this.emitStateChange();
   }
 }
 

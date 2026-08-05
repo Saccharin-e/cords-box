@@ -25,6 +25,8 @@ export function GuitarSoundTestPanel() {
   const [selectedDemoGenre, setSelectedDemoGenre] = useState<GuitarDemoGenre>('rock');
   const [selectedPresetId, setSelectedPresetId] = useState('guitar_sound_test_template');
   const [sampleBankReady, setSampleBankReady] = useState(audioPipeline.isSampleBankReady());
+  const [volumeBoost, setVolumeBoost] = useState<number>(audioPipeline.getMasterVolumeBoost());
+  const [usingSamples, setUsingSamples] = useState<boolean>(audioPipeline.isUsingSamples());
 
   // Dragging State (Global Window Listeners)
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -82,16 +84,35 @@ export function GuitarSoundTestPanel() {
     };
   }
 
-  // Check audio status periodically
+  // Subscribe to audio engine state changes instead of polling.
   useEffect(() => {
-    const interval = setInterval(() => {
+    const update = () => {
       setAudioActive(audioEngine.isReady());
       setAutoStrumming(audioPipeline.isAutoStrumming());
       setDemoSongPlaying(audioPipeline.isDemoSongPlaying());
       setSampleBankReady(audioPipeline.isSampleBankReady());
-    }, 500);
-    return () => clearInterval(interval);
+      setVolumeBoost(audioPipeline.getMasterVolumeBoost());
+      setUsingSamples(audioPipeline.isUsingSamples());
+    };
+    update();
+    const unsubscribeEngine = audioEngine.subscribe(update);
+    const unsubscribePipeline = audioPipeline.subscribe(update);
+    return () => {
+      unsubscribeEngine();
+      unsubscribePipeline();
+    };
   }, []);
+
+  function handleVolumeBoostChange(newVal: number) {
+    setVolumeBoost(newVal);
+    audioPipeline.setMasterVolumeBoost(newVal);
+  }
+
+  function handleToggleSoundSource() {
+    const nextMode = !usingSamples;
+    setUsingSamples(nextMode);
+    audioPipeline.setUseSamples(nextMode);
+  }
 
   // Waveform canvas animation loop
   useEffect(() => {
@@ -315,7 +336,7 @@ export function GuitarSoundTestPanel() {
         </select>
       </div>
 
-      {/* Audio Engine Sound Source Status */}
+      {/* Audio Engine Sound Source Status & Toggle */}
       <div
         style={{
           display: 'flex',
@@ -332,7 +353,7 @@ export function GuitarSoundTestPanel() {
           <span
             style={{
               fontSize: 11,
-              color: sampleBankReady ? '#38bdf8' : '#fbbf24',
+              color: audioPipeline.isUsingSamples() ? '#38bdf8' : '#a3e635',
               fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
@@ -344,8 +365,84 @@ export function GuitarSoundTestPanel() {
               <circle cx="6" cy="18" r="3" />
               <circle cx="18" cy="16" r="3" />
             </svg>
-            <span>{sampleBankReady ? 'Real Clean Electric Guitar (CDN Samples)' : 'Loading Real Guitar Samples...'}</span>
+            <span>
+              {usingSamples
+                ? 'Real DI Electric Guitar (Local WAV Pack)'
+                : 'Pure WASM/WDF Physical String Synth'}
+            </span>
           </span>
+        </div>
+        <button
+          onClick={handleToggleSoundSource}
+          style={{
+            padding: '4px 8px',
+            fontSize: 10,
+            fontWeight: 700,
+            borderRadius: 4,
+            border: '1px solid #3f3f46',
+            backgroundColor: usingSamples ? '#102a35' : '#14532d',
+            color: usingSamples ? '#38bdf8' : '#a3e635',
+            cursor: 'pointer',
+          }}
+        >
+          {usingSamples ? 'Switch to WDF Synth' : 'Switch to Local WAV'}
+        </button>
+      </div>
+
+      {/* Master Volume Booster Control */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          padding: '8px 10px',
+          backgroundColor: '#121215',
+          border: '1px solid #d97706',
+          borderRadius: 6,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#fbbf24', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+            🔊 Master Volume Boost
+          </span>
+          <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 800 }}>
+            {Math.round(volumeBoost * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0.5"
+          max="3.5"
+          step="0.1"
+          value={volumeBoost}
+          onChange={(e) => handleVolumeBoostChange(Number(e.target.value))}
+          style={{
+            width: '100%',
+            cursor: 'pointer',
+            accentColor: '#d97706',
+          }}
+          title="Adjust overall master output volume boost"
+        />
+        <div style={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
+          {[1.0, 1.5, 2.0, 3.0].map((b) => (
+            <button
+              key={b}
+              onClick={() => handleVolumeBoostChange(b)}
+              style={{
+                flex: 1,
+                padding: '2px 0',
+                fontSize: 10,
+                fontWeight: 700,
+                backgroundColor: volumeBoost === b ? '#b45309' : '#27272a',
+                color: volumeBoost === b ? '#fff' : '#a1a1aa',
+                border: '1px solid #3f3f46',
+                borderRadius: 4,
+                cursor: 'pointer',
+              }}
+            >
+              {Math.round(b * 100)}%
+            </button>
+          ))}
         </div>
       </div>
 

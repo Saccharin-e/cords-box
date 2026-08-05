@@ -9,9 +9,13 @@
  */
 
 import { audioEngine } from './context';
+import { SampleBank } from './sampleBank';
+import { WdfGuitarCircuitSolver } from './wdf/wdfCircuitSolver';
 import type { SolverResult } from '@graph/solver';
 import type { Graph } from '@graph/Graph';
 import { useCircuitStore } from '@store/circuitStore';
+
+const wdfSolver = new WdfGuitarCircuitSolver();
 
 export type InputSourceType = 'pluck' | 'strum' | 'mic';
 
@@ -207,16 +211,27 @@ function createCabinetImpulseResponse(ctx: AudioContext): AudioBuffer {
   const impulse = ctx.createBuffer(1, length, ctx.sampleRate);
   const data = impulse.getChannelData(0);
 
-  // A compact deterministic 1x12 cabinet response: direct speaker attack,
-  // cone breakup, and a short mechanical tail.
-  for (let i = 0; i < length; i += 1) {
-    const time = i / ctx.sampleRate;
-    const tail = Math.exp(-time * 115);
-    const cone = Math.sin(2 * Math.PI * 1850 * time) * 0.34;
-    const body = Math.sin(2 * Math.PI * 145 * time) * 0.12;
-    data[i] = (cone + body) * tail;
+  // Smooth clean speaker cabinet impulse response
+  for (let i = 0; i < length; i++) {
+    const t = i / ctx.sampleRate;
+    const env = Math.exp(-t * 120);
+    const cone = Math.sin(2 * Math.PI * 2400 * t) * 0.25;
+    const body = Math.sin(2 * Math.PI * 180 * t) * 0.15;
+    data[i] = (cone + body) * env;
   }
-  data[0] += 0.72;
+  data[0] = 0.5;
+
+  // Normalize cabinet impulse response to prevent gain explosion
+  let maxAbs = 0;
+  for (let i = 0; i < length; i++) {
+    const abs = Math.abs(data[i]);
+    if (abs > maxAbs) maxAbs = abs;
+  }
+  if (maxAbs > 0) {
+    for (let i = 0; i < length; i++) {
+      data[i] = (data[i] / maxAbs) * 0.85;
+    }
+  }
 
   cabinetIrCache.set(ctx.sampleRate, impulse);
   return impulse;
@@ -270,6 +285,7 @@ function createRoomImpulseResponse(ctx: AudioContext): AudioBuffer {
 
 export class AudioPipeline {
   private masterGain: GainNode | null = null;
+  private finalOutputGain: GainNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
   private analyserNode: AnalyserNode | null = null;
   private micStream: MediaStream | null = null;
@@ -279,13 +295,14 @@ export class AudioPipeline {
   private demoSongPlaying = false;
 
   private inputNode: GainNode | null = null;
+  private sampleInputNode: GainNode | null = null;
   private topologyRouted = false;
-  private sampleBankReady = false;
-  private pendingSampleBankInitialization: Promise<void> | null = null;
+  private sampleBank = new SampleBank();
+  private wdfSolver = new WdfGuitarCircuitSolver(48000);
   private activeSampleSources = new Set<AudioBufferSourceNode>();
-  private sampleBuffers = new Map<number, AudioBuffer>();
 
   private activeNodes: Map<string, AudioNode> = new Map();
+  private stateListeners = new Set<() => void>();
   private activeTopology: CircuitTopologyState = {
     pickups: [],
     isSeries: false,
@@ -293,6 +310,26 @@ export class AudioPipeline {
     masterTone: 1.0,
   };
   private ampPedalState: AmpPedalboardState = { ...DEFAULT_AMP_PEDALBOARD_STATE };
+  private masterVolumeBoost = 1.0;
+
+  public getMasterVolumeBoost(): number {
+    return this.masterVolumeBoost;
+  }
+
+  public setMasterVolumeBoost(boost: number): void {
+    this.masterVolumeBoost = Math.max(0.3, Math.min(3.0, boost));
+    const ctx = audioEngine.getContext();
+    if (ctx && this.masterGain) {
+      const now = ctx.currentTime;
+      this.masterGain.gain.setValueAtTime(1.0, now);
+    }
+    if (ctx && this.finalOutputGain) {
+      const now = ctx.currentTime;
+      const s = this.ampPedalState;
+      this.finalOutputGain.gain.setValueAtTime(s.ampMaster * 1.5 * this.masterVolumeBoost, now);
+    }
+    this.emitStateChange();
+  }
 
   // Live parameter automation refs — these let knob changes update existing
   // nodes instead of tearing down and rebuilding the whole Web Audio graph.
@@ -303,6 +340,23 @@ export class AudioPipeline {
 
   public getAmpPedalboardState(): AmpPedalboardState {
     return { ...this.ampPedalState };
+  }
+
+  /**
+   * Subscribe to engine state changes (auto-strum, demo song, sample bank
+   * readiness). Returns an unsubscribe function.
+   */
+  subscribe(listener: () => void): () => void {
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
+  }
+
+  private emitStateChange(): void {
+    for (const listener of this.stateListeners) {
+      listener();
+    }
   }
 
   public updateAmpPedalboardState(updates: Partial<AmpPedalboardState>): void {
@@ -373,7 +427,10 @@ export class AudioPipeline {
     }
 
     if (this.masterGain) {
-      this.masterGain.gain.setValueAtTime((0.4 + s.ampMaster * 1.0) * 1.5, now);
+      this.masterGain.gain.setValueAtTime(1.0, now);
+    }
+    if (this.finalOutputGain) {
+      this.finalOutputGain.gain.setValueAtTime(s.ampMaster * 1.5 * this.masterVolumeBoost, now);
     }
   }
 
@@ -408,6 +465,7 @@ export class AudioPipeline {
 
     // Detect Active Pickup Characteristics & Topology
     const topology = this.detectActiveTopology(activeComponents, graph, result);
+    this.wdfSolver.buildFromGraph(graph, result);
 
     // Topology signature: structural features only, excluding value knobs.
     // Blend gains and master volume/tone are live parameters applied below.
@@ -429,21 +487,13 @@ export class AudioPipeline {
     this.cleanupNodes();
     this.structuralKey = structureKey;
 
-    // 1. Master output trim (boosted +50%).
+    // 1. Input trim.
     this.masterGain = ctx.createGain();
-    this.masterGain.gain.value = 1.5;
+    this.masterGain.gain.value = 1.0;
 
-    // 2. Magnetic pickup model: smooth coil resonance without harsh high spikes.
-    const pickupHighpass = ctx.createBiquadFilter();
-    pickupHighpass.type = 'highpass';
-    pickupHighpass.frequency.value = 105;
-    pickupHighpass.Q.value = 0.75;
-
-    const pickupCoil = ctx.createBiquadFilter();
-    pickupCoil.type = 'peaking';
-    pickupCoil.frequency.value = 3400;
-    pickupCoil.Q.value = 0.85;
-    pickupCoil.gain.value = 2.2;
+    // 2. Magnetic pickup model: bypassed. The dynamic circuit routing in
+    // routeInputThroughTopology already provides accurate per-pickup comb
+    // filtering and resonance peaks. The redundant global EQ has been removed.
 
     // 3. Stompbox pedalboard: a restrained compressor and transparent
     // overdrive before the amp. The dry blend keeps pick attack intact.
@@ -463,7 +513,7 @@ export class AudioPipeline {
     overdrive.oversample = '4x';
     const overdriveTone = ctx.createBiquadFilter();
     overdriveTone.type = 'lowpass';
-    overdriveTone.frequency.value = 5200;
+    overdriveTone.frequency.value = 4600;
     overdriveTone.Q.value = 0.35;
     const pedalWet = ctx.createGain();
     pedalWet.gain.value = 0.12;
@@ -502,13 +552,13 @@ export class AudioPipeline {
     const toneMid = ctx.createBiquadFilter();
     toneMid.type = 'peaking';
     toneMid.frequency.value = 340;
-    toneMid.Q.value = 0.95;
-    toneMid.gain.value = -2.5;
+    toneMid.Q.value = 0.85;
+    toneMid.gain.value = -1.5;
 
     const toneTreble = ctx.createBiquadFilter();
     toneTreble.type = 'highshelf';
     toneTreble.frequency.value = 2800;
-    toneTreble.gain.value = 1.8;
+    toneTreble.gain.value = 0.6;
 
     // 5. Power amp: gentle sag/compression followed by a second tube stage.
     const powerAmpGain = ctx.createGain();
@@ -526,10 +576,10 @@ export class AudioPipeline {
     // 6. 1x12 speaker/cabinet impulse response and speaker roll-off.
     const cabinet = ctx.createConvolver();
     cabinet.buffer = createCabinetImpulseResponse(ctx);
-    cabinet.normalize = false;
+    cabinet.normalize = true;
     const cabHighpass = ctx.createBiquadFilter();
     cabHighpass.type = 'highpass';
-    cabHighpass.frequency.value = 68;
+    cabHighpass.frequency.value = 85;
     cabHighpass.Q.value = 0.65;
     const cabBody = ctx.createBiquadFilter();
     cabBody.type = 'peaking';
@@ -540,31 +590,29 @@ export class AudioPipeline {
     cabConePeak.type = 'peaking';
     cabConePeak.frequency.value = 2100;
     cabConePeak.Q.value = 0.7;
-    cabConePeak.gain.value = 1.2;
+    cabConePeak.gain.value = 0.6;
     const ampPresence = ctx.createBiquadFilter();
     ampPresence.type = 'peaking';
     ampPresence.frequency.value = 3200;
     ampPresence.Q.value = 0.75;
-    ampPresence.gain.value = 0.8;
+    ampPresence.gain.value = 0.3;
     const cabLowpass = ctx.createBiquadFilter();
     cabLowpass.type = 'lowpass';
-    cabLowpass.frequency.value = 5600;
+    cabLowpass.frequency.value = 5000;
     cabLowpass.Q.value = 0.6;
 
     // 7. Stereo Room & 3D Haas Width Expander Stage (boosted +50%)
+    // 7. Stereo Room & Output Mixer
     const ampBus = ctx.createGain();
-    ampBus.gain.value = 2.1;
+    ampBus.gain.value = 1.0;
     const roomSend = ctx.createGain();
-    roomSend.gain.value = 0.24;
+    roomSend.gain.value = 0.08;
     const room = ctx.createConvolver();
     room.buffer = createRoomImpulseResponse(ctx);
-    room.normalize = false;
+    room.normalize = true;
     const roomReturn = ctx.createGain();
-    roomReturn.gain.value = 0.35;
+    roomReturn.gain.value = 0.12;
 
-    // Stereo expander nodes (Haas effect 15ms right-channel decorrelation)
-    const haasDelay = ctx.createDelay(0.04);
-    haasDelay.delayTime.setValueAtTime(0.015, ctx.currentTime);
     const stereoMerger = ctx.createChannelMerger(2);
 
     // 8. Final anti-clipping dynamics limiter.
@@ -592,9 +640,7 @@ export class AudioPipeline {
     this.activeNodes.set('room-return', roomReturn);
 
     // Connect pickup -> pedals -> tube amp -> cabinet -> stereo Haas expander & room -> output.
-    this.masterGain.connect(pickupHighpass);
-    pickupHighpass.connect(pickupCoil);
-    pickupCoil.connect(pedalCompressor);
+    this.masterGain.connect(pedalCompressor);
     pedalCompressor.connect(pedalDry);
     pedalCompressor.connect(pedalDrive);
     pedalDrive.connect(overdrive);
@@ -615,6 +661,7 @@ export class AudioPipeline {
     powerAmpGain.connect(powerAmpTube);
     powerAmpTube.connect(powerSag);
     powerSag.connect(cabinet);
+
     cabinet.connect(cabHighpass);
     cabHighpass.connect(cabBody);
     cabBody.connect(cabConePeak);
@@ -625,131 +672,61 @@ export class AudioPipeline {
     roomSend.connect(room);
     room.connect(roomReturn);
 
-    // Build wide stereo image: Direct to Left, 15ms Haas delay to Right, 2-ch Room Return to Stereo Merger
+    // Direct clean stereo routing to avoid Haas comb filtering
     ampBus.connect(stereoMerger, 0, 0); // Left channel
-    ampBus.connect(haasDelay);
-    haasDelay.connect(stereoMerger, 0, 1); // Right channel
+    ampBus.connect(stereoMerger, 0, 1); // Right channel
     roomReturn.connect(stereoMerger);
 
+    this.finalOutputGain = ctx.createGain();
+    this.finalOutputGain.gain.value = this.ampPedalState.ampMaster * 1.5 * this.masterVolumeBoost;
+
     stereoMerger.connect(this.compressorNode);
-    this.compressorNode.connect(this.analyserNode);
+    this.compressorNode.connect(this.finalOutputGain);
+    this.finalOutputGain.connect(this.analyserNode);
     this.analyserNode.connect(ctx.destination);
 
     // Preload the real-guitar sample bank while the graph is being solved.
     void this.initializeSampleBank(ctx);
 
     this.applyPedalboardStateToNodes(ctx);
+    this.routeInputThroughTopology(ctx, 1.0);
   }
 
-  public setUseSamples(_use: boolean): void {
-    // Exclusively sample-based audio engine
+  private useSamples = true;
+
+  public setUseSamples(use: boolean): void {
+    this.useSamples = use;
+    this.emitStateChange();
   }
 
   public isUsingSamples(): boolean {
-    return true;
+    return this.useSamples;
   }
 
-  public isSampleBankReady(): boolean {
-    return this.sampleBankReady && this.sampleBuffers.size > 0;
+
+
+  /**
+   * Kick off the local sample-bank load. Non-blocking — callers that need
+   * the bank before playing await the returned promise.
+   */
+  private initializeSampleBank(ctx: AudioContext): Promise<void> {
+    return this.sampleBank.startLoad(ctx).then(() => {
+      this.emitStateChange();
+    });
   }
 
-  private async initializeSampleBank(ctx: AudioContext): Promise<void> {
-    if (this.sampleBankReady) return;
-    if (this.pendingSampleBankInitialization) return this.pendingSampleBankInitialization;
-
-    const initialization = (async () => {
-      try {
-        const cdnUrl = 'https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/electric_guitar_clean-mp3.js';
-        const response = await fetch(cdnUrl);
-        if (!response.ok) throw new Error(`Failed to fetch clean guitar soundfont (${response.status})`);
-        const text = await response.text();
-
-        // Extract and execute the MIDI.js soundfont loader script
-        const fn = new Function(`${text}\nreturn (typeof MIDI !== 'undefined' && MIDI.Soundfont && MIDI.Soundfont.electric_guitar_clean) ? MIDI.Soundfont.electric_guitar_clean : null;`);
-        const soundfont = fn() as Record<string, string> | null;
-
-        if (!soundfont || typeof soundfont !== 'object') {
-          throw new Error('Invalid soundfont format received from CDN');
-        }
-
-        const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
-        const entries = Object.entries(soundfont);
-
-        // Decode base64 MP3 notes into Web Audio AudioBuffers
-        await Promise.all(
-          entries.map(async ([noteName, base64Uri]) => {
-            try {
-              const base64Data = base64Uri.includes(',') ? base64Uri.split(',')[1] : base64Uri;
-              const binaryString = atob(base64Data);
-              const bytes = new Uint8Array(binaryString.length);
-              for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-              }
-              const buffer = await ctx.decodeAudioData(bytes.buffer);
-
-              const match = noteName.match(/^([A-Ga-g][b#]?)(-?\d+)$/);
-              if (match) {
-                let name = match[1];
-                if (name === 'C#') name = 'Db';
-                if (name === 'D#') name = 'Eb';
-                if (name === 'F#') name = 'Gb';
-                if (name === 'G#') name = 'Ab';
-                if (name === 'A#') name = 'Bb';
-                const oct = parseInt(match[2], 10);
-                const noteIndex = NOTE_NAMES.indexOf(name);
-                if (noteIndex !== -1) {
-                  const midiNote = (oct + 1) * 12 + noteIndex;
-                  this.sampleBuffers.set(midiNote, buffer);
-                }
-              }
-            } catch {
-              // Ignore individual note decoding errors
-            }
-          }),
-        );
-
-        if (this.sampleBuffers.size > 0) {
-          this.sampleBankReady = true;
-        } else {
-          throw new Error('No valid note buffers decoded from soundfont');
-        }
-      } catch (err) {
-        this.sampleBankReady = false;
-        console.warn('Real guitar sample bank unavailable; using physical-model fallback:', err);
-      } finally {
-        this.pendingSampleBankInitialization = null;
-      }
-    })();
-
-    this.pendingSampleBankInitialization = initialization;
-    await initialization;
-  }
-
-  private findGuitarSampleBuffer(targetMidi: number): { buffer: AudioBuffer; rootMidi: number } | null {
-    if (this.sampleBuffers.size === 0) return null;
-    let closestMidi: number | null = null;
-    let minDistance = Infinity;
-
-    for (const midi of this.sampleBuffers.keys()) {
-      const dist = Math.abs(midi - targetMidi);
-      if (dist < minDistance) {
-        minDistance = dist;
-        closestMidi = midi;
-      }
-    }
-
-    if (closestMidi === null) return null;
-    const buffer = this.sampleBuffers.get(closestMidi);
-    if (!buffer) return null;
-
-    return { buffer, rootMidi: closestMidi };
+  private findGuitarSampleBuffer(targetMidi: number, velocity: number): { buffer: AudioBuffer; rootMidi: number } | null {
+    return this.sampleBank.findNote(targetMidi, velocity);
   }
 
   private triggerRecordedGuitar(ctx: AudioContext, freq: number, velocity: number): boolean {
     const targetMidi = Math.round(69 + 12 * Math.log2(freq / 440));
-    const sample = this.findGuitarSampleBuffer(targetMidi);
-    if (!sample || !this.inputNode) return false;
+    const sample = this.findGuitarSampleBuffer(targetMidi, velocity);
+    if (!sample || !this.sampleInputNode) return false;
 
+
+
+    // Use closest sample for all target pitches across the fretboard
     const source = ctx.createBufferSource();
     source.buffer = sample.buffer;
     const exactTargetMidi = 69 + 12 * Math.log2(freq / 440);
@@ -758,11 +735,21 @@ export class AudioPipeline {
 
     const sampleGain = ctx.createGain();
     const pitchCompensation = Math.max(1.0, Math.sqrt(pitchShift));
-    const gainVal = Math.min(1.2, Math.max(0.3, (velocity * 1.35) / pitchCompensation));
+    const gainVal = Math.min(1.2, Math.max(0.3, (velocity * 1.25) / pitchCompensation));
     sampleGain.gain.setValueAtTime(gainVal, ctx.currentTime);
 
-    // Round off extreme ultrasonic frequencies while preserving high-end detail
-    if (pitchShift > 1.05) {
+    // Formant/resonance compensation for pitch-shifting
+    if (pitchShift < 0.85) {
+      // Slowing down a sample (playbackRate < 0.85) drops body formants into sub-bass,
+      // making it sound like a bass guitar. A dynamic highpass filter removes the mud.
+      const lowCut = ctx.createBiquadFilter();
+      lowCut.type = 'highpass';
+      const cutoff = Math.min(160, Math.max(80, 110 / Math.sqrt(pitchShift)));
+      lowCut.frequency.setValueAtTime(cutoff, ctx.currentTime);
+      lowCut.Q.setValueAtTime(0.55, ctx.currentTime);
+      source.connect(lowCut);
+      lowCut.connect(sampleGain);
+    } else if (pitchShift > 1.05) {
       const highDamp = ctx.createBiquadFilter();
       highDamp.type = 'lowpass';
       const cutoff = Math.max(4500, Math.min(6500, 7200 / Math.sqrt(pitchShift)));
@@ -773,7 +760,7 @@ export class AudioPipeline {
     } else {
       source.connect(sampleGain);
     }
-    sampleGain.connect(this.inputNode);
+    sampleGain.connect(this.sampleInputNode);
     this.activeSampleSources.add(source);
 
     source.onended = () => {
@@ -786,6 +773,75 @@ export class AudioPipeline {
       }
     };
     source.start(ctx.currentTime + 0.001);
+    return true;
+  }
+
+  /**
+   * Check whether the sample bank is available for direct recorded playback.
+   */
+  isSampleBankReady(): boolean {
+    return this.sampleBank.isReady();
+  }
+
+  private triggerSynthesizedGuitar(ctx: AudioContext, freq: number, velocity: number): boolean {
+    if (!this.inputNode) return false;
+    const now = ctx.currentTime;
+    const sampleRate = ctx.sampleRate;
+
+    // Physical String Waveguide Model (Direct Target Pitch - No Pitch Shifting)
+    const duration = 4.0;
+    const ksLength = Math.floor(sampleRate * duration);
+    const ksBuffer = ctx.createBuffer(1, ksLength, sampleRate);
+    const ksData = ksBuffer.getChannelData(0);
+
+    const N = Math.max(8, Math.round(sampleRate / freq));
+
+    // 1. Pick Attack Noise Burst: Short 2.5ms bandpass noise burst (2.4kHz center)
+    let pickState = 0;
+    for (let i = 0; i < N; i++) {
+      const whiteNoise = (Math.random() * 2 - 1) * velocity;
+      // Bandpass pick attack filter
+      pickState = pickState * 0.4 + whiteNoise * 0.6;
+      ksData[i] = pickState;
+    }
+
+    // 2. Waveguide Loop Filter: Karplus-Strong 2-point averaging feedback
+    const decay = Math.min(0.996, 0.990 + (80 / freq) * 0.005);
+    for (let i = N + 1; i < ksLength; i++) {
+      const s1 = ksData[i - N];
+      const s2 = ksData[i - N - 1];
+      ksData[i] = (s1 * 0.5 + s2 * 0.5) * decay;
+    }
+
+    const stringSource = ctx.createBufferSource();
+    stringSource.buffer = ksBuffer;
+    stringSource.playbackRate.value = 1.0; // Native target pitch
+
+    const rawStringMix = ctx.createGain();
+    rawStringMix.gain.setValueAtTime(1.0, now);
+
+    const env = ctx.createGain();
+    const peakGain = Math.min(0.8, Math.max(0.04, velocity));
+    env.gain.setValueAtTime(0.0001, now);
+    env.gain.linearRampToValueAtTime(peakGain, now + 0.002);
+    env.gain.exponentialRampToValueAtTime(0.0001, now + 4.2);
+
+    stringSource.connect(rawStringMix);
+    rawStringMix.connect(env);
+    env.connect(this.inputNode);
+
+    stringSource.start(now);
+
+    setTimeout(() => {
+      try {
+        stringSource.disconnect();
+        rawStringMix.disconnect();
+        env.disconnect();
+      } catch {
+        // Ignored
+      }
+    }, 4500);
+
     return true;
   }
 
@@ -860,24 +916,36 @@ export class AudioPipeline {
       return (c.type === 'switch_dpdt' || c.type === 'pot_pushpull') && swState?.currentPosition === 2;
     });
 
-    const pickups: ActivePickupState[] = pickupComps.map(p => {
-      let resonantFreq = 3800;
-      let resonantQ = 2.0;
-      let delayMs = 1.5; // Neck delay
+    const pickups: ActivePickupState[] = pickupComps.map((p, idx) => {
+      const idLower = `${p.id} ${p.label ?? ''}`.toLowerCase();
+      const isNeck = idLower.includes('neck') || idLower.includes('front') || (idx === 0 && pickupComps.length > 1);
+      const isBridge = idLower.includes('bridge') || idLower.includes('rear') || (idx === 1 && pickupComps.length > 1);
+      const isMiddle = idLower.includes('middle') || (idx === 2);
+
+      let resonantFreq = 3400;
+      let resonantQ = 2.2;
+      let delayMs = 1.1; // Middle default
 
       if (p.type === 'pickup_humbucker') {
-        resonantFreq = 2300; resonantQ = 2.8; delayMs = 0.8;
-      } else if (p.id.includes('bridge')) {
-        resonantFreq = 4800; resonantQ = 3.6; delayMs = 0.2; // Bridge delay (bright)
-      } else if (p.id.includes('neck')) {
-        resonantFreq = 2800; resonantQ = 1.8; delayMs = 2.1; // Neck delay (warm)
+        resonantFreq = isBridge ? 2800 : isNeck ? 2100 : 2400;
+        resonantQ = 2.8;
+        delayMs = isBridge ? 0.3 : isNeck ? 2.0 : 1.1;
+      } else if (p.type === 'pickup_p90') {
+        resonantFreq = isBridge ? 4100 : isNeck ? 2600 : 3200;
+        resonantQ = 2.4;
+        delayMs = isBridge ? 0.2 : isNeck ? 2.1 : 1.2;
+      } else {
+        // Single Coil
+        resonantFreq = isBridge ? 4800 : isNeck ? 2800 : 3600;
+        resonantQ = 3.2;
+        delayMs = isBridge ? 0.2 : isNeck ? 2.2 : 1.2;
       }
 
       // If it's the neck pickup on a phase-reversible circuit, invert phase
-      const isOutofPhase = hasDpdtPhase && p.id.includes('neck');
+      const isOutofPhase = hasDpdtPhase && (isNeck || idx === 0);
 
-      // If it's a half-blender circuit, bridge is full, neck is blended
-      const isBlendNeck = p.id.includes('neck') && activeComponents.some(c => c.type === 'pot_concentric');
+      // Handle concentric blender pots
+      const isBlendNeck = isNeck && activeComponents.some((c) => c.type === 'pot_concentric');
       const gain = isBlendNeck ? blendGain : 1.0;
 
       return {
@@ -887,7 +955,7 @@ export class AudioPipeline {
         resonantQ,
         isOutofPhase,
         blendGain: gain,
-        delayTimeMs: delayMs
+        delayTimeMs: delayMs,
       };
     });
 
@@ -964,7 +1032,7 @@ export class AudioPipeline {
     }
     if (!ctx) return;
     if (ctx.state === 'suspended') {
-      void ctx.resume();
+      await ctx.resume();
     }
     
     // Check if graph needs building
@@ -973,10 +1041,24 @@ export class AudioPipeline {
     }
     if (!this.masterGain) return;
 
-    await this.initializeSampleBank(ctx);
+    // Kick off the local sample-bank load without blocking the pluck. On the
+    // first pluck the bank may still be decoding, so fall back to waiting for
+    // it (local WAV files — fast, no network round trip).
+    const bankPromise = this.initializeSampleBank(ctx);
     this.routeInputThroughTopology(ctx, velocity);
 
-    this.triggerRecordedGuitar(ctx, freq, velocity);
+    if (this.useSamples) {
+      if (!this.triggerRecordedGuitar(ctx, freq, velocity)) {
+        await bankPromise;
+        if (this.inputNode) {
+          if (!this.triggerRecordedGuitar(ctx, freq, velocity)) {
+            this.triggerSynthesizedGuitar(ctx, freq, velocity);
+          }
+        }
+      }
+    } else {
+      this.triggerSynthesizedGuitar(ctx, freq, velocity);
+    }
   }
 
   private routeInputThroughTopology(ctx: AudioContext, _velocity: number) {
@@ -991,11 +1073,27 @@ export class AudioPipeline {
       this.inputNode.gain.setValueAtTime(1.0, now);
       this.activeNodes.set('input-bus', this.inputNode);
     }
+    if (!this.sampleInputNode) {
+      this.sampleInputNode = ctx.createGain();
+      this.sampleInputNode.gain.setValueAtTime(1.0, now);
+      this.activeNodes.set('sample-input-bus', this.sampleInputNode);
+    }
     const rawStringMix = this.inputNode;
 
-    // 2. Pickup Branches (Parallel physical filtering)
+    // Flat Piezo De-emphasis filter: flattens pre-recorded coil peaks to turn
+    // recorded DI samples into an uncolored, raw Piezo string signal.
+    const piezoFlatFilter = ctx.createBiquadFilter();
+    piezoFlatFilter.type = 'peaking';
+    piezoFlatFilter.frequency.setValueAtTime(3200, now);
+    piezoFlatFilter.Q.setValueAtTime(0.8, now);
+    piezoFlatFilter.gain.setValueAtTime(-2.2, now);
+    this.sampleInputNode.connect(piezoFlatFilter);
+
+    // 2. Pickup Branches (Parallel physical filtering with power-normalized mix bus)
+    const numPickups = Math.max(1, topology.pickups.length);
+    const mixNorm = 1 / Math.sqrt(numPickups);
     const pickupMixNode = ctx.createGain();
-    pickupMixNode.gain.setValueAtTime(1.0, now);
+    pickupMixNode.gain.setValueAtTime(mixNorm, now);
 
     if (topology.pickups.length === 0) {
       // Circuit is dead/open
@@ -1013,8 +1111,11 @@ export class AudioPipeline {
       directPosition.gain.setValueAtTime(0.72, now);
       const delayedPosition = ctx.createGain();
       delayedPosition.gain.setValueAtTime(0.28, now);
+
       rawStringMix.connect(directPosition);
       rawStringMix.connect(delayNode);
+      piezoFlatFilter.connect(directPosition);
+      piezoFlatFilter.connect(delayNode);
       delayNode.connect(delayedPosition);
 
       const pickupResonance = ctx.createBiquadFilter();
@@ -1040,6 +1141,7 @@ export class AudioPipeline {
       this.activeNodes.set(`pickupRes-${pickup.id}-${now}`, pickupResonance);
       this.activeNodes.set(`pickupGain-${pickup.id}-${now}`, branchGain);
     }
+
 
     // Master Tone
     const masterToneFilter = ctx.createBiquadFilter();
@@ -1073,10 +1175,10 @@ export class AudioPipeline {
     // Keep the combined chord energy close to a single pluck while giving
     // every note its own physical-model string. Reusing slot 0 made each
     // staggered note overwrite the previous one, which made chords quiet.
-    const chordVelocity = 0.55 / Math.sqrt(freqs.length / 2.0);
+    const chordVelocity = Math.min(0.9, 0.85 / Math.sqrt(freqs.length / 3.0));
     freqs.forEach((freq, idx) => {
       setTimeout(() => {
-        this.triggerPluck(freq, chordVelocity, idx % 6);
+        void this.triggerPluck(freq, chordVelocity, idx % 6);
       }, idx * delayMs);
     });
   }
@@ -1109,6 +1211,7 @@ export class AudioPipeline {
       }, 1900);
     }
 
+    this.emitStateChange();
     return this.autoStrumming;
   }
 
@@ -1335,9 +1438,11 @@ export class AudioPipeline {
       window.setTimeout(() => {
         this.demoSongPlaying = false;
         this.songTimeoutIds = [];
+        this.emitStateChange();
       }, barDurationMs * 16 + 1800),
     );
 
+    this.emitStateChange();
     return true;
   }
 
@@ -1347,6 +1452,7 @@ export class AudioPipeline {
     }
     this.songTimeoutIds = [];
     this.demoSongPlaying = false;
+    this.emitStateChange();
   }
 
   isDemoSongPlaying(): boolean {
@@ -1402,6 +1508,7 @@ export class AudioPipeline {
     }
 
     this.inputNode = null;
+    this.sampleInputNode = null;
     this.topologyRouted = false;
     this.structuralKey = null;
     this.pickupBranchGains.clear();
@@ -1427,6 +1534,7 @@ export class AudioPipeline {
       this.strumIntervalId = null;
     }
     this.cleanupNodes();
+    this.emitStateChange();
   }
 }
 

@@ -10,7 +10,7 @@
  * - Keyboard shortcuts for live playing (1-6 for open strings, A-K for frets)
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { audioEngine, audioPipeline } from '@audio/index';
 
@@ -48,6 +48,18 @@ export function calcFretMidi(openMidi: number, fret: number): number {
   return openMidi + fret;
 }
 
+const NUM_FRETS = 15;
+
+// Precomputed per-cell note data (6 strings x 16 frets) so cell renders
+// never recompute pow/log/note-name math on hover or play.
+const FRET_NOTE_TABLE: { freq: number; midi: number; noteName: string }[][] = GUITAR_STRINGS.map((stringDef) =>
+  Array.from({ length: NUM_FRETS + 1 }, (_, fret) => {
+    const freq = calcFretFrequency(stringDef.openFreq, fret);
+    const midi = calcFretMidi(stringDef.openMidi, fret);
+    return { freq, midi, noteName: midiToNoteName(midi) };
+  }),
+);
+
 // Inlay marker frets
 const SINGLE_DOT_FRETS = [3, 5, 7, 9, 15, 17, 19];
 const DOUBLE_DOT_FRETS = [12];
@@ -69,6 +81,139 @@ export const CHORD_PRESETS: ChordPreset[] = [
   { name: 'E5 Power', frets: [null, null, null, 2, 2, 0] },
 ];
 
+interface FretCellProps {
+  stringIdx: number;
+  stringName: string;
+  fret: number;
+  freq: number;
+  noteName: string;
+  thickness: number;
+  isWound: boolean;
+  isVibrating: boolean;
+  chordFret: number | null;
+  isActivePlay: boolean;
+  isHovered: boolean;
+  onFretMouseDown: (stringIdx: number, fret: number) => void;
+  onFretMouseEnter: (stringIdx: number, fret: number) => void;
+  onFretMouseLeave: () => void;
+}
+
+const FretCell = memo(function FretCell({
+  stringIdx,
+  stringName,
+  fret,
+  freq,
+  noteName,
+  thickness,
+  isWound,
+  isVibrating,
+  chordFret,
+  isActivePlay,
+  isHovered,
+  onFretMouseDown,
+  onFretMouseEnter,
+  onFretMouseLeave,
+}: FretCellProps) {
+  const isFrettedByChord = chordFret === fret;
+  const shortNoteName = noteName.replace(/\d/, '');
+
+  return (
+    <div
+      onMouseDown={() => onFretMouseDown(stringIdx, fret)}
+      onMouseEnter={() => onFretMouseEnter(stringIdx, fret)}
+      onMouseLeave={onFretMouseLeave}
+      style={{
+        position: 'relative',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+      }}
+      title={`${stringName} Fret ${fret}: ${noteName} (${freq.toFixed(1)} Hz)`}
+    >
+      {/* Realistic 3D Metallic Guitar String */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          height: thickness,
+          backgroundColor: isVibrating ? '#fbbf24' : isWound ? '#a1a1aa' : '#e4e4e7',
+          backgroundImage: isVibrating
+            ? 'linear-gradient(180deg, #fef08a 0%, #f59e0b 50%, #d97706 100%)'
+            : isWound
+            ? 'linear-gradient(180deg, #f4f4f5 0%, #a1a1aa 40%, #71717a 75%, #3f3f46 100%), repeating-linear-gradient(90deg, rgba(0,0,0,0.4) 0px, rgba(0,0,0,0.4) 1px, transparent 1px, transparent 3px)'
+            : 'linear-gradient(180deg, #ffffff 0%, #e4e4e7 45%, #a1a1aa 80%, #52525b 100%)',
+          backgroundBlendMode: isWound ? 'overlay' : 'normal',
+          boxShadow: isVibrating
+            ? '0 0 10px #fbbf24, 0 0 16px #f59e0b, 0 3px 6px rgba(0,0,0,0.9)'
+            : '0 3px 5px rgba(0, 0, 0, 0.95), 0 1px 2px rgba(0, 0, 0, 0.8)',
+          borderRadius: thickness / 2,
+          transform: isVibrating ? 'scaleY(2.2)' : 'none',
+          transition: 'all 0.08s ease',
+        }}
+      />
+
+      {/* Movable Hover Target Halo */}
+      {isHovered && !isActivePlay && !isFrettedByChord && (
+        <div
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: '50%',
+            border: '2px solid #38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.25)',
+            boxShadow: '0 0 12px #38bdf8, 0 0 4px rgba(255,255,255,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 9,
+            fontWeight: 800,
+            color: '#e0f2fe',
+            zIndex: 6,
+            pointerEvents: 'none',
+          }}
+        >
+          {shortNoteName}
+        </div>
+      )}
+
+      {/* Pressed / Active Movable Finger Indicator Badge */}
+      {(isFrettedByChord || isActivePlay) && (
+        <div
+          style={{
+            width: isActivePlay ? 24 : 18,
+            height: isActivePlay ? 24 : 18,
+            borderRadius: '50%',
+            backgroundColor: isActivePlay
+              ? '#f59e0b'
+              : isFrettedByChord
+              ? '#0284c7'
+              : '#3f3f46',
+            backgroundImage: isActivePlay
+              ? 'radial-gradient(circle at 35% 35%, #fef08a 0%, #f59e0b 60%, #b45309 100%)'
+              : 'none',
+            color: '#ffffff',
+            fontSize: isActivePlay ? 10 : 9,
+            fontWeight: 800,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: isActivePlay
+              ? '0 0 14px #f59e0b, 0 0 6px rgba(0,0,0,0.8)'
+              : '0 0 6px rgba(0,0,0,0.6)',
+            border: isActivePlay ? '2px solid #fffbeb' : 'none',
+            zIndex: isActivePlay ? 7 : 5,
+          }}
+        >
+          {shortNoteName}
+        </div>
+      )}
+    </div>
+  );
+});
+
 export function PlayableFretboardPanel() {
   const toggleFretboard = useCanvasStore((s) => s.toggleFretboard);
 
@@ -84,7 +229,7 @@ export function PlayableFretboardPanel() {
   const [strumSpeed, setStrumSpeed] = useState<number>(30); // ms per string
 
   const [hoveredFret, setHoveredFret] = useState<{ stringIdx: number; fret: number } | null>(null);
-  const [isMouseDown, setIsMouseDown] = useState(false);
+  const isMouseDownRef = useRef(false);
 
   // Panel Dragging / Moveable State (Global Window Listeners)
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -140,7 +285,7 @@ export function PlayableFretboardPanel() {
   // Global mouseup listener for drag sliding
   useEffect(() => {
     function handleMouseUp() {
-      setIsMouseDown(false);
+      isMouseDownRef.current = false;
     }
     window.addEventListener('mouseup', handleMouseUp);
     return () => window.removeEventListener('mouseup', handleMouseUp);
@@ -211,6 +356,30 @@ export function PlayableFretboardPanel() {
     [triggerNote, strumSpeed]
   );
 
+  // Stable cell handlers so FretCell memoization is not defeated by
+  // inline closures recreated on every panel render.
+  const handleFretMouseDown = useCallback(
+    (stringIdx: number, fret: number) => {
+      isMouseDownRef.current = true;
+      void triggerNote(stringIdx, fret);
+    },
+    [triggerNote]
+  );
+
+  const handleFretMouseEnter = useCallback(
+    (stringIdx: number, fret: number) => {
+      setHoveredFret({ stringIdx, fret });
+      if (isMouseDownRef.current) {
+        void triggerNote(stringIdx, fret);
+      }
+    },
+    [triggerNote]
+  );
+
+  const handleFretMouseLeave = useCallback(() => {
+    setHoveredFret(null);
+  }, []);
+
   // Keyboard accessibility / performance controls
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -236,8 +405,7 @@ export function PlayableFretboardPanel() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [triggerNote, strumChord, selectedChord]);
 
-  const numFrets = 15;
-  const fretArray = useMemo(() => Array.from({ length: numFrets + 1 }, (_, i) => i), []);
+  const fretArray = useMemo(() => Array.from({ length: NUM_FRETS + 1 }, (_, i) => i), []);
 
   return (
     <div
@@ -596,7 +764,8 @@ export function PlayableFretboardPanel() {
             {/* Render 6 Strings */}
             {GUITAR_STRINGS.map((stringDef) => {
               const isVibrating = vibratingStrings[stringDef.index];
-              const chordFret = selectedChord?.frets[stringDef.index];
+              const chordFret = selectedChord?.frets[stringDef.index] ?? null;
+              const rowTable = FRET_NOTE_TABLE[stringDef.index];
 
               return (
                 <div
@@ -623,123 +792,29 @@ export function PlayableFretboardPanel() {
                   </div>
 
                   {/* Frets for this string */}
-                  {fretArray.map((fret) => {
-                    const freq = calcFretFrequency(stringDef.openFreq, fret);
-                    const midi = calcFretMidi(stringDef.openMidi, fret);
-                    const noteName = midiToNoteName(midi);
-                    const isFrettedByChord = chordFret === fret;
-                    const isActivePlay =
-                      activeFret?.stringIdx === stringDef.index && activeFret?.fret === fret;
-                    const isHovered =
-                      hoveredFret?.stringIdx === stringDef.index && hoveredFret?.fret === fret;
-
-                    return (
-                      <div
-                        key={fret}
-                        onMouseDown={() => {
-                          setIsMouseDown(true);
-                          void triggerNote(stringDef.index, fret);
-                        }}
-                        onMouseEnter={() => {
-                          setHoveredFret({ stringIdx: stringDef.index, fret });
-                          if (isMouseDown) {
-                            void triggerNote(stringDef.index, fret);
-                          }
-                        }}
-                        onMouseLeave={() => {
-                          setHoveredFret(null);
-                        }}
-                        style={{
-                          position: 'relative',
-                          height: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          cursor: 'pointer',
-                        }}
-                        title={`${stringDef.name} Fret ${fret}: ${noteName} (${freq.toFixed(1)} Hz)`}
-                      >
-                        {/* Realistic 3D Metallic Guitar String */}
-                        <div
-                          style={{
-                            position: 'absolute',
-                            left: 0,
-                            right: 0,
-                            height: stringDef.thickness,
-                            backgroundColor: isVibrating ? '#fbbf24' : stringDef.isWound ? '#a1a1aa' : '#e4e4e7',
-                            backgroundImage: isVibrating
-                              ? 'linear-gradient(180deg, #fef08a 0%, #f59e0b 50%, #d97706 100%)'
-                              : stringDef.isWound
-                              ? 'linear-gradient(180deg, #f4f4f5 0%, #a1a1aa 40%, #71717a 75%, #3f3f46 100%), repeating-linear-gradient(90deg, rgba(0,0,0,0.4) 0px, rgba(0,0,0,0.4) 1px, transparent 1px, transparent 3px)'
-                              : 'linear-gradient(180deg, #ffffff 0%, #e4e4e7 45%, #a1a1aa 80%, #52525b 100%)',
-                            backgroundBlendMode: stringDef.isWound ? 'overlay' : 'normal',
-                            boxShadow: isVibrating
-                              ? '0 0 10px #fbbf24, 0 0 16px #f59e0b, 0 3px 6px rgba(0,0,0,0.9)'
-                              : '0 3px 5px rgba(0, 0, 0, 0.95), 0 1px 2px rgba(0, 0, 0, 0.8)',
-                            borderRadius: stringDef.thickness / 2,
-                            transform: isVibrating ? 'scaleY(2.2)' : 'none',
-                            transition: 'all 0.08s ease',
-                          }}
-                        />
-
-                        {/* Movable Hover Target Halo */}
-                        {isHovered && !isActivePlay && !isFrettedByChord && (
-                          <div
-                            style={{
-                              width: 22,
-                              height: 22,
-                              borderRadius: '50%',
-                              border: '2px solid #38bdf8',
-                              backgroundColor: 'rgba(56, 189, 248, 0.25)',
-                              boxShadow: '0 0 12px #38bdf8, 0 0 4px rgba(255,255,255,0.8)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: 9,
-                              fontWeight: 800,
-                              color: '#e0f2fe',
-                              zIndex: 6,
-                              pointerEvents: 'none',
-                            }}
-                          >
-                            {noteName.replace(/\d/, '')}
-                          </div>
-                        )}
-
-                        {/* Pressed / Active Movable Finger Indicator Badge */}
-                        {(isFrettedByChord || isActivePlay) && (
-                          <div
-                            style={{
-                              width: isActivePlay ? 24 : 18,
-                              height: isActivePlay ? 24 : 18,
-                              borderRadius: '50%',
-                              backgroundColor: isActivePlay
-                                ? '#f59e0b'
-                                : isFrettedByChord
-                                ? '#0284c7'
-                                : '#3f3f46',
-                              backgroundImage: isActivePlay
-                                ? 'radial-gradient(circle at 35% 35%, #fef08a 0%, #f59e0b 60%, #b45309 100%)'
-                                : 'none',
-                              color: '#ffffff',
-                              fontSize: isActivePlay ? 10 : 9,
-                              fontWeight: 800,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              boxShadow: isActivePlay
-                                ? '0 0 14px #f59e0b, 0 0 6px rgba(0,0,0,0.8)'
-                                : '0 0 6px rgba(0,0,0,0.6)',
-                              border: isActivePlay ? '2px solid #fffbeb' : 'none',
-                              zIndex: isActivePlay ? 7 : 5,
-                            }}
-                          >
-                            {noteName.replace(/\d/, '')}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {fretArray.map((fret) => (
+                    <FretCell
+                      key={fret}
+                      stringIdx={stringDef.index}
+                      stringName={stringDef.name}
+                      fret={fret}
+                      freq={rowTable[fret].freq}
+                      noteName={rowTable[fret].noteName}
+                      thickness={stringDef.thickness}
+                      isWound={stringDef.isWound}
+                      isVibrating={isVibrating}
+                      chordFret={chordFret}
+                      isActivePlay={
+                        activeFret?.stringIdx === stringDef.index && activeFret?.fret === fret
+                      }
+                      isHovered={
+                        hoveredFret?.stringIdx === stringDef.index && hoveredFret?.fret === fret
+                      }
+                      onFretMouseDown={handleFretMouseDown}
+                      onFretMouseEnter={handleFretMouseEnter}
+                      onFretMouseLeave={handleFretMouseLeave}
+                    />
+                  ))}
                 </div>
               );
             })}
