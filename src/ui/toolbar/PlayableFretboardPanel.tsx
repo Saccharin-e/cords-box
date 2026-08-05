@@ -10,7 +10,7 @@
  * - Keyboard shortcuts for live playing (1-6 for open strings, A-K for frets)
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { audioEngine, audioPipeline } from '@audio/index';
 
@@ -70,7 +70,7 @@ export const CHORD_PRESETS: ChordPreset[] = [
 ];
 
 export function PlayableFretboardPanel() {
-  const { toggleFretboard } = useCanvasStore();
+  const toggleFretboard = useCanvasStore((s) => s.toggleFretboard);
 
   const [activeFret, setActiveFret] = useState<{
     stringIdx: number;
@@ -85,6 +85,57 @@ export function PlayableFretboardPanel() {
 
   const [hoveredFret, setHoveredFret] = useState<{ stringIdx: number; fret: number } | null>(null);
   const [isMouseDown, setIsMouseDown] = useState(false);
+
+  // Panel Dragging / Moveable State (Global Window Listeners)
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ pointerX: number; pointerY: number; posX: number; posY: number } | null>(null);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    function handlePointerMove(e: PointerEvent) {
+      if (!dragStartRef.current) return;
+      const dx = e.clientX - dragStartRef.current.pointerX;
+      const dy = e.clientY - dragStartRef.current.pointerY;
+      setPos({
+        x: dragStartRef.current.posX + dx,
+        y: dragStartRef.current.posY + dy,
+      });
+    }
+
+    function handlePointerUp() {
+      setIsDragging(false);
+      dragStartRef.current = null;
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, [isDragging]);
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('a')) {
+        return;
+      }
+      setIsDragging(true);
+      dragStartRef.current = {
+        pointerX: e.clientX,
+        pointerY: e.clientY,
+        posX: pos.x,
+        posY: pos.y,
+      };
+    },
+    [pos.x, pos.y]
+  );
 
   // Global mouseup listener for drag sliding
   useEffect(() => {
@@ -190,30 +241,51 @@ export function PlayableFretboardPanel() {
 
   return (
     <div
+      className="playable-fretboard-panel"
       style={{
         width: 860,
         backgroundColor: '#121318',
         borderRadius: 12,
         border: '1px solid #27272a',
-        boxShadow: '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 2px rgba(251, 191, 36, 0.2)',
+        boxShadow: isDragging
+          ? '0 30px 70px rgba(0, 0, 0, 0.85), 0 0 15px rgba(251, 191, 36, 0.4)'
+          : '0 20px 50px rgba(0, 0, 0, 0.65), 0 0 2px rgba(251, 191, 36, 0.2)',
         overflow: 'hidden',
         color: '#f4f4f5',
         fontFamily: 'Inter, system-ui, sans-serif',
         userSelect: 'none',
+        transform: `translate(calc(-50% + ${pos.x}px), ${pos.y}px)`,
+        transition: isDragging ? 'none' : 'box-shadow 0.2s ease',
       }}
     >
-      {/* Panel Header */}
+      {/* Panel Header (Draggable) */}
       <div
+        onPointerDown={handlePointerDown}
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '12px 18px',
-          backgroundColor: '#18181b',
+          backgroundColor: isDragging ? '#202025' : '#18181b',
           borderBottom: '1px solid #27272a',
+          cursor: isDragging ? 'grabbing' : 'grab',
+          transition: 'background-color 0.15s ease',
         }}
+        title="Click and drag header to move fretboard panel"
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Drag Handle Grip Icon */}
+          <div style={{ display: 'flex', alignItems: 'center', cursor: isDragging ? 'grabbing' : 'grab' }}>
+            <svg width="12" height="16" viewBox="0 0 12 16" fill="none" style={{ opacity: 0.5, marginRight: 2 }}>
+              <circle cx="3" cy="3" r="1.5" fill="#a1a1aa" />
+              <circle cx="9" cy="3" r="1.5" fill="#a1a1aa" />
+              <circle cx="3" cy="8" r="1.5" fill="#a1a1aa" />
+              <circle cx="9" cy="8" r="1.5" fill="#a1a1aa" />
+              <circle cx="3" cy="13" r="1.5" fill="#a1a1aa" />
+              <circle cx="9" cy="13" r="1.5" fill="#a1a1aa" />
+            </svg>
+          </div>
+
           <div
             style={{
               width: 28,
@@ -238,7 +310,7 @@ export function PlayableFretboardPanel() {
               Playable Guitar Fretboard
             </h3>
             <span style={{ fontSize: 11, color: '#a1a1aa' }}>
-              Standard Tuning (E2-E4) &bull; Click any fret or press keys 1-6 / Space to strum
+              Standard Tuning (E2-E4) &bull; Drag header to move &bull; Click frets or press 1-6 / Space
             </span>
           </div>
         </div>

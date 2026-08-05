@@ -25,18 +25,18 @@ interface Props {
 }
 
 export function ContextMenu({ menu, onClose }: Props) {
-  const {
-    removeInstance,
-    selectInstance,
-    setPan,
-    setScale,
-    wiringMode,
-    cancelWiring,
-    startWiring,
-    instances,
-    resetCanvas,
-  } = useCanvasStore();
-  const { removeComponent, removeEdge, reset } = useCircuitStore();
+  const removeInstance = useCanvasStore((s) => s.removeInstance);
+  const selectInstance = useCanvasStore((s) => s.selectInstance);
+  const setPan = useCanvasStore((s) => s.setPan);
+  const setScale = useCanvasStore((s) => s.setScale);
+  const wiringMode = useCanvasStore((s) => s.wiringMode);
+  const cancelWiring = useCanvasStore((s) => s.cancelWiring);
+  const startWiring = useCanvasStore((s) => s.startWiring);
+  const instances = useCanvasStore((s) => s.instances);
+  const resetCanvas = useCanvasStore((s) => s.resetCanvas);
+  const removeComponent = useCircuitStore((s) => s.removeComponent);
+  const removeEdge = useCircuitStore((s) => s.removeEdge);
+  const reset = useCircuitStore((s) => s.reset);
 
   // Close context menu on outside click or Escape
   useEffect(() => {

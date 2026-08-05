@@ -6,7 +6,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
-import { lintCircuit } from '@lint/linter';
 import { PhysicalView } from './PhysicalView';
 import { SchematicView } from './SchematicView';
 import { GuitarSoundTestPanel } from '../toolbar/GuitarSoundTestPanel';
@@ -28,6 +27,8 @@ export function DualCanvas() {
   const isAmpPanelOpen = useCanvasStore((s) => s.isAmpPanelOpen);
   const isFretboardOpen = useCanvasStore((s) => s.isFretboardOpen);
   const isSlotModalOpen = useCanvasStore((s) => s.isSlotModalOpen);
+  const activeFloatingPanel = useCanvasStore((s) => s.activeFloatingPanel);
+  const setActiveFloatingPanel = useCanvasStore((s) => s.setActiveFloatingPanel);
   const selectedEdgeId = useCircuitStore((s) => s.selectedEdgeId);
   const graph = useCircuitStore((s) => s.graph);
   const solverResult = useCircuitStore((s) => s.solverResult);
@@ -44,7 +45,7 @@ export function DualCanvas() {
 
   const nodeCount = graph.getNodes().length;
   const edgeCount = graph.getEdges().length;
-  const diagnostics = lintCircuit(graph);
+  const diagnostics = useCircuitStore((s) => s.diagnostics);
   const hasErrors = diagnostics.some((d) => d.severity === 'error');
   const activePaths = solverResult?.activePaths.length ?? 0;
 
@@ -172,25 +173,28 @@ export function DualCanvas() {
             WIRING
           </span>
         )}
+        <div style={{ width: 1, height: 12, backgroundColor: 'rgba(255, 255, 255, 0.15)', margin: '0 2px' }} />
         <button
           className="canvas-tab"
           style={{
-            marginLeft: 'auto',
-            fontSize: 11,
+            fontSize: '0.62rem',
+            padding: '3px 8px',
             display: 'inline-flex',
             alignItems: 'center',
             gap: 4,
+            color: '#a1a1aa',
           }}
           onClick={handleResetView}
           title="Reset Zoom & Pan to 100%"
+          id="btn-fit-view"
         >
           <svg
-            width="12"
-            height="12"
+            width="11"
+            height="11"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            strokeWidth="2"
+            strokeWidth="2.2"
             strokeLinecap="round"
             strokeLinejoin="round"
           >
@@ -198,7 +202,7 @@ export function DualCanvas() {
             <line x1="12" y1="8" x2="12" y2="16" />
             <line x1="8" y1="12" x2="16" y2="12" />
           </svg>
-          Fit View
+          <span>Fit</span>
         </button>
       </div>
 
@@ -213,14 +217,15 @@ export function DualCanvas() {
         </>
       )}
 
-      {/* Retractable Guitar Sound Test Bench Panel */}
+      {/* Retractable Guitar Audio Test Panel */}
       {isTestPanelOpen && (
         <div
+          onPointerDown={() => setActiveFloatingPanel('test')}
           style={{
             position: 'absolute',
-            top: 60,
+            top: 70,
             left: 20,
-            zIndex: 90,
+            zIndex: activeFloatingPanel === 'test' ? 100 : 90,
           }}
         >
           <GuitarSoundTestPanel />
@@ -230,11 +235,12 @@ export function DualCanvas() {
       {/* Retractable Amp Simulator & Pedalboard Panel */}
       {isAmpPanelOpen && (
         <div
+          onPointerDown={() => setActiveFloatingPanel('amp')}
           style={{
             position: 'absolute',
-            top: 60,
-            left: 400,
-            zIndex: 95,
+            top: 70,
+            left: 20,
+            zIndex: activeFloatingPanel === 'amp' ? 100 : 95,
           }}
         >
           <AmpPedalboardPanel />
@@ -244,12 +250,12 @@ export function DualCanvas() {
       {/* Retractable Interactive Playable Fretboard Panel */}
       {isFretboardOpen && (
         <div
+          onPointerDown={() => setActiveFloatingPanel('fretboard')}
           style={{
             position: 'absolute',
             top: 70,
             left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 96,
+            zIndex: activeFloatingPanel === 'fretboard' ? 100 : 96,
           }}
         >
           <PlayableFretboardPanel />

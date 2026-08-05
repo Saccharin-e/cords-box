@@ -1,31 +1,33 @@
 import { useState, useRef, useEffect } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
+import { useKeybindingsStore } from '@store/keybindingsStore';
 import { audioEngine } from '@audio/index';
 
 export function Toolbar() {
-  const {
-    wiringMode,
-    toggleWiringMode,
-    resetCanvas,
-    isSidebarOpen,
-    toggleSidebar,
-    isInspectorOpen,
-    toggleInspector,
-    isControlsOpen,
-    toggleControls,
-    isTestPanelOpen,
-    toggleTestPanel,
-    isAmpPanelOpen,
-    toggleAmpPanel,
-    isFretboardOpen,
-    toggleFretboard,
-    isSlotModalOpen,
-    toggleSlotModal,
-    toggleExportModal,
-  } = useCanvasStore();
+  const wiringMode = useCanvasStore((s) => s.wiringMode);
+  const toggleWiringMode = useCanvasStore((s) => s.toggleWiringMode);
+  const resetCanvas = useCanvasStore((s) => s.resetCanvas);
+  const isSidebarOpen = useCanvasStore((s) => s.isSidebarOpen);
+  const toggleSidebar = useCanvasStore((s) => s.toggleSidebar);
+  const isInspectorOpen = useCanvasStore((s) => s.isInspectorOpen);
+  const toggleInspector = useCanvasStore((s) => s.toggleInspector);
+  const isControlsOpen = useCanvasStore((s) => s.isControlsOpen);
+  const toggleControls = useCanvasStore((s) => s.toggleControls);
+  const isTestPanelOpen = useCanvasStore((s) => s.isTestPanelOpen);
+  const toggleTestPanel = useCanvasStore((s) => s.toggleTestPanel);
+  const isAmpPanelOpen = useCanvasStore((s) => s.isAmpPanelOpen);
+  const toggleAmpPanel = useCanvasStore((s) => s.toggleAmpPanel);
+  const isFretboardOpen = useCanvasStore((s) => s.isFretboardOpen);
+  const toggleFretboard = useCanvasStore((s) => s.toggleFretboard);
+  const isSlotModalOpen = useCanvasStore((s) => s.isSlotModalOpen);
+  const toggleSlotModal = useCanvasStore((s) => s.toggleSlotModal);
+  const toggleExportModal = useCanvasStore((s) => s.toggleExportModal);
 
-  const { exportJSON, importJSON, reset: resetGraph } = useCircuitStore();
+  const openSettings = useKeybindingsStore((s) => s.openSettings);
+  const exportJSON = useCircuitStore((s) => s.exportJSON);
+  const importJSON = useCircuitStore((s) => s.importJSON);
+  const resetGraph = useCircuitStore((s) => s.reset);
   const [audioActive, setAudioActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -193,7 +195,7 @@ export function Toolbar() {
       </div>
 
       {/* Center Section: Compact Dropdown Navigation */}
-      <nav className="toolbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <nav className="toolbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {/* 1. File Menu Dropdown */}
         <div ref={fileMenuRef} style={{ position: 'relative' }}>
           <button
@@ -202,11 +204,11 @@ export function Toolbar() {
               setIsFileMenuOpen(!isFileMenuOpen);
               setIsAudioMenuOpen(false);
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, padding: '4px 8px' }}
           >
             <svg
-              width="14"
-              height="14"
+              width="13"
+              height="13"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -294,6 +296,52 @@ export function Toolbar() {
                 <span>Open JSON Harness...</span>
               </button>
 
+              <button
+                style={dropdownItemStyle}
+                onClick={() => {
+                  setIsFileMenuOpen(false);
+                  toggleSlotModal();
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                </svg>
+                <span>Layout Slots & Templates...</span>
+              </button>
+
+              <button
+                style={dropdownItemStyle}
+                onClick={() => {
+                  setIsFileMenuOpen(false);
+                  openSettings();
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <span>Shortcuts & Keybindings (?)</span>
+              </button>
+
               <div style={dropdownDividerStyle} />
 
               <button
@@ -322,6 +370,31 @@ export function Toolbar() {
           )}
         </div>
 
+        {/* 2. Wire Tool Toggle Button */}
+        <button
+          className={`btn btn--sm ${wiringMode ? 'btn--primary' : ''}`}
+          id="btn-wire"
+          onClick={handleWiringToggle}
+          title="Click lugs on components to draw wires"
+          style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, padding: '4px 8px' }}
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+          <span>{wiringMode ? 'Wiring…' : 'Wire'}</span>
+        </button>
+
+        <div style={{ width: 1, height: 16, backgroundColor: '#3f3f46', margin: '0 2px' }} />
+
         {/* 3. Audio Engine Dropdown */}
         <div ref={audioMenuRef} style={{ position: 'relative' }}>
           <button
@@ -330,11 +403,11 @@ export function Toolbar() {
               setIsAudioMenuOpen(!isAudioMenuOpen);
               setIsFileMenuOpen(false);
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 8px', fontWeight: 600 }}
           >
             <svg
-              width="14"
-              height="14"
+              width="13"
+              height="13"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -345,12 +418,12 @@ export function Toolbar() {
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
             </svg>
-            <span>Audio DSP</span>
+            <span>{audioActive ? 'Audio ON' : 'Audio DSP'}</span>
             <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
           </button>
 
           {isAudioMenuOpen && (
-            <div style={dropdownStyle}>
+            <div style={{ ...dropdownStyle, width: 230 }}>
               <button
                 style={dropdownItemStyle}
                 onClick={() => {
@@ -370,16 +443,16 @@ export function Toolbar() {
                   <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
                   <line x1="12" y1="2" x2="12" y2="12" />
                 </svg>
-                <span>{audioActive ? 'Power OFF Audio DSP' : 'Power ON Audio DSP'}</span>
+                <span>{audioActive ? 'Power OFF Audio Engine' : 'Power ON Audio Engine'}</span>
               </button>
 
               <div style={dropdownDividerStyle} />
 
               <button
-                style={{ ...dropdownItemStyle, color: '#f59e0b', fontWeight: 600 }}
+                style={{ ...dropdownItemStyle, color: isTestPanelOpen ? '#d97706' : '#e4e4e7', fontWeight: 600 }}
                 onClick={() => {
                   setIsAudioMenuOpen(false);
-                  if (!isTestPanelOpen) toggleTestPanel();
+                  toggleTestPanel();
                 }}
               >
                 <svg
@@ -392,9 +465,57 @@ export function Toolbar() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M12 2v20M2 12h20" />
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
                 </svg>
-                <span>Open Guitar Test Bench Panel</span>
+                <span>Guitar Sound Test Bench</span>
+              </button>
+
+              <button
+                style={{ ...dropdownItemStyle, color: isAmpPanelOpen ? '#38bdf8' : '#e4e4e7', fontWeight: 600 }}
+                onClick={() => {
+                  setIsAudioMenuOpen(false);
+                  toggleAmpPanel();
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="4" y1="21" x2="4" y2="14" />
+                  <line x1="4" y1="10" x2="4" y2="3" />
+                  <line x1="12" y1="21" x2="12" y2="12" />
+                </svg>
+                <span>Amp & Pedalboard Rack</span>
+              </button>
+
+              <button
+                style={{ ...dropdownItemStyle, color: isFretboardOpen ? '#f59e0b' : '#e4e4e7', fontWeight: 600 }}
+                onClick={() => {
+                  setIsAudioMenuOpen(false);
+                  toggleFretboard();
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M9 18V5l12-2v13" />
+                  <circle cx="6" cy="18" r="3" />
+                </svg>
+                <span>Playable Guitar Fretboard</span>
               </button>
             </div>
           )}
@@ -408,25 +529,20 @@ export function Toolbar() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
+            gap: 4,
             fontWeight: 700,
             backgroundColor: isAmpPanelOpen ? '#0284c7' : '#27272a',
             color: '#f4f4f5',
             border: '1px solid #3f3f46',
+            padding: '4px 8px',
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="4" y1="21" x2="4" y2="14" />
             <line x1="4" y1="10" x2="4" y2="3" />
             <line x1="12" y1="21" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12" y2="3" />
-            <line x1="20" y1="21" x2="20" y2="16" />
-            <line x1="20" y1="12" x2="20" y2="3" />
-            <line x1="1" y1="14" x2="7" y2="14" />
-            <line x1="9" y1="8" x2="15" y2="8" />
-            <line x1="17" y1="16" x2="23" y2="16" />
           </svg>
-          <span>Amp & Pedals</span>
+          <span>Amp</span>
         </button>
 
         {/* Playable Guitar Fretboard Panel Toggle */}
@@ -437,19 +553,20 @@ export function Toolbar() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
+            gap: 4,
             fontWeight: 700,
             backgroundColor: isFretboardOpen ? '#b45309' : '#27272a',
             color: '#fef3c7',
             border: isFretboardOpen ? '1px solid #f59e0b' : '1px solid #3f3f46',
+            padding: '4px 8px',
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18V5l12-2v13" />
             <circle cx="6" cy="18" r="3" />
             <circle cx="18" cy="16" r="3" />
           </svg>
-          <span>Playable Fretboard</span>
+          <span>Fretboard</span>
         </button>
 
         {/* Saveable Layout Slots Modal Toggle */}
@@ -460,91 +577,33 @@ export function Toolbar() {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
+            gap: 4,
             fontWeight: 700,
             backgroundColor: isSlotModalOpen ? '#0369a1' : '#27272a',
             color: '#e0f2fe',
             border: isSlotModalOpen ? '1px solid #38bdf8' : '1px solid #3f3f46',
+            padding: '4px 8px',
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-            <polyline points="17 21 17 13 7 13 7 21" />
-            <polyline points="7 3 7 8 15 8" />
           </svg>
-          <span>Layout Slots</span>
-        </button>
-
-        <div style={{ width: 1, height: 16, backgroundColor: '#3f3f46', margin: '0 4px' }} />
-
-        {/* Wire Tool Toggle Button */}
-        <button
-          className={`btn btn--sm ${wiringMode ? 'btn--primary' : ''}`}
-          id="btn-wire"
-          onClick={handleWiringToggle}
-          title="Click lugs on components to draw wires"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-          </svg>
-          <span>{wiringMode ? 'Wiring Active…' : 'Wire Mode'}</span>
-        </button>
-
-        {/* Sound Test Bench Floating Widget Toggle */}
-        <button
-          className={`btn btn--sm ${isTestPanelOpen ? 'btn--primary' : ''}`}
-          onClick={toggleTestPanel}
-          title="Toggle Floating Guitar Audio Test Bench Panel"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 11,
-            fontWeight: 700,
-            backgroundColor: isTestPanelOpen ? '#d97706' : '#27272a',
-            color: '#ffffff',
-            border: '1px solid #3f3f46',
-          }}
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-          </svg>
-          <span>Sound Bench</span>
+          <span>Slots</span>
         </button>
       </nav>
 
       {/* Right Section: Retractable Panel Toggles */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {/* Toggle Floating CAD Controls Bar */}
         <button
           className={`btn btn--sm ${isControlsOpen ? 'btn--primary' : ''}`}
           onClick={toggleControls}
           title="Toggle Floating CAD Tools (Themes, Grid, Snap, Rotate, Copy/Paste)"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '4px 8px' }}
         >
           <svg
-            width="14"
-            height="14"
+            width="13"
+            height="13"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -555,7 +614,7 @@ export function Toolbar() {
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
-          <span>CAD Tools</span>
+          <span>CAD</span>
         </button>
 
         {/* Toggle Inspector Panel */}
@@ -563,11 +622,11 @@ export function Toolbar() {
           className={`btn btn--sm ${isInspectorOpen ? 'btn--primary' : ''}`}
           onClick={toggleInspector}
           title="Toggle Value Inspector Panel"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '4px 8px' }}
         >
           <svg
-            width="14"
-            height="14"
+            width="13"
+            height="13"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -588,29 +647,85 @@ export function Toolbar() {
           <span>Inspector</span>
         </button>
 
+        {/* Shortcuts & Keybindings Info Button (Icon-Only) */}
+        <button
+          className="btn btn--sm"
+          onClick={openSettings}
+          title="Keyboard Shortcuts & Controls Reference (Press ?)"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 28,
+            height: 28,
+            padding: 0,
+            backgroundColor: '#27272a',
+            color: '#38bdf8',
+            border: '1px solid #0284c7',
+            borderRadius: 4,
+            cursor: 'pointer',
+          }}
+          id="btn-shortcuts"
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </button>
+
+        {/* Fullscreen Toggle Button */}
         <button
           className="btn btn--sm"
           onClick={toggleFullscreen}
           title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px' }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 28,
+            height: 28,
+            padding: 0,
+            backgroundColor: '#27272a',
+            color: '#a1a1aa',
+            border: '1px solid #3f3f46',
+            borderRadius: 4,
+            cursor: 'pointer',
+          }}
+          id="btn-fullscreen"
         >
           <svg
-            width="14"
-            height="14"
+            width="15"
+            height="15"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            strokeWidth="2"
+            strokeWidth="2.2"
             strokeLinecap="round"
             strokeLinejoin="round"
           >
             {isFullscreen ? (
               <>
-                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+                <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+                <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+                <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+                <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
               </>
             ) : (
               <>
-                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
               </>
             )}
           </svg>

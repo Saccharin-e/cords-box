@@ -30,30 +30,31 @@ function matchesKeybinding(e: KeyboardEvent, kb?: Keybinding): boolean {
 }
 
 export function useCanvasKeyboard() {
-  const {
-    copySelected,
-    pasteSelected,
-    duplicateSelected,
-    selectAll,
-    clearSelection,
-    cancelWiring,
-    rotateSelected,
-    flipSelectedH,
-    flipSelectedV,
-    groupSelected,
-    ungroupSelected,
-    removeSelected,
-    toggleSnapToGrid,
-    toggleShowComponentLabels,
-    toggleWiringMode,
-    toggleExportModal,
-    nudgeSelected,
-    undo,
-    redo,
-  } = useCanvasStore();
+  const copySelected = useCanvasStore((s) => s.copySelected);
+  const pasteSelected = useCanvasStore((s) => s.pasteSelected);
+  const duplicateSelected = useCanvasStore((s) => s.duplicateSelected);
+  const selectAll = useCanvasStore((s) => s.selectAll);
+  const clearSelection = useCanvasStore((s) => s.clearSelection);
+  const cancelWiring = useCanvasStore((s) => s.cancelWiring);
+  const rotateSelected = useCanvasStore((s) => s.rotateSelected);
+  const flipSelectedH = useCanvasStore((s) => s.flipSelectedH);
+  const flipSelectedV = useCanvasStore((s) => s.flipSelectedV);
+  const groupSelected = useCanvasStore((s) => s.groupSelected);
+  const ungroupSelected = useCanvasStore((s) => s.ungroupSelected);
+  const removeSelected = useCanvasStore((s) => s.removeSelected);
+  const toggleSnapToGrid = useCanvasStore((s) => s.toggleSnapToGrid);
+  const toggleShowComponentLabels = useCanvasStore((s) => s.toggleShowComponentLabels);
+  const toggleWiringMode = useCanvasStore((s) => s.toggleWiringMode);
+  const toggleExportModal = useCanvasStore((s) => s.toggleExportModal);
+  const nudgeSelected = useCanvasStore((s) => s.nudgeSelected);
+  const undo = useCanvasStore((s) => s.undo);
+  const redo = useCanvasStore((s) => s.redo);
 
-  const { selectedEdgeId, removeEdge } = useCircuitStore();
-  const { keybindings, openSettings, recordingId } = useKeybindingsStore();
+  const selectedEdgeId = useCircuitStore((s) => s.selectedEdgeId);
+  const removeEdge = useCircuitStore((s) => s.removeEdge);
+  const keybindings = useKeybindingsStore((s) => s.keybindings);
+  const openSettings = useKeybindingsStore((s) => s.openSettings);
+  const recordingId = useKeybindingsStore((s) => s.recordingId);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

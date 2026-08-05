@@ -5,34 +5,34 @@
  */
 
 import { useCanvasStore, type CanvasTheme, type GridStyle } from '@store/canvasStore';
+import { useKeybindingsStore } from '@store/keybindingsStore';
 
 export function CanvasControls() {
-  const {
-    themeMode,
-    gridStyle,
-    gridSize,
-    snapToGrid,
-    showComponentLabels,
-    toggleShowComponentLabels,
-    selectedIds,
-    isControlsOpen,
-    toggleControls,
-    setThemeMode,
-    setGridStyle,
-    setGridSize,
-    toggleSnapToGrid,
-    rotateSelected,
-    flipSelectedH,
-    flipSelectedV,
-    groupSelected,
-    ungroupSelected,
-    copySelected,
-    pasteSelected,
-    duplicateSelected,
-    removeSelected,
-    undo,
-    redo,
-  } = useCanvasStore();
+  const openSettings = useKeybindingsStore((s) => s.openSettings);
+  const themeMode = useCanvasStore((s) => s.themeMode);
+  const gridStyle = useCanvasStore((s) => s.gridStyle);
+  const gridSize = useCanvasStore((s) => s.gridSize);
+  const snapToGrid = useCanvasStore((s) => s.snapToGrid);
+  const showComponentLabels = useCanvasStore((s) => s.showComponentLabels);
+  const toggleShowComponentLabels = useCanvasStore((s) => s.toggleShowComponentLabels);
+  const selectedIds = useCanvasStore((s) => s.selectedIds);
+  const isControlsOpen = useCanvasStore((s) => s.isControlsOpen);
+  const toggleControls = useCanvasStore((s) => s.toggleControls);
+  const setThemeMode = useCanvasStore((s) => s.setThemeMode);
+  const setGridStyle = useCanvasStore((s) => s.setGridStyle);
+  const setGridSize = useCanvasStore((s) => s.setGridSize);
+  const toggleSnapToGrid = useCanvasStore((s) => s.toggleSnapToGrid);
+  const rotateSelected = useCanvasStore((s) => s.rotateSelected);
+  const flipSelectedH = useCanvasStore((s) => s.flipSelectedH);
+  const flipSelectedV = useCanvasStore((s) => s.flipSelectedV);
+  const groupSelected = useCanvasStore((s) => s.groupSelected);
+  const ungroupSelected = useCanvasStore((s) => s.ungroupSelected);
+  const copySelected = useCanvasStore((s) => s.copySelected);
+  const pasteSelected = useCanvasStore((s) => s.pasteSelected);
+  const duplicateSelected = useCanvasStore((s) => s.duplicateSelected);
+  const removeSelected = useCanvasStore((s) => s.removeSelected);
+  const undo = useCanvasStore((s) => s.undo);
+  const redo = useCanvasStore((s) => s.redo);
 
   const hasSelection = selectedIds.length > 0;
 
@@ -245,6 +245,29 @@ export function CanvasControls() {
             <IconTrash />
           </button>
         </div>
+
+        {/* Shortcuts & Keybindings Customizer */}
+        <button
+          onClick={openSettings}
+          style={{ ...buttonStyle, color: '#38bdf8' }}
+          title="Keyboard Shortcuts & Controls Reference (Press ?)"
+          id="cad-bar-shortcuts"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </button>
 
         <div style={dividerStyle} />
 

@@ -21,9 +21,13 @@ export function ExportModal() {
   if (!isExportModalOpen) return null;
 
   async function handleExport() {
-    // 1. Locate active Konva Stage container
-    const stageEl = document.querySelector('.canvas-area canvas') as HTMLCanvasElement | null;
-    if (!stageEl) {
+    // 1. Locate all layer canvas elements inside active Konva Stage container
+    const canvasEls = Array.from(
+      document.querySelectorAll<HTMLCanvasElement>(
+        '.canvas-area .konvajs-content canvas, .canvas-area canvas',
+      ),
+    );
+    if (canvasEls.length === 0) {
       alert('Canvas stage not ready for export.');
       return;
     }
@@ -33,33 +37,59 @@ export function ExportModal() {
     if (wasShowingBox) {
       useCanvasStore.setState({ showExportBox: false });
       // Allow React state & Konva layer to flush
-      await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 60));
     }
 
     try {
+      const state = useCanvasStore.getState();
+      const scale = state.scale;
+      const panX = state.panX;
+      const panY = state.panY;
+
       const { x, y, width, height } = exportBox;
 
-      // Create a temporary canvas for cropped high-res rendering
-      const scaleFactor = 2; // 2x High-DPI output
+      // Crop region in Stage screen pixels
+      const srcX = Math.round(x * scale + panX);
+      const srcY = Math.round(y * scale + panY);
+      const srcW = Math.round(width * scale);
+      const srcH = Math.round(height * scale);
+
+      // Scale factor for output image clarity (High-DPI 2x)
+      const scaleFactor = 2;
+      const outW = Math.round(width * scaleFactor);
+      const outH = Math.round(height * scaleFactor);
+
       const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = width * scaleFactor;
-      tempCanvas.height = height * scaleFactor;
+      tempCanvas.width = outW;
+      tempCanvas.height = outH;
       const ctx = tempCanvas.getContext('2d');
 
       if (ctx) {
-        ctx.scale(scaleFactor, scaleFactor);
-        // Draw cropped section from main stage canvas
-        ctx.drawImage(
-          stageEl,
-          x,
-          y,
-          width,
-          height, // Source crop rect
-          0,
-          0,
-          width,
-          height, // Destination rect
-        );
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        // Composite every Konva layer canvas (Background, Components, Wires, Cards) sequentially
+        for (const layerCanvas of canvasEls) {
+          const layerW = layerCanvas.width;
+          const layerH = layerCanvas.height;
+
+          const clipX = Math.max(0, srcX);
+          const clipY = Math.max(0, srcY);
+          const clipRight = Math.min(layerW, srcX + srcW);
+          const clipBottom = Math.min(layerH, srcY + srcH);
+
+          const clipW = clipRight - clipX;
+          const clipH = clipBottom - clipY;
+
+          if (clipW > 0 && clipH > 0) {
+            const destX = Math.round(((clipX - srcX) / srcW) * outW);
+            const destY = Math.round(((clipY - srcY) / srcH) * outH);
+            const destW = Math.round((clipW / srcW) * outW);
+            const destH = Math.round((clipH / srcH) * outH);
+
+            ctx.drawImage(layerCanvas, clipX, clipY, clipW, clipH, destX, destY, destW, destH);
+          }
+        }
       }
 
       const filename = `cords-box-circuit-${Date.now()}`;

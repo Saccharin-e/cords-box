@@ -7,15 +7,13 @@ import { useState, useEffect } from 'react';
 import { useKeybindingsStore, formatShortcut, type Keybinding } from '@store/keybindingsStore';
 
 export function SettingsModal() {
-  const {
-    keybindings,
-    isSettingsOpen,
-    closeSettings,
-    recordingId,
-    setRecordingId,
-    updateKeybinding,
-    resetKeybindings,
-  } = useKeybindingsStore();
+  const keybindings = useKeybindingsStore((s) => s.keybindings);
+  const isSettingsOpen = useKeybindingsStore((s) => s.isSettingsOpen);
+  const closeSettings = useKeybindingsStore((s) => s.closeSettings);
+  const recordingId = useKeybindingsStore((s) => s.recordingId);
+  const setRecordingId = useKeybindingsStore((s) => s.setRecordingId);
+  const updateKeybinding = useKeybindingsStore((s) => s.updateKeybinding);
+  const resetKeybindings = useKeybindingsStore((s) => s.resetKeybindings);
 
   const [activeTab, setActiveTab] = useState<'shortcuts' | 'mouse'>('shortcuts');
   const [searchFilter, setSearchFilter] = useState('');

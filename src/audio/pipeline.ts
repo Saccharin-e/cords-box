@@ -153,7 +153,14 @@ export const DEFAULT_AMP_PEDALBOARD_STATE: AmpPedalboardState = {
   micDistance: 0.2,
 };
 
+let cleanTubeCurveCache: Float32Array<ArrayBuffer> | null = null;
+let overdriveCurveCache: Float32Array<ArrayBuffer> | null = null;
+const cabinetIrCache = new Map<number, AudioBuffer>();
+const roomIrCache = new Map<number, AudioBuffer>();
+
 function createCleanTubeCurve(): Float32Array<ArrayBuffer> {
+  if (cleanTubeCurveCache) return cleanTubeCurveCache;
+
   const samples = 2048;
   const curve = new Float32Array(new ArrayBuffer(samples * Float32Array.BYTES_PER_ELEMENT));
 
@@ -169,10 +176,13 @@ function createCleanTubeCurve(): Float32Array<ArrayBuffer> {
     }
   }
 
+  cleanTubeCurveCache = curve;
   return curve;
 }
 
 function createOverdriveCurve(): Float32Array<ArrayBuffer> {
+  if (overdriveCurveCache) return overdriveCurveCache;
+
   const curve = new Float32Array(new ArrayBuffer(2048 * Float32Array.BYTES_PER_ELEMENT));
 
   for (let i = 0; i < curve.length; i += 1) {
@@ -185,10 +195,14 @@ function createOverdriveCurve(): Float32Array<ArrayBuffer> {
     curve[i] = sign * softKnee;
   }
 
+  overdriveCurveCache = curve;
   return curve;
 }
 
 function createCabinetImpulseResponse(ctx: AudioContext): AudioBuffer {
+  const cached = cabinetIrCache.get(ctx.sampleRate);
+  if (cached) return cached;
+
   const length = Math.floor(ctx.sampleRate * 0.045);
   const impulse = ctx.createBuffer(1, length, ctx.sampleRate);
   const data = impulse.getChannelData(0);
@@ -203,10 +217,15 @@ function createCabinetImpulseResponse(ctx: AudioContext): AudioBuffer {
     data[i] = (cone + body) * tail;
   }
   data[0] += 0.72;
+
+  cabinetIrCache.set(ctx.sampleRate, impulse);
   return impulse;
 }
 
 function createRoomImpulseResponse(ctx: AudioContext): AudioBuffer {
+  const cached = roomIrCache.get(ctx.sampleRate);
+  if (cached) return cached;
+
   const length = Math.floor(ctx.sampleRate * 0.28);
   const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
   const left = impulse.getChannelData(0);
@@ -245,6 +264,7 @@ function createRoomImpulseResponse(ctx: AudioContext): AudioBuffer {
     if (index < right.length) right[index] += gain;
   }
 
+  roomIrCache.set(ctx.sampleRate, impulse);
   return impulse;
 }
 
@@ -273,6 +293,13 @@ export class AudioPipeline {
     masterTone: 1.0,
   };
   private ampPedalState: AmpPedalboardState = { ...DEFAULT_AMP_PEDALBOARD_STATE };
+
+  // Live parameter automation refs — these let knob changes update existing
+  // nodes instead of tearing down and rebuilding the whole Web Audio graph.
+  private structuralKey: string | null = null;
+  private pickupBranchGains = new Map<string, GainNode>();
+  private masterToneFilter: BiquadFilterNode | null = null;
+  private outputGainNode: GainNode | null = null;
 
   public getAmpPedalboardState(): AmpPedalboardState {
     return { ...this.ampPedalState };
@@ -351,7 +378,12 @@ export class AudioPipeline {
   }
 
   /**
-   * Rebuild or update Web Audio nodes based on the latest solved circuit state
+   * Rebuild or update Web Audio nodes based on the latest solved circuit state.
+   *
+   * Full teardown + rebuild only runs when the circuit topology actually
+   * changed (pickup selection, series wiring, phase, delay structure). Knob
+   * value changes — volume, tone, blend, amp/pedalboard settings — hit the
+   * live parameter path and just schedule new values on existing nodes.
    */
   updatePipeline(graph: Graph, solverResult: SolverResult | null) {
     let ctx = audioEngine.getContext();
@@ -361,8 +393,41 @@ export class AudioPipeline {
     }
     if (!ctx) return;
 
+    // Evaluate active components in solved graph
+    const activeNodes = solverResult?.activeNodes;
+    const activeComponents = activeNodes
+      ? graph.getComponents().filter((c) => graph.getComponentNodes(c.id).some((n) => activeNodes.has(n.id)))
+      : [];
+
+    const result: SolverResult = solverResult ?? {
+      activeNodes: new Set(),
+      activeEdges: new Set(),
+      activePaths: [],
+      deadEndNodes: new Set(),
+    };
+
+    // Detect Active Pickup Characteristics & Topology
+    const topology = this.detectActiveTopology(activeComponents, graph, result);
+
+    // Topology signature: structural features only, excluding value knobs.
+    // Blend gains and master volume/tone are live parameters applied below.
+    const structureKey = topology.pickups
+      .map(
+        (p) =>
+          `${p.id}|${p.type}|${p.resonantFreq}|${p.resonantQ}|${p.isOutofPhase ? 1 : 0}|${p.delayTimeMs}`,
+      )
+      .join(';') + `|${topology.isSeries ? 1 : 0}`;
+
+    if (this.masterGain && this.structuralKey === structureKey) {
+      // Same circuit — knob automation path, no node churn.
+      this.applyPedalboardStateToNodes(ctx);
+      this.applyLiveTopologyParams(ctx);
+      return;
+    }
+
     // Disconnect old nodes
     this.cleanupNodes();
+    this.structuralKey = structureKey;
 
     // 1. Master output trim (boosted +50%).
     this.masterGain = ctx.createGain();
@@ -573,20 +638,6 @@ export class AudioPipeline {
     // Preload the real-guitar sample bank while the graph is being solved.
     void this.initializeSampleBank(ctx);
 
-    // Evaluate active components in solved graph
-    const activeNodes = solverResult?.activeNodes;
-    const activeComponents = activeNodes
-      ? graph.getComponents().filter((c) => graph.getComponentNodes(c.id).some((n) => activeNodes.has(n.id)))
-      : [];
-
-    const result: SolverResult = solverResult ?? {
-      activeNodes: new Set(),
-      activePaths: [],
-      deadEndNodes: new Set(),
-    };
-
-    // Detect Active Pickup Characteristics & Topology
-    this.detectActiveTopology(activeComponents, graph, result);
     this.applyPedalboardStateToNodes(ctx);
   }
 
@@ -745,7 +796,7 @@ export class AudioPipeline {
     activeComponents: ReturnType<Graph['getComponents']>,
     graph: Graph,
     solverResult: SolverResult
-  ) {
+  ): CircuitTopologyState {
     const pickupComps = activeComponents.filter(
       (c) =>
         c.type === 'pickup_single_coil' ||
@@ -770,7 +821,7 @@ export class AudioPipeline {
         masterVolume: 1.0,
         masterTone: 1.0,
       };
-      return;
+      return this.activeTopology;
     }
 
     // Parse Master Volume & Tone pots
@@ -846,6 +897,38 @@ export class AudioPipeline {
       masterVolume: masterVol,
       masterTone,
     };
+    return this.activeTopology;
+  }
+
+  /**
+   * Knob automation: schedule updated volume/tone/blend values on the
+   * existing pickup routing nodes without rebuilding the graph.
+   */
+  private applyLiveTopologyParams(ctx: AudioContext): void {
+    const topology = this.activeTopology;
+    const now = ctx.currentTime;
+
+    if (this.masterToneFilter) {
+      const minFreq = 350;
+      const maxFreq = 10000;
+      this.masterToneFilter.frequency.setValueAtTime(
+        minFreq + Math.pow(topology.masterTone, 2) * (maxFreq - minFreq),
+        now,
+      );
+    }
+
+    if (this.outputGainNode) {
+      this.outputGainNode.gain.setValueAtTime(topology.masterVolume, now);
+    }
+
+    const seriesBoost = topology.isSeries && topology.pickups.length > 1 ? 1.4 : 1.0;
+    for (const pickup of topology.pickups) {
+      const branchGain = this.pickupBranchGains.get(pickup.id);
+      if (!branchGain) continue;
+      let gainVal = pickup.blendGain * seriesBoost;
+      if (pickup.isOutofPhase) gainVal *= -1;
+      branchGain.gain.setValueAtTime(gainVal, now);
+    }
   }
 
   /**
@@ -949,7 +1032,8 @@ export class AudioPipeline {
 
       pickupResonance.connect(branchGain);
       branchGain.connect(pickupMixNode);
-      
+
+      this.pickupBranchGains.set(pickup.id, branchGain);
       this.activeNodes.set(`pickup-${pickup.id}-${now}`, delayNode);
       this.activeNodes.set(`pickup-direct-${pickup.id}-${now}`, directPosition);
       this.activeNodes.set(`pickup-delayed-${pickup.id}-${now}`, delayedPosition);
@@ -965,6 +1049,7 @@ export class AudioPipeline {
     masterToneFilter.frequency.setValueAtTime(minFreq + Math.pow(topology.masterTone, 2) * (maxFreq - minFreq), now);
     masterToneFilter.Q.setValueAtTime(1.0, now);
     pickupMixNode.connect(masterToneFilter);
+    this.masterToneFilter = masterToneFilter;
 
     // The WASM string model owns each note's natural attack and decay. Use a
     // single stable output gain for the solved circuit instead of creating a
@@ -973,6 +1058,7 @@ export class AudioPipeline {
     outputGain.gain.setValueAtTime(topology.masterVolume, now);
     masterToneFilter.connect(outputGain);
     outputGain.connect(this.masterGain);
+    this.outputGainNode = outputGain;
 
     this.activeNodes.set(`pickupMix-${now}`, pickupMixNode);
     this.activeNodes.set(`tone-${now}`, masterToneFilter);
@@ -1317,6 +1403,10 @@ export class AudioPipeline {
 
     this.inputNode = null;
     this.topologyRouted = false;
+    this.structuralKey = null;
+    this.pickupBranchGains.clear();
+    this.masterToneFilter = null;
+    this.outputGainNode = null;
 
     for (const source of this.activeSampleSources) {
       try {

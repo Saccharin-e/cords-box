@@ -24,7 +24,7 @@ interface Props {
   onSelectEdge?: (edgeId: string) => void;
 }
 
-import { memo } from 'react';
+import { memo, useRef } from 'react';
 
 export const WireLayer = memo(function WireLayer({ wires, selectedEdgeId, onSelectEdge }: Props) {
   const pendingWire = useCanvasStore((s) => s.pendingWire);
@@ -35,6 +35,8 @@ export const WireLayer = memo(function WireLayer({ wires, selectedEdgeId, onSele
   const updateEdge = useCircuitStore((s) => s.updateEdge);
   const graph = useCircuitStore((s) => s.graph);
 
+  const wireRafRef = useRef<number | null>(null);
+
   function handleEndpointDragMove(
     wire: WireVisual,
     endpoint: 'source' | 'target',
@@ -44,37 +46,40 @@ export const WireLayer = memo(function WireLayer({ wires, selectedEdgeId, onSele
     const moveX = Math.round(e.target.x());
     const moveY = Math.round(e.target.y());
 
-    const existingEdge = graph.getEdges().find((ed) => ed.id === wire.id);
-    if (!existingEdge) return;
+    if (wireRafRef.current) cancelAnimationFrame(wireRafRef.current);
+    wireRafRef.current = requestAnimationFrame(() => {
+      const existingEdge = graph.getEdges().find((ed) => ed.id === wire.id);
+      if (!existingEdge) return;
 
-    const targetNodeId = endpoint === 'source' ? existingEdge.source : existingEdge.target;
-    const nodes = graph.getNodes();
-    const node = nodes.find((n) => n.id === targetNodeId);
+      const targetNodeId = endpoint === 'source' ? existingEdge.source : existingEdge.target;
+      const nodes = graph.getNodes();
+      const node = nodes.find((n) => n.id === targetNodeId);
 
-    if (node && node.type === 'junction' && node.position) {
-      node.position = { x: moveX, y: moveY };
-    } else {
-      const tempJunctionId = `j_${wire.id}_${endpoint}`;
-      const existingTempNode = nodes.find((n) => n.id === tempJunctionId);
-      if (existingTempNode) {
-        existingTempNode.position = { x: moveX, y: moveY };
+      if (node && node.type === 'junction' && node.position) {
+        node.position = { x: moveX, y: moveY };
       } else {
-        addNode({
-          id: tempJunctionId,
-          type: 'junction',
-          componentId: 'canvas',
-          signalState: 'inactive',
-          position: { x: moveX, y: moveY },
-        });
+        const tempJunctionId = `j_${wire.id}_${endpoint}`;
+        const existingTempNode = nodes.find((n) => n.id === tempJunctionId);
+        if (existingTempNode) {
+          existingTempNode.position = { x: moveX, y: moveY };
+        } else {
+          addNode({
+            id: tempJunctionId,
+            type: 'junction',
+            componentId: 'canvas',
+            signalState: 'inactive',
+            position: { x: moveX, y: moveY },
+          });
+        }
+        if (endpoint === 'source') {
+          existingEdge.source = tempJunctionId;
+        } else {
+          existingEdge.target = tempJunctionId;
+        }
       }
-      if (endpoint === 'source') {
-        existingEdge.source = tempJunctionId;
-      } else {
-        existingEdge.target = tempJunctionId;
-      }
-    }
 
-    updateEdge(wire.id, {}, true);
+      updateEdge(wire.id, {}, true, true);
+    });
   }
 
   function handleEndpointDragEnd(
@@ -141,7 +146,7 @@ export const WireLayer = memo(function WireLayer({ wires, selectedEdgeId, onSele
     const pts = existing.controlPoints ? [...existing.controlPoints] : [];
     pts[idx] = { x: Math.round(e.target.x()), y: Math.round(e.target.y()) };
 
-    updateEdge(wire.id, { controlPoints: pts }, skipSolve);
+    updateEdge(wire.id, { controlPoints: pts }, skipSolve, skipSolve);
   }
 
   function handleControlPointDrag(
@@ -155,6 +160,7 @@ export const WireLayer = memo(function WireLayer({ wires, selectedEdgeId, onSele
       {
         controlPoint: { x: Math.round(e.target.x()), y: Math.round(e.target.y()) },
       },
+      skipSolve,
       skipSolve,
     );
   }

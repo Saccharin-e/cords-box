@@ -125,6 +125,8 @@ export interface CanvasStore {
   isAmpPanelOpen: boolean;
   isFretboardOpen: boolean;
   isSlotModalOpen: boolean;
+  activeFloatingPanel: 'fretboard' | 'amp' | 'test' | null;
+  setActiveFloatingPanel: (panel: 'fretboard' | 'amp' | 'test' | null) => void;
   inspectorWidth: number;
   setInspectorWidth: (width: number) => void;
 
@@ -330,6 +332,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isAmpPanelOpen: false,
   isFretboardOpen: false,
   isSlotModalOpen: false,
+  activeFloatingPanel: null,
+  setActiveFloatingPanel: (panel) => set({ activeFloatingPanel: panel }),
   inspectorWidth: 320,
   setInspectorWidth: (width) =>
     set({ inspectorWidth: Math.max(220, Math.min(650, width)) }),
@@ -350,9 +354,21 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   toggleSidebar: () => set((s) => ({ isSidebarOpen: !s.isSidebarOpen })),
   toggleInspector: () => set((s) => ({ isInspectorOpen: !s.isInspectorOpen })),
   toggleControls: () => set((s) => ({ isControlsOpen: !s.isControlsOpen })),
-  toggleTestPanel: () => set((s) => ({ isTestPanelOpen: !s.isTestPanelOpen })),
-  toggleAmpPanel: () => set((s) => ({ isAmpPanelOpen: !s.isAmpPanelOpen })),
-  toggleFretboard: () => set((s) => ({ isFretboardOpen: !s.isFretboardOpen })),
+  toggleTestPanel: () =>
+    set((s) => ({
+      isTestPanelOpen: !s.isTestPanelOpen,
+      activeFloatingPanel: !s.isTestPanelOpen ? 'test' : s.activeFloatingPanel,
+    })),
+  toggleAmpPanel: () =>
+    set((s) => ({
+      isAmpPanelOpen: !s.isAmpPanelOpen,
+      activeFloatingPanel: !s.isAmpPanelOpen ? 'amp' : s.activeFloatingPanel,
+    })),
+  toggleFretboard: () =>
+    set((s) => ({
+      isFretboardOpen: !s.isFretboardOpen,
+      activeFloatingPanel: !s.isFretboardOpen ? 'fretboard' : s.activeFloatingPanel,
+    })),
   toggleSlotModal: () => set((s) => ({ isSlotModalOpen: !s.isSlotModalOpen })),
 
   pushHistory: () => {
@@ -375,6 +391,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       instances: clonedInstances,
       graphData: clonedGraph,
     });
+
+    const MAX_HISTORY = 100;
+    if (newHistory.length > MAX_HISTORY) {
+      newHistory.splice(0, newHistory.length - MAX_HISTORY);
+    }
 
     set({ history: newHistory, historyIndex: newHistory.length - 1 });
   },

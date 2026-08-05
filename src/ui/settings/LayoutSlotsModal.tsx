@@ -12,9 +12,13 @@ import { useSlotStore } from '@store/slotStore';
 import { useCanvasStore } from '@store/canvasStore';
 
 export function LayoutSlotsModal() {
-  const { toggleSlotModal } = useCanvasStore();
-  const { slots, activeSlotId, saveCurrentToSlot, loadSlot, renameSlot, resetSlotToDefault } =
-    useSlotStore();
+  const toggleSlotModal = useCanvasStore((s) => s.toggleSlotModal);
+  const slots = useSlotStore((s) => s.slots);
+  const activeSlotId = useSlotStore((s) => s.activeSlotId);
+  const saveCurrentToSlot = useSlotStore((s) => s.saveCurrentToSlot);
+  const loadSlot = useSlotStore((s) => s.loadSlot);
+  const renameSlot = useSlotStore((s) => s.renameSlot);
+  const resetSlotToDefault = useSlotStore((s) => s.resetSlotToDefault);
 
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
   const [editNameText, setEditNameText] = useState('');

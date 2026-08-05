@@ -15,8 +15,8 @@ import { useCanvasStore } from '@store/canvasStore';
 interface Props {
   instance: CanvasComponentInstance;
   isSelected: boolean;
-  onSelect: (e: Konva.KonvaEventObject<MouseEvent>) => void;
-  onDragEnd: (x: number, y: number) => void;
+  onSelect: (id: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
+  onDragEnd: (id: string, x: number, y: number) => void;
 }
 
 export const ComponentNode = memo(function ComponentNode({
@@ -28,8 +28,6 @@ export const ComponentNode = memo(function ComponentNode({
   const shape = getShape(instance.type);
   const wiringMode = useCanvasStore((s) => s.wiringMode);
   const startWiring = useCanvasStore((s) => s.startWiring);
-  const selectedIds = useCanvasStore((s) => s.selectedIds);
-  const instances = useCanvasStore((s) => s.instances);
   const moveInstances = useCanvasStore((s) => s.moveInstances);
   const showComponentLabels = useCanvasStore((s) => s.showComponentLabels);
   const accentColor = shape.color;
@@ -40,6 +38,7 @@ export const ComponentNode = memo(function ComponentNode({
     e.cancelBubble = true;
     startPosRef.current.clear();
 
+    const { selectedIds, instances } = useCanvasStore.getState();
     const isMulti = selectedIds.includes(instance.id) && selectedIds.length > 1;
     const targetIds = isMulti ? selectedIds : [instance.id];
 
@@ -55,6 +54,7 @@ export const ComponentNode = memo(function ComponentNode({
     const newX = e.target.x();
     const newY = e.target.y();
 
+    const { selectedIds } = useCanvasStore.getState();
     const initialSelfPos = startPosRef.current.get(instance.id) ?? {
       x: instance.x,
       y: instance.y,
@@ -69,7 +69,7 @@ export const ComponentNode = memo(function ComponentNode({
       });
       moveInstances(deltas);
     } else {
-      onDragEnd(newX, newY);
+      onDragEnd(instance.id, newX, newY);
     }
   }
 
@@ -122,7 +122,7 @@ export const ComponentNode = memo(function ComponentNode({
       return;
     }
 
-    onSelect(e);
+    onSelect(instance.id, e);
   }
 
   return (
@@ -235,6 +235,7 @@ export const ComponentNode = memo(function ComponentNode({
 
           let hasDragged = false;
           let wireStarted = false;
+          let moveRaf: number | null = null;
 
           const onWindowMove = (moveEvt: MouseEvent) => {
             const dx = moveEvt.clientX - startX;
@@ -250,21 +251,28 @@ export const ComponentNode = memo(function ComponentNode({
                 startWiring(thisAnchor);
               }
 
-              // Update wire cursor position
+              // Update wire cursor position (RAF-throttled)
               const stage = e.target.getStage();
               if (stage) {
                 const rect = stage.container().getBoundingClientRect();
-                const scale = useCanvasStore.getState().scale;
-                const panX = useCanvasStore.getState().panX;
-                const panY = useCanvasStore.getState().panY;
-                const canvasX = (moveEvt.clientX - rect.left - panX) / scale;
-                const canvasY = (moveEvt.clientY - rect.top - panY) / scale;
-                useCanvasStore.getState().updateWiringCursor(canvasX, canvasY);
+                if (moveRaf) cancelAnimationFrame(moveRaf);
+                moveRaf = requestAnimationFrame(() => {
+                  const scale = useCanvasStore.getState().scale;
+                  const panX = useCanvasStore.getState().panX;
+                  const panY = useCanvasStore.getState().panY;
+                  const canvasX = (moveEvt.clientX - rect.left - panX) / scale;
+                  const canvasY = (moveEvt.clientY - rect.top - panY) / scale;
+                  useCanvasStore.getState().updateWiringCursor(canvasX, canvasY);
+                });
               }
             }
           };
 
           const onWindowUp = (upEvt: MouseEvent) => {
+            if (moveRaf) {
+              cancelAnimationFrame(moveRaf);
+              moveRaf = null;
+            }
             window.removeEventListener('mousemove', onWindowMove);
             window.removeEventListener('mouseup', onWindowUp);
 
@@ -531,6 +539,7 @@ function renderPhysicalComponent(
                   46,
                 ]}
                 stroke="#18181b"
+                perfectDrawEnabled={false}
                 strokeWidth={1}
               />
             </Group>
@@ -771,6 +780,7 @@ function renderPhysicalComponent(
             stroke="#ca8a04"
             strokeWidth={6}
             lineCap="round"
+            perfectDrawEnabled={false}
           />
           {/* Bottom Common Output Solder Lug Tab */}
           <Rect
@@ -888,7 +898,7 @@ function renderPhysicalComponent(
           />
           {/* Toggle Bat Lever */}
           <Circle x={w / 2} y={h / 2} radius={12} fill="#93c5fd" />
-          <Line points={[w / 2, h / 2, w / 2, h * 0.2]} stroke="#ca8a04" strokeWidth={5} lineCap="round" />
+          <Line points={[w / 2, h / 2, w / 2, h * 0.2]} stroke="#ca8a04" strokeWidth={5} lineCap="round" perfectDrawEnabled={false} />
           {/* 6 Protruding Solder Pins */}
           {[0.22, 0.53, 0.84].map((ry, rowIdx) => (
             <Group key={rowIdx}>
@@ -903,7 +913,7 @@ function renderPhysicalComponent(
       return (
         <Group>
           {/* Axial Silver Lead Wires Extending Out Left & Right */}
-          <Line points={[0, h / 2, w, h / 2]} stroke="#d4d4d8" strokeWidth={2.5} />
+          <Line points={[0, h / 2, w, h / 2]} stroke="#d4d4d8" strokeWidth={2.5} perfectDrawEnabled={false} />
           {/* Orange Drop / Film Capacitor Body in Center */}
           <Rect
             x={w * 0.2}
@@ -930,7 +940,7 @@ function renderPhysicalComponent(
       return (
         <Group>
           {/* Axial Silver Lead Wires */}
-          <Line points={[0, h / 2, w, h / 2]} stroke="#d4d4d8" strokeWidth={2.5} />
+          <Line points={[0, h / 2, w, h / 2]} stroke="#d4d4d8" strokeWidth={2.5} perfectDrawEnabled={false} />
           {/* Ceramic Resistor Body */}
           <Rect
             x={w * 0.22}
@@ -1011,7 +1021,7 @@ function renderPhysicalComponent(
       return (
         <Group>
           {/* Axial Silver Lead Wires */}
-          <Line points={[0, h / 2, w, h / 2]} stroke="#d4d4d8" strokeWidth={2.5} />
+          <Line points={[0, h / 2, w, h / 2]} stroke="#d4d4d8" strokeWidth={2.5} perfectDrawEnabled={false} />
           {/* Treble Bleed Circuit Module */}
           <Rect
             x={w * 0.15}
@@ -1088,8 +1098,8 @@ function renderPhysicalComponent(
             fill="#ffffff"
           />
           {/* Specs Lines */}
-          <Line points={[0, 26, w, 26]} stroke="#38bdf8" strokeWidth={1} />
-          <Line points={[0, 85, w, 85]} stroke="#1e293b" strokeWidth={1} />
+          <Line points={[0, 26, w, 26]} stroke="#38bdf8" strokeWidth={1} perfectDrawEnabled={false} />
+          <Line points={[0, 85, w, 85]} stroke="#1e293b" strokeWidth={1} perfectDrawEnabled={false} />
 
           <Text
             x={12}
@@ -1192,6 +1202,7 @@ function renderPhysicalComponent(
             stroke={instance.strokeColor || '#e2e8f0'}
             strokeWidth={instance.strokeWidth ?? 2.5}
             dash={instance.dashStyle === 'dashed' ? [6, 4] : instance.dashStyle === 'dotted' ? [2, 3] : undefined}
+            perfectDrawEnabled={false}
           />
           <Text
             x={0}
@@ -1214,6 +1225,7 @@ function renderPhysicalComponent(
             stroke={instance.strokeColor || '#eab308'}
             strokeWidth={instance.strokeWidth ?? 2.5}
             dash={instance.dashStyle === 'dashed' ? [6, 4] : instance.dashStyle === 'dotted' ? [2, 3] : undefined}
+            perfectDrawEnabled={false}
           />
           <Path
             data={`M ${w - 14} ${h / 2 - 6} L ${w} ${h / 2} L ${w - 14} ${h / 2 + 6} Z`}

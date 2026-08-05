@@ -3,7 +3,7 @@ import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { getShape } from '../canvas/shapes';
 import { HardwareIcon } from './HardwareIcon';
-import type { ComponentType } from '@graph/types';
+import { generateComponentId, type ComponentType } from '@graph/types';
 
 interface ComponentItem {
   id: string;
@@ -252,6 +252,7 @@ export function ComponentLibrary() {
         connectionType: wireDrawOptions.connectionType,
         wireType: wireDrawOptions.wireType,
       });
+      useCanvasStore.getState().pushHistory();
     } else {
       const compType = ITEM_TYPE_MAP[itemId] ?? (itemId as ComponentType);
       const shape = getShape(compType);
@@ -259,9 +260,10 @@ export function ComponentLibrary() {
       const width = shape?.width ?? 120;
       const height = shape?.height ?? 80;
       const label = shape?.label ?? 'Component';
+      const id = generateComponentId();
 
       const newInst = {
-        id: `${itemId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        id,
         type: compType,
         x: centerX - Math.round(width / 2),
         y: centerY - Math.round(height / 2),
@@ -270,6 +272,7 @@ export function ComponentLibrary() {
         label: `${label} ${count}`,
       };
       state.addInstance(newInst);
+      useCircuitStore.getState().addComponent({ id, type: compType, label: newInst.label });
     }
   }
 
@@ -327,6 +330,7 @@ export function ComponentLibrary() {
                     onDragStart={(e) => {
                       setDragItem(item.id);
                       e.dataTransfer.setData('componentId', item.id);
+                      e.dataTransfer.setData('text/plain', item.id);
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                     onDragEnd={() => setDragItem(null)}

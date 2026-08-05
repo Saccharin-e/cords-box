@@ -7,7 +7,7 @@
  * - Speaker Cabinets & Mic Placement
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   audioPipeline,
   type AmpPedalboardState,
@@ -24,13 +24,43 @@ export function AmpPedalboardPanel() {
   // Amp & Pedalboard State
   const [state, setState] = useState<AmpPedalboardState>(() => audioPipeline.getAmpPedalboardState());
 
-  // Dragging State
-  const [pos, setPos] = useState({ x: 380, y: 10 });
+  // Dragging State (Global Window Listeners)
+  const [pos, setPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ pointerX: number; pointerY: number; posX: number; posY: number } | null>(null);
 
+  useEffect(() => {
+    if (!isDragging) return;
+
+    function handlePointerMove(e: PointerEvent) {
+      if (!dragStartRef.current) return;
+      const dx = e.clientX - dragStartRef.current.pointerX;
+      const dy = e.clientY - dragStartRef.current.pointerY;
+      setPos({
+        x: dragStartRef.current.posX + dx,
+        y: dragStartRef.current.posY + dy,
+      });
+    }
+
+    function handlePointerUp() {
+      setIsDragging(false);
+      dragStartRef.current = null;
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, [isDragging]);
+
   function handlePointerDown(e: React.PointerEvent) {
-    if ((e.target as HTMLElement).tagName === 'BUTTON' || (e.target as HTMLElement).tagName === 'SELECT' || (e.target as HTMLElement).tagName === 'INPUT') return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('a')) return;
 
     setIsDragging(true);
     dragStartRef.current = {
@@ -39,29 +69,6 @@ export function AmpPedalboardPanel() {
       posX: pos.x,
       posY: pos.y,
     };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  }
-
-  function handlePointerMove(e: React.PointerEvent) {
-    if (!isDragging || !dragStartRef.current) return;
-    const dx = e.clientX - dragStartRef.current.pointerX;
-    const dy = e.clientY - dragStartRef.current.pointerY;
-    setPos({
-      x: dragStartRef.current.posX + dx,
-      y: dragStartRef.current.posY + dy,
-    });
-  }
-
-  function handlePointerUp(e: React.PointerEvent) {
-    if (isDragging) {
-      setIsDragging(false);
-      dragStartRef.current = null;
-      try {
-        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-      } catch {
-        // Ignored
-      }
-    }
   }
 
   function updateState(updates: Partial<AmpPedalboardState>) {
@@ -87,15 +94,11 @@ export function AmpPedalboardPanel() {
         userSelect: isDragging ? 'none' : 'auto',
         boxShadow: isDragging ? '0 16px 48px rgba(0,0,0,0.85)' : '0 8px 32px rgba(0,0,0,0.7)',
         transition: isDragging ? 'none' : 'box-shadow 0.2s ease',
-        zIndex: 99,
       }}
     >
       {/* Draggable Header */}
       <div
         onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -105,9 +108,20 @@ export function AmpPedalboardPanel() {
           borderBottom: '1px solid #27272a',
           userSelect: 'none',
         }}
+        title="Click and drag header to move amp pedalboard panel"
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: '#71717a', fontSize: 13, letterSpacing: -1, fontWeight: 700 }}>⋮⋮</span>
+          {/* Drag Handle Grip Icon */}
+          <div style={{ display: 'flex', alignItems: 'center', cursor: isDragging ? 'grabbing' : 'grab' }}>
+            <svg width="12" height="16" viewBox="0 0 12 16" fill="none" style={{ opacity: 0.5, marginRight: 2 }}>
+              <circle cx="3" cy="3" r="1.5" fill="#a1a1aa" />
+              <circle cx="9" cy="3" r="1.5" fill="#a1a1aa" />
+              <circle cx="3" cy="8" r="1.5" fill="#a1a1aa" />
+              <circle cx="9" cy="8" r="1.5" fill="#a1a1aa" />
+              <circle cx="3" cy="13" r="1.5" fill="#a1a1aa" />
+              <circle cx="9" cy="13" r="1.5" fill="#a1a1aa" />
+            </svg>
+          </div>
           <span
             style={{
               width: 8,

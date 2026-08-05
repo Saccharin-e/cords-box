@@ -16,9 +16,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
-import { lintCircuit } from '@lint/linter';
-import type { PotentiometerValue, CapacitorValue, ResistorValue } from '@graph/types';
-import { WiringDiagnosticsPanel } from './WiringDiagnosticsPanel';
+import type { PotentiometerValue, CapacitorValue, ResistorValue, CircuitEdge } from '@graph/types';
+import { buildWireVisuals } from '../canvas/wireUtils';
+import { getShape } from '../canvas/shapes';
 
 export function ValueInspector() {
   const selectedId = useCanvasStore((s) => s.selectedId);
@@ -30,8 +30,8 @@ export function ValueInspector() {
   const rotateSelected = useCanvasStore((s) => s.rotateSelected);
   const flipSelectedH = useCanvasStore((s) => s.flipSelectedH);
   const flipSelectedV = useCanvasStore((s) => s.flipSelectedV);
-  const moveInstance = useCanvasStore((s) => s.moveInstance);
   const updateInstance = useCanvasStore((s) => s.updateInstance);
+  const pushHistory = useCanvasStore((s) => s.pushHistory);
   const bringToFront = useCanvasStore((s) => s.bringToFront);
   const sendToBack = useCanvasStore((s) => s.sendToBack);
   const bringForward = useCanvasStore((s) => s.bringForward);
@@ -64,7 +64,7 @@ export function ValueInspector() {
   function handleLabelBlur() {
     if (component && labelInput.trim()) {
       updateComponentLabel(component.id, labelInput.trim());
-      updateInstance(component.id, { label: labelInput.trim() });
+      updateInstance(component.id, { label: labelInput.trim() }, true);
     }
   }
 
@@ -251,7 +251,8 @@ export function ValueInspector() {
                 <PotentiometerInspector
                   compId={component.id}
                   value={component.value as PotentiometerValue | undefined}
-                  onUpdate={(val) => updateComponentValue(component.id, val)}
+                  onUpdate={(val) => updateComponentValue(component.id, val, true)}
+                  onCommit={pushHistory}
                 />
               )}
 
@@ -573,10 +574,12 @@ function SwitchInspector({ compId, type }: { compId: string; type: string }) {
 function PotentiometerInspector({
   value,
   onUpdate,
+  onCommit,
 }: {
   compId: string;
   value?: PotentiometerValue;
   onUpdate: (val: PotentiometerValue) => void;
+  onCommit: () => void;
 }) {
   const resistance = value?.resistance_kohms ?? 250;
   const taper = value?.taper ?? 'audio';
@@ -584,6 +587,7 @@ function PotentiometerInspector({
 
   const [localPos, setLocalPos] = useState(position);
   const rafRef = useRef<number | null>(null);
+  const latestPosRef = useRef(position);
 
   useEffect(() => {
     setLocalPos(position);
@@ -591,6 +595,7 @@ function PotentiometerInspector({
 
   function handleSliderChange(val: number) {
     setLocalPos(val);
+    latestPosRef.current = val;
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
     }
@@ -598,9 +603,27 @@ function PotentiometerInspector({
       onUpdate({
         resistance_kohms: resistance,
         taper,
-        position: val,
+        position: latestPosRef.current,
       });
     });
+  }
+
+  function handleSliderCommit() {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    onUpdate({
+      resistance_kohms: resistance,
+      taper,
+      position: latestPosRef.current,
+    });
+    onCommit();
+  }
+
+  function handleSelectChange(next: Partial<PotentiometerValue>) {
+    onUpdate({ resistance_kohms: resistance, taper, position: localPos, ...next });
+    onCommit();
   }
 
   return (
@@ -609,9 +632,7 @@ function PotentiometerInspector({
         <select
           className="inspector-select"
           value={resistance}
-          onChange={(e) =>
-            onUpdate({ resistance_kohms: Number(e.target.value), taper, position: localPos })
-          }
+          onChange={(e) => handleSelectChange({ resistance_kohms: Number(e.target.value) })}
         >
           <option value={250}>250 kΩ (Single Coil Standard)</option>
           <option value={500}>500 kΩ (Humbucker Standard)</option>
@@ -625,11 +646,7 @@ function PotentiometerInspector({
           className="inspector-select"
           value={taper}
           onChange={(e) =>
-            onUpdate({
-              resistance_kohms: resistance,
-              taper: e.target.value as PotentiometerValue['taper'],
-              position: localPos,
-            })
+            handleSelectChange({ taper: e.target.value as PotentiometerValue['taper'] })
           }
         >
           <option value="audio">Audio (Logarithmic A)</option>
@@ -660,6 +677,8 @@ function PotentiometerInspector({
           step="0.01"
           value={localPos}
           onChange={(e) => handleSliderChange(parseFloat(e.target.value))}
+          onPointerUp={handleSliderCommit}
+          onKeyUp={handleSliderCommit}
           style={{ width: '100%', accentColor: 'var(--color-accent-amber)' }}
         />
       </div>
@@ -1044,49 +1063,12 @@ function WireInspector({
   );
 }
 
-function DiagnosticItem({ diagnostic }: { diagnostic: LintDiagnostic }) {
-  const colorMap = {
-    error: '#ef4444',
-    warning: '#f59e0b',
-    info: '#3b82f6',
-  };
 
-  return (
-    <div
-      style={{
-        fontSize: 11,
-        padding: '4px 6px',
-        borderRadius: 4,
-        backgroundColor: 'rgba(0,0,0,0.2)',
-        borderLeft: `3px solid ${colorMap[diagnostic.severity]}`,
-      }}
-    >
-      <div style={{ fontWeight: 600, color: colorMap[diagnostic.severity] }}>
-        {diagnostic.severity.toUpperCase()}: {diagnostic.code}
-      </div>
-      <div style={{ color: 'var(--color-text-secondary)', marginTop: 2 }}>{diagnostic.message}</div>
-    </div>
-  );
-}
-
-const closeButtonStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 22,
-  height: 22,
-  backgroundColor: '#27272a',
-  color: '#a1a1aa',
-  border: '1px solid #3f3f46',
-  borderRadius: 6,
-  fontSize: 11,
-  cursor: 'pointer',
-  transition: 'all 0.15s ease',
-};
 
 /* ─── Custom Lug Labels & Color Theme Inspector ──────────────────────────── */
 function CustomLabelsAndLugsInspector({ inst }: { inst: any }) {
   const updateInstance = useCanvasStore((s) => s.updateInstance);
+  const pushHistory = useCanvasStore((s) => s.pushHistory);
   const shape = getShape(inst.type);
 
   return (
@@ -1096,7 +1078,8 @@ function CustomLabelsAndLugsInspector({ inst }: { inst: any }) {
           type="text"
           className="inspector-input"
           value={inst.customLabel ?? inst.label ?? ''}
-          onChange={(e) => updateInstance(inst.id, { customLabel: e.target.value })}
+          onChange={(e) => updateInstance(inst.id, { customLabel: e.target.value }, true)}
+          onBlur={pushHistory}
           placeholder={shape.label}
         />
       </InspectorRow>
@@ -1123,7 +1106,7 @@ function CustomLabelsAndLugsInspector({ inst }: { inst: any }) {
             Terminal Lug Labels ({shape.lugs.length})
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {shape.lugs.map((lug) => {
+            {shape.lugs.map((lug: any) => {
               const currentVal = inst.customLugLabels?.[lug.id] ?? lug.label;
               return (
                 <div key={lug.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1136,8 +1119,9 @@ function CustomLabelsAndLugsInspector({ inst }: { inst: any }) {
                     value={currentVal}
                     onChange={(e) => {
                       const updated = { ...(inst.customLugLabels ?? {}), [lug.id]: e.target.value };
-                      updateInstance(inst.id, { customLugLabels: updated });
+                      updateInstance(inst.id, { customLugLabels: updated }, true);
                     }}
+                    onBlur={pushHistory}
                     style={{ flex: 1 }}
                     placeholder={lug.label}
                   />
@@ -1154,6 +1138,7 @@ function CustomLabelsAndLugsInspector({ inst }: { inst: any }) {
 /* ─── Text Box Inspector ─────────────────────────────────────────────────── */
 function TextBoxInspector({ inst }: { inst: any }) {
   const updateInstance = useCanvasStore((s) => s.updateInstance);
+  const pushHistory = useCanvasStore((s) => s.pushHistory);
 
   return (
     <InspectorSection title="Text Box Notes">
@@ -1162,7 +1147,8 @@ function TextBoxInspector({ inst }: { inst: any }) {
           className="inspector-input"
           rows={4}
           value={inst.textValue ?? ''}
-          onChange={(e) => updateInstance(inst.id, { textValue: e.target.value })}
+          onChange={(e) => updateInstance(inst.id, { textValue: e.target.value }, true)}
+          onBlur={pushHistory}
           placeholder="Type notes, wiring instructions, or pinouts here..."
           style={{ width: '100%', fontFamily: 'sans-serif', resize: 'vertical' }}
         />
@@ -1174,6 +1160,7 @@ function TextBoxInspector({ inst }: { inst: any }) {
 /* ─── Project Info Card Inspector ────────────────────────────────────────── */
 function ProjectCardInspector({ inst }: { inst: any }) {
   const updateInstance = useCanvasStore((s) => s.updateInstance);
+  const pushHistory = useCanvasStore((s) => s.pushHistory);
 
   return (
     <InspectorSection title="Project Card Details">
@@ -1182,7 +1169,8 @@ function ProjectCardInspector({ inst }: { inst: any }) {
           type="text"
           className="inspector-input"
           value={inst.customLabel ?? inst.label ?? ''}
-          onChange={(e) => updateInstance(inst.id, { customLabel: e.target.value })}
+          onChange={(e) => updateInstance(inst.id, { customLabel: e.target.value }, true)}
+          onBlur={pushHistory}
           placeholder="GUITAR WIRING HARNESS"
         />
       </InspectorRow>
@@ -1191,7 +1179,8 @@ function ProjectCardInspector({ inst }: { inst: any }) {
           type="text"
           className="inspector-input"
           value={inst.authorValue ?? ''}
-          onChange={(e) => updateInstance(inst.id, { authorValue: e.target.value })}
+          onChange={(e) => updateInstance(inst.id, { authorValue: e.target.value }, true)}
+          onBlur={pushHistory}
           placeholder="Luthier Studio"
         />
       </InspectorRow>
@@ -1200,7 +1189,8 @@ function ProjectCardInspector({ inst }: { inst: any }) {
           type="text"
           className="inspector-input"
           value={inst.modelValue ?? ''}
-          onChange={(e) => updateInstance(inst.id, { modelValue: e.target.value })}
+          onChange={(e) => updateInstance(inst.id, { modelValue: e.target.value }, true)}
+          onBlur={pushHistory}
           placeholder="Stratocaster HSS / Telecaster"
         />
       </InspectorRow>
@@ -1209,7 +1199,8 @@ function ProjectCardInspector({ inst }: { inst: any }) {
           type="text"
           className="inspector-input"
           value={inst.revisionValue ?? ''}
-          onChange={(e) => updateInstance(inst.id, { revisionValue: e.target.value })}
+          onChange={(e) => updateInstance(inst.id, { revisionValue: e.target.value }, true)}
+          onBlur={pushHistory}
           placeholder="2026-07-30 · Rev 1.0"
         />
       </InspectorRow>
@@ -1218,7 +1209,8 @@ function ProjectCardInspector({ inst }: { inst: any }) {
           className="inspector-input"
           rows={3}
           value={inst.textValue ?? ''}
-          onChange={(e) => updateInstance(inst.id, { textValue: e.target.value })}
+          onChange={(e) => updateInstance(inst.id, { textValue: e.target.value }, true)}
+          onBlur={pushHistory}
           placeholder="250K CTS Pots, 0.047uF Cap, Treble Bleed, 50s Wiring..."
           style={{ width: '100%', fontFamily: 'sans-serif', resize: 'vertical' }}
         />
@@ -1253,7 +1245,8 @@ function FreeShapeInspector({ inst }: { inst: any }) {
             type="number"
             className="inspector-input"
             value={Math.round(inst.width)}
-            onChange={(e) => updateInstance(inst.id, { width: Math.max(10, Number(e.target.value)) })}
+            onChange={(e) => updateInstance(inst.id, { width: Math.max(10, Number(e.target.value)) }, true)}
+            onBlur={pushHistory}
             style={{ width: '100%' }}
           />
         </div>
@@ -1263,7 +1256,8 @@ function FreeShapeInspector({ inst }: { inst: any }) {
             type="number"
             className="inspector-input"
             value={Math.round(inst.height)}
-            onChange={(e) => updateInstance(inst.id, { height: Math.max(10, Number(e.target.value)) })}
+            onChange={(e) => updateInstance(inst.id, { height: Math.max(10, Number(e.target.value)) }, true)}
+            onBlur={pushHistory}
             style={{ width: '100%' }}
           />
         </div>

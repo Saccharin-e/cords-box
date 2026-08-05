@@ -96,12 +96,18 @@ export function PhysicalView({ width, height }: Props) {
   const setPan = useCanvasStore((s) => s.setPan);
   const updateWiringCursor = useCanvasStore((s) => s.updateWiringCursor);
 
-  const { addComponent, solverResult, selectEdge, selectedEdgeId } = useCircuitStore();
+  const addComponent = useCircuitStore((s) => s.addComponent);
+  const solverResult = useCircuitStore((s) => s.solverResult);
+  const selectEdge = useCircuitStore((s) => s.selectEdge);
+  const selectedEdgeId = useCircuitStore((s) => s.selectedEdgeId);
   const graph = useCircuitStore((s) => s.graph);
 
   const trRef = useRef<Konva.Transformer>(null);
 
-  const activeEdges = solverResult?.activeEdges ?? new Set<string>();
+  const activeEdges = useMemo(
+    () => solverResult?.activeEdges ?? new Set<string>(),
+    [solverResult],
+  );
   const wires = useMemo(
     () => buildWireVisuals(() => graph.getEdges(), instances, activeEdges),
     [graph, instances, activeEdges],
@@ -123,11 +129,13 @@ export function PhysicalView({ width, height }: Props) {
     }
   }, [selectedIds, instances]);
 
-  /* ─── Drop from Component Library ──────────────────────────────────── */
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
-      const dragId = e.dataTransfer.getData('componentId');
+      const dragId =
+        e.dataTransfer.getData('componentId') ||
+        e.dataTransfer.getData('text/plain') ||
+        e.dataTransfer.getData('text');
 
       const stage = stageRef.current;
       if (!stage) return;
@@ -174,10 +182,11 @@ export function PhysicalView({ width, height }: Props) {
         return;
       }
 
-      const compType = DRAG_TYPE_MAP[dragId];
+      const compType = DRAG_TYPE_MAP[dragId] || (dragId as ComponentType);
       if (!compType) return;
 
       const shape = getShape(compType);
+      if (!shape) return;
       const id = generateComponentId();
 
       addInstance({
@@ -307,6 +316,7 @@ export function PhysicalView({ width, height }: Props) {
 
         let hasDragged = false;
         let wireStarted = false;
+        let moveRaf: number | null = null;
 
         const onMove = (moveEvt: MouseEvent) => {
           const dx = moveEvt.clientX - startClientX;
@@ -318,19 +328,26 @@ export function PhysicalView({ width, height }: Props) {
               const startAnchor = resolveWireTarget(canvasX, canvasY);
               useCanvasStore.getState().startWiring(startAnchor);
             }
-            // Update wire cursor
+            // Update wire cursor (RAF-throttled)
             const r = stage.container().getBoundingClientRect();
-            const s = useCanvasStore.getState().scale;
-            const px = useCanvasStore.getState().panX;
-            const py = useCanvasStore.getState().panY;
-            useCanvasStore.getState().updateWiringCursor(
-              (moveEvt.clientX - r.left - px) / s,
-              (moveEvt.clientY - r.top - py) / s,
-            );
+            if (moveRaf) cancelAnimationFrame(moveRaf);
+            moveRaf = requestAnimationFrame(() => {
+              const s = useCanvasStore.getState().scale;
+              const px = useCanvasStore.getState().panX;
+              const py = useCanvasStore.getState().panY;
+              useCanvasStore.getState().updateWiringCursor(
+                (moveEvt.clientX - r.left - px) / s,
+                (moveEvt.clientY - r.top - py) / s,
+              );
+            });
           }
         };
 
         const onUp = (upEvt: MouseEvent) => {
+          if (moveRaf) {
+            cancelAnimationFrame(moveRaf);
+            moveRaf = null;
+          }
           window.removeEventListener('mousemove', onMove);
           window.removeEventListener('mouseup', onUp);
           if (hasDragged && wireStarted) {
@@ -381,7 +398,12 @@ export function PhysicalView({ width, height }: Props) {
       if (isPanDraggingRef.current) {
         const dx = e.evt.clientX - panStartPosRef.current.mouseX;
         const dy = e.evt.clientY - panStartPosRef.current.mouseY;
-        setPan(panStartPosRef.current.panX + dx, panStartPosRef.current.panY + dy);
+        const targetPanX = panStartPosRef.current.panX + dx;
+        const targetPanY = panStartPosRef.current.panY + dy;
+        if (mouseRafRef.current) cancelAnimationFrame(mouseRafRef.current);
+        mouseRafRef.current = requestAnimationFrame(() => {
+          setPan(targetPanX, targetPanY);
+        });
         return;
       }
 
@@ -390,11 +412,14 @@ export function PhysicalView({ width, height }: Props) {
         if (pos) {
           const canvasX = (pos.x - panX) / scale;
           const canvasY = (pos.y - panY) / scale;
-          updateSelectionBox({
-            x1: selectionStartRef.current.x,
-            y1: selectionStartRef.current.y,
-            x2: canvasX,
-            y2: canvasY,
+          if (mouseRafRef.current) cancelAnimationFrame(mouseRafRef.current);
+          mouseRafRef.current = requestAnimationFrame(() => {
+            updateSelectionBox({
+              x1: selectionStartRef.current.x,
+              y1: selectionStartRef.current.y,
+              x2: canvasX,
+              y2: canvasY,
+            });
           });
         }
       }
@@ -489,6 +514,29 @@ export function PhysicalView({ width, height }: Props) {
 
   const canvasCursor = wiringMode ? 'crosshair' : isPanning ? 'grabbing' : 'default';
 
+  const handleSelect = useCallback(
+    (id: string, evt: Konva.KonvaEventObject<MouseEvent>) => {
+      const multiSelect = evt.evt.shiftKey;
+      selectInstance(id, multiSelect);
+      selectEdge(null);
+    },
+    [selectInstance, selectEdge],
+  );
+
+  const handleDragEnd = useCallback(
+    (id: string, x: number, y: number) => {
+      moveInstance(id, x, y);
+    },
+    [moveInstance],
+  );
+
+  const handleSelectEdge = useCallback(
+    (edgeId: string) => {
+      selectEdge(edgeId);
+    },
+    [selectEdge],
+  );
+
   return (
     <div
       style={{
@@ -498,7 +546,10 @@ export function PhysicalView({ width, height }: Props) {
         cursor: canvasCursor,
         overflow: 'hidden',
       }}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }}
       onDrop={handleDrop}
     >
       {/* Floating CAD Options Toolbar */}
@@ -545,12 +596,8 @@ export function PhysicalView({ width, height }: Props) {
                 key={inst.id}
                 instance={inst}
                 isSelected={selectedIds.includes(inst.id)}
-                onSelect={(evt) => {
-                  const multiSelect = evt.evt.shiftKey;
-                  selectInstance(inst.id, multiSelect);
-                  selectEdge(null);
-                }}
-                onDragEnd={(x, y) => moveInstance(inst.id, x, y)}
+                onSelect={handleSelect}
+                onDragEnd={handleDragEnd}
               />
             ))}
         </Layer>
@@ -559,7 +606,7 @@ export function PhysicalView({ width, height }: Props) {
         <WireLayer
           wires={wires}
           selectedEdgeId={selectedEdgeId}
-          onSelectEdge={(edgeId) => selectEdge(edgeId)}
+          onSelectEdge={handleSelectEdge}
         />
 
         {/* Foreground card & documentation layer (Project Info Card & Text Boxes render on top of wires!) */}
@@ -571,12 +618,8 @@ export function PhysicalView({ width, height }: Props) {
                 key={inst.id}
                 instance={inst}
                 isSelected={selectedIds.includes(inst.id)}
-                onSelect={(evt) => {
-                  const multiSelect = evt.evt.shiftKey;
-                  selectInstance(inst.id, multiSelect);
-                  selectEdge(null);
-                }}
-                onDragEnd={(x, y) => moveInstance(inst.id, x, y)}
+                onSelect={handleSelect}
+                onDragEnd={handleDragEnd}
               />
             ))}
           <Transformer
