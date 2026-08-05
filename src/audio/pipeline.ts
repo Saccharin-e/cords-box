@@ -207,21 +207,29 @@ function createCabinetImpulseResponse(ctx: AudioContext): AudioBuffer {
   const cached = cabinetIrCache.get(ctx.sampleRate);
   if (cached) return cached;
 
-  const length = Math.floor(ctx.sampleRate * 0.045);
+  const length = Math.floor(ctx.sampleRate * 0.055); // 55ms broadband speaker IR
   const impulse = ctx.createBuffer(1, length, ctx.sampleRate);
   const data = impulse.getChannelData(0);
 
-  // Smooth clean speaker cabinet impulse response
+  // Dense broadband 1x12 Celestion speaker impulse:
+  // High-density noise reflections simulating speaker cone paper texture,
+  // 105 Hz baffle fundamental & 2.6 kHz cone breakup
+  let filterState = 0;
   for (let i = 0; i < length; i++) {
     const t = i / ctx.sampleRate;
-    const env = Math.exp(-t * 120);
-    const cone = Math.sin(2 * Math.PI * 2400 * t) * 0.25;
-    const body = Math.sin(2 * Math.PI * 180 * t) * 0.15;
-    data[i] = (cone + body) * env;
-  }
-  data[0] = 0.5;
+    const env = Math.exp(-t * 140);
+    const noise = Math.random() * 2 - 1;
+    filterState = filterState * 0.45 + noise * 0.55;
 
-  // Normalize cabinet impulse response to prevent gain explosion
+    const coneRes = Math.sin(2 * Math.PI * 2600 * t) * 0.2;
+    const baffleRes = Math.sin(2 * Math.PI * 105 * t) * 0.35;
+
+    data[i] = (filterState * 0.4 + coneRes + baffleRes) * env;
+  }
+  data[0] = 0.9;
+  data[1] = -0.4;
+
+  // Peak-normalize impulse
   let maxAbs = 0;
   for (let i = 0; i < length; i++) {
     const abs = Math.abs(data[i]);
@@ -1080,14 +1088,9 @@ export class AudioPipeline {
     }
     const rawStringMix = this.inputNode;
 
-    // Flat Piezo De-emphasis filter: flattens pre-recorded coil peaks to turn
-    // recorded DI samples into an uncolored, raw Piezo string signal.
-    const piezoFlatFilter = ctx.createBiquadFilter();
-    piezoFlatFilter.type = 'peaking';
-    piezoFlatFilter.frequency.setValueAtTime(3200, now);
-    piezoFlatFilter.Q.setValueAtTime(0.8, now);
-    piezoFlatFilter.gain.setValueAtTime(-2.2, now);
-    this.sampleInputNode.connect(piezoFlatFilter);
+    // Real recorded DI guitar samples already contain authentic pickup character.
+    // Connect sampleInputNode directly to masterGain to prevent double-filtering.
+    this.sampleInputNode.connect(this.masterGain);
 
     // 2. Pickup Branches (Parallel physical filtering with power-normalized mix bus)
     const numPickups = Math.max(1, topology.pickups.length);
@@ -1114,8 +1117,6 @@ export class AudioPipeline {
 
       rawStringMix.connect(directPosition);
       rawStringMix.connect(delayNode);
-      piezoFlatFilter.connect(directPosition);
-      piezoFlatFilter.connect(delayNode);
       delayNode.connect(delayedPosition);
 
       const pickupResonance = ctx.createBiquadFilter();

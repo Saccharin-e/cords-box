@@ -26,6 +26,8 @@ export class AudioEngine {
     }
   }
 
+  private workletReady = false;
+
   async initialize(): Promise<void> {
     // AudioContext is not available in the headless test environment.
     // Treat that as an unavailable audio device instead of creating an
@@ -38,7 +40,19 @@ export class AudioEngine {
     if (this.context.state === 'suspended') {
       await this.context.resume();
     }
+    if (!this.workletReady && this.context.audioWorklet) {
+      try {
+        await this.context.audioWorklet.addModule(new URL('./processor.js', import.meta.url).href);
+        this.workletReady = true;
+      } catch {
+        // Worklet module fallback
+      }
+    }
     this.emitStateChange();
+  }
+
+  isWorkletReady(): boolean {
+    return this.workletReady;
   }
 
   getContext(): AudioContext | null {
