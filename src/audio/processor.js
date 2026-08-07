@@ -338,6 +338,8 @@ class GuitarProcessor extends AudioWorkletProcessor {
     this.pickupResonators = [];
     this.pendingPlucks = [];
     this.initializing = false;
+    this.beepPhase = 0;
+    this.beepTime = 0;
 
     const doInit = (wasmBytes) => {
       if (this.initializing || this.engine) return;
@@ -376,6 +378,7 @@ class GuitarProcessor extends AudioWorkletProcessor {
           return freq > 0 ? new PeakingBiquad(sampleRate, freq, p.resonantQ ?? 2.2, 6) : null;
         });
       } else if (msg.type === 'pluck') {
+        this.beepTime = 0.5; // Half second beep
         if (this.engine) {
           this.engine.pluck(msg.string_idx, msg.freq, msg.velocity);
         } else {
@@ -434,7 +437,15 @@ class GuitarProcessor extends AudioWorkletProcessor {
       }
       mixedVin *= mixNorm;
       
-      outChan[i] = this.wdf.processSample(mixedVin);
+      // Bypass WDF and output rawWASMsig + beep
+      let synthBeep = 0;
+      if (this.beepTime > 0) {
+        synthBeep = Math.sin(this.beepPhase) * 0.1;
+        this.beepPhase += (2 * Math.PI * 440) / sampleRate;
+        this.beepTime -= 1 / sampleRate;
+      }
+      
+      outChan[i] = mixedVin * 0.5 + synthBeep;
     }
 
     // Copy to remaining channels (stereo)
