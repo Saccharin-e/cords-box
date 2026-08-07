@@ -9,7 +9,7 @@
  */
 
 import { audioEngine } from './context';
-import { renderKarplusStrong } from './karplusStrong';
+import { renderKarplusStrong, sustainSeconds } from './karplusStrong';
 import { SampleBank } from './sampleBank';
 import { WdfGuitarCircuitSolver } from './wdf/wdfCircuitSolver';
 import type { SolverResult } from '@graph/solver';
@@ -477,6 +477,7 @@ export class AudioPipeline {
         numberOfOutputs: 1,
         outputChannelCount: [1],
       });
+      this.wdfWorkletNode.port.postMessage({ type: 'init' });
       this.postWdfUpdate(graph);
     } catch {
       this.wdfWorkletNode = null;
@@ -1173,12 +1174,12 @@ export class AudioPipeline {
 
     const env = ctx.createGain();
     const peakGain = Math.min(0.8, Math.max(0.04, velocity));
+    const sustain = isMuted ? 0.5 : sustainSeconds(freq);
     env.gain.setValueAtTime(0.0001, now);
     env.gain.linearRampToValueAtTime(peakGain, now + 0.0015);
-
-    // Let the string's own frequency-dependent decay shape the tail; the
-    // envelope only prevents clicks at start/stop.
-    env.gain.setTargetAtTime(0.0001, now + 0.5, 3.5);
+    const releaseStart = now + Math.max(0.05, sustain * 0.7);
+    const releaseTau = Math.max(0.3, sustain * 0.3);
+    env.gain.setTargetAtTime(0.0001, releaseStart, releaseTau);
 
     // Apply Articulation Pitch Automations (slides, bends, vibrato)
     if (articulation === 'slide_up' || articulation === 'slide_down') {

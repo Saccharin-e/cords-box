@@ -313,21 +313,37 @@ class GuitarProcessor extends AudioWorkletProcessor {
     this.outBuffer = null;
     this.wdf = new WdfCircuit(sampleRate);
     this.pickupResonators = [];
+    this.pendingPlucks = [];
+    this.initializing = false;
+
+    const doInit = (wasmBytes) => {
+      if (this.initializing || this.engine) return;
+      this.initializing = true;
+      init(wasmBytes)
+        .then((wasm) => {
+          wasmMemory = wasm.memory;
+          this.engine = new DspEngine(sampleRate);
+          this.outPtr = this.engine.output_ptr();
+          this.outBuffer = new Float32Array(wasmMemory.buffer, this.outPtr, 128);
+          for (const p of this.pendingPlucks) {
+            this.engine.pluck(p.string_idx, p.freq, p.velocity);
+          }
+          this.pendingPlucks = [];
+          this.port.postMessage({ type: 'ready' });
+        })
+        .catch((err) => {
+          this.initializing = false;
+          console.error('WASM Init error:', err);
+        });
+    };
+
+    // Auto-init immediately upon processor construction
+    doInit();
 
     this.port.onmessage = (e) => {
       const msg = e.data;
       if (msg.type === 'init') {
-        init(msg.wasmBytes)
-          .then((wasm) => {
-            wasmMemory = wasm.memory;
-            this.engine = new DspEngine(sampleRate);
-            this.outPtr = this.engine.output_ptr();
-            this.outBuffer = new Float32Array(wasmMemory.buffer, this.outPtr, 128);
-            this.port.postMessage({ type: 'ready' });
-          })
-          .catch((err) => {
-            console.error('WASM Init error:', err);
-          });
+        doInit(msg.wasmBytes);
       } else if (msg.type === 'wdf-update') {
         this.wdf.updateParams(msg.params);
         const pickups = this.wdf._params.pickups || [];
@@ -336,8 +352,12 @@ class GuitarProcessor extends AudioWorkletProcessor {
           const freq = (p.resonantFreq ?? 0) * (isSeries && pickups.length > 1 ? 0.75 : 1.0);
           return freq > 0 ? new PeakingBiquad(sampleRate, freq, p.resonantQ ?? 2.2, 6) : null;
         });
-      } else if (msg.type === 'pluck' && this.engine) {
-        this.engine.pluck(msg.string_idx, msg.freq, msg.velocity);
+      } else if (msg.type === 'pluck') {
+        if (this.engine) {
+          this.engine.pluck(msg.string_idx, msg.freq, msg.velocity);
+        } else {
+          this.pendingPlucks.push(msg);
+        }
       } else if (msg.type === 'drive' && this.engine) {
         this.engine.set_drive(msg.drive);
       }
