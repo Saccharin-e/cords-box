@@ -149,8 +149,9 @@ impl GuitarString {
         let new_damping = (0.22 + brightness * 0.12).clamp(0.22, 0.45);
         let new_dispersion = (0.04 + brightness * 0.08).clamp(0.04, 0.15);
         
-        // Amplitude envelope decays faster for higher notes
-        let new_amplitude_decay = (0.99995 - (freq / 1000.0) * 0.00008).clamp(0.99985, 0.99996);
+        // Natural physical string decay is governed by the waveguide loop filter (self.decay).
+        // Set amplitude_decay to 1.0 so notes sustain naturally without being artificially strangled.
+        let new_amplitude_decay = 1.0;
 
         if self.is_active {
             Self::fill_excitation(
