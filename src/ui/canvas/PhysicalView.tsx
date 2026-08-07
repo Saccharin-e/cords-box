@@ -73,6 +73,7 @@ export function PhysicalView({ width, height }: Props) {
   const selectionStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isPanDraggingRef = useRef(false);
   const panStartPosRef = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
+  const handleStageMouseUpRef = useRef<() => void>(() => {});
 
   // Activate global CAD keyboard shortcuts
   useCanvasKeyboard();
@@ -115,11 +116,12 @@ export function PhysicalView({ width, height }: Props) {
 
   useEffect(() => {
     if (trRef.current && stageRef.current) {
-      if (selectedIds.length === 1) {
-        const id = selectedIds[0];
-        const selectedNode = stageRef.current.findOne('#' + id);
-        if (selectedNode) {
-          trRef.current.nodes([selectedNode]);
+      if (selectedIds.length > 0) {
+        const nodes = selectedIds
+          .map((id) => stageRef.current?.findOne('#' + id))
+          .filter(Boolean) as Konva.Node[];
+        if (nodes.length > 0) {
+          trRef.current.nodes(nodes);
           trRef.current.getLayer()?.batchDraw();
           return;
         }
@@ -375,9 +377,15 @@ export function PhysicalView({ width, height }: Props) {
       }
 
       // Left Click on empty Stage area -> Start Marquee Rectangular Selection
-      const isDraggableTarget = e.target !== stageRef.current && Boolean(e.target.draggable());
-      if (!isDraggableTarget && e.evt.button === 0 && !wiringMode) {
-        const stage = stageRef.current;
+      const target = e.target;
+      const stage = stageRef.current;
+      const isComponentOrDraggable =
+        target !== stage &&
+        (Boolean(target.draggable()) ||
+          Boolean(target.findAncestor('Group')?.draggable()) ||
+          Boolean(target.findAncestor('.Transformer')));
+
+      if (!isComponentOrDraggable && e.evt.button === 0 && !wiringMode) {
         if (!stage) return;
         const pos = stage.getPointerPosition();
         if (!pos) return;
@@ -388,6 +396,12 @@ export function PhysicalView({ width, height }: Props) {
         isSelectingRef.current = true;
         selectionStartRef.current = { x: canvasX, y: canvasY };
         updateSelectionBox({ x1: canvasX, y1: canvasY, x2: canvasX, y2: canvasY });
+
+        const onWindowMouseUp = () => {
+          window.removeEventListener('mouseup', onWindowMouseUp);
+          handleStageMouseUpRef.current();
+        };
+        window.addEventListener('mouseup', onWindowMouseUp);
       }
     },
     [panX, panY, scale, wiringMode],
@@ -457,33 +471,54 @@ export function PhysicalView({ width, height }: Props) {
           const currentEdges = useCircuitStore.getState().graph.getEdges();
 
           // 1. Select matching components within rectangle
+          const stage = stageRef.current;
+          const layer = stage?.getLayer() || stage;
+
           const selectedComponents = currentInstances.filter((inst) => {
+            const node = stage?.findOne('#' + inst.id);
+            if (node && layer) {
+              const clientRect = node.getClientRect({ relativeTo: layer });
+              const instLeft = clientRect.x;
+              const instRight = clientRect.x + clientRect.width;
+              const instTop = clientRect.y;
+              const instBottom = clientRect.y + clientRect.height;
+              return instLeft <= maxX && instRight >= minX && instTop <= maxY && instBottom >= minY;
+            }
             const shape = getShape(inst.type);
-            const w = shape.width;
-            const h = shape.height;
+            const isRotated = inst.rotation === 90 || inst.rotation === 270;
+            const rawW = inst.width || shape.width;
+            const rawH = inst.height || shape.height;
+            const w = isRotated ? rawH : rawW;
+            const h = isRotated ? rawW : rawH;
             const instLeft = inst.x;
             const instRight = inst.x + w;
             const instTop = inst.y;
             const instBottom = inst.y + h;
             return instLeft <= maxX && instRight >= minX && instTop <= maxY && instBottom >= minY;
           });
-          useCanvasStore.getState().setSelectedIds(selectedComponents.map((i) => i.id));
 
-          // 2. Select matching wire (edge) within rectangle
-          const wireVisuals = buildWireVisuals(() => currentEdges, currentInstances, new Set());
-          const hitWire = wireVisuals.find((w) => {
-            const inBox = (px: number, py: number) =>
-              px >= minX && px <= maxX && py >= minY && py <= maxY;
-            if (inBox(w.x1, w.y1) || inBox(w.x2, w.y2)) return true;
-            if (w.controlPoint && inBox(w.controlPoint.x, w.controlPoint.y)) return true;
-            if (w.controlPoints?.some((cp) => inBox(cp.x, cp.y))) return true;
-            return false;
-          });
-
-          if (hitWire) {
-            selectEdge(hitWire.id);
-          } else if (selectedComponents.length > 0) {
+          if (selectedComponents.length > 0) {
+            useCanvasStore.getState().setSelectedIds(selectedComponents.map((i) => i.id));
             selectEdge(null);
+          } else {
+            // 2. Select matching wire (edge) within rectangle only if no components were selected
+            const wireVisuals = buildWireVisuals(() => currentEdges, currentInstances, new Set());
+            const hitWire = wireVisuals.find((w) => {
+              const inBox = (px: number, py: number) =>
+                px >= minX && px <= maxX && py >= minY && py <= maxY;
+              if (inBox(w.x1, w.y1) || inBox(w.x2, w.y2)) return true;
+              if (w.controlPoint && inBox(w.controlPoint.x, w.controlPoint.y)) return true;
+              if (w.controlPoints?.some((cp) => inBox(cp.x, cp.y))) return true;
+              return false;
+            });
+
+            if (hitWire) {
+              useCanvasStore.getState().clearSelection();
+              selectEdge(hitWire.id);
+            } else {
+              useCanvasStore.getState().clearSelection();
+              selectEdge(null);
+            }
           }
         } else {
           useCanvasStore.getState().clearSelection();
@@ -493,6 +528,10 @@ export function PhysicalView({ width, height }: Props) {
       updateSelectionBox(null);
     }
   }, [selectEdge]);
+
+  useEffect(() => {
+    handleStageMouseUpRef.current = handleStageMouseUp;
+  }, [handleStageMouseUp]);
 
   /* ─── Context Menu Handler (Right Click) ────────────────────────────── */
   const handleContextMenu = useCallback(

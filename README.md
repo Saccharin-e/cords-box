@@ -73,6 +73,21 @@ See [docs/SDD.md](docs/SDD.md) for full software design specifications.
 - **Validation**: Zod + Oxlint + Prettier
 - **Testing**: Vitest (10/10 test files passing)
 
+## Building the WASM DSP Core (optional)
+
+The Rust WebAssembly physical modeling engine (`dsp/src/lib.rs`) requires:
+
+- [Rust toolchain](https://rustup.rs/) with `wasm32-unknown-unknown` target
+- [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+npm run build:wasm
+```
+
+Pre-compiled WASM artifacts are committed for convenience — you only need this if modifying `dsp/src/lib.rs`.
+
 ## License
 
 This project is licensed under the GNU General Public License v2.0 (GPL-2.0-only). See the [LICENSE](LICENSE) file for details.

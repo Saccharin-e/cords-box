@@ -34,8 +34,9 @@ export function AmpPedalboardPanel() {
 
     function handlePointerMove(e: PointerEvent) {
       if (!dragStartRef.current) return;
-      const dx = e.clientX - dragStartRef.current.pointerX;
-      const dy = e.clientY - dragStartRef.current.pointerY;
+      const scale = useCanvasStore.getState().scale || 1;
+      const dx = (e.clientX - dragStartRef.current.pointerX) / scale;
+      const dy = (e.clientY - dragStartRef.current.pointerY) / scale;
       setPos({
         x: dragStartRef.current.posX + dx,
         y: dragStartRef.current.posY + dy,
@@ -59,6 +60,7 @@ export function AmpPedalboardPanel() {
   }, [isDragging]);
 
   function handlePointerDown(e: React.PointerEvent) {
+    e.stopPropagation();
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('a')) return;
 
@@ -291,6 +293,18 @@ export function AmpPedalboardPanel() {
               value={state.ampMaster}
               onChange={(v) => updateState({ ampMaster: v })}
               color="#ef4444"
+            />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#09090b', padding: '6px 10px', borderRadius: 6, border: '1px solid #27272a' }}>
+            <span style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600 }}>Speaker Volume Boost (+0..+12dB):</span>
+            <input
+              type="range"
+              min="0.8"
+              max="3.5"
+              step="0.1"
+              defaultValue={audioPipeline.getMasterVolumeBoost()}
+              onChange={(e) => audioPipeline.setMasterVolumeBoost(Number(e.target.value))}
+              style={{ width: 120, cursor: 'pointer' }}
             />
           </div>
         </div>

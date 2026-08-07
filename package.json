@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build:wasm": "wasm-pack build dsp/ --target web --out-dir ../src/audio/wasm-pkg",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "start": "vite preview",

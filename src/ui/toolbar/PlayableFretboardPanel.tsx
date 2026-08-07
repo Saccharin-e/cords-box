@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
+import { useTuningStore, TUNING_PRESETS } from '@store/tuningStore';
 import { audioEngine, audioPipeline } from '@audio/index';
 
 export interface GuitarStringDef {
@@ -32,6 +33,21 @@ export const GUITAR_STRINGS: GuitarStringDef[] = [
   { index: 5, name: 'E2 (Low E)',  openFreq: 82.41,  openMidi: 40, thickness: 3.8, isWound: true },
 ];
 
+export const BASS_4_STRINGS: GuitarStringDef[] = [
+  { index: 0, name: 'G2 (High G)', openFreq: 98.00, openMidi: 43, thickness: 2.0, isWound: true },
+  { index: 1, name: 'D2',          openFreq: 73.42, openMidi: 38, thickness: 2.8, isWound: true },
+  { index: 2, name: 'A1',          openFreq: 55.00, openMidi: 33, thickness: 3.8, isWound: true },
+  { index: 3, name: 'E1 (Low E)',  openFreq: 41.20, openMidi: 28, thickness: 4.8, isWound: true },
+];
+
+export const BASS_5_STRINGS: GuitarStringDef[] = [
+  { index: 0, name: 'G2 (High G)', openFreq: 98.00, openMidi: 43, thickness: 2.0, isWound: true },
+  { index: 1, name: 'D2',          openFreq: 73.42, openMidi: 38, thickness: 2.8, isWound: true },
+  { index: 2, name: 'A1',          openFreq: 55.00, openMidi: 33, thickness: 3.8, isWound: true },
+  { index: 3, name: 'E1',          openFreq: 41.20, openMidi: 28, thickness: 4.8, isWound: true },
+  { index: 4, name: 'B0 (Low B)',  openFreq: 30.87, openMidi: 23, thickness: 5.6, isWound: true },
+];
+
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 export function midiToNoteName(midi: number): string {
@@ -49,16 +65,6 @@ export function calcFretMidi(openMidi: number, fret: number): number {
 }
 
 const NUM_FRETS = 15;
-
-// Precomputed per-cell note data (6 strings x 16 frets) so cell renders
-// never recompute pow/log/note-name math on hover or play.
-const FRET_NOTE_TABLE: { freq: number; midi: number; noteName: string }[][] = GUITAR_STRINGS.map((stringDef) =>
-  Array.from({ length: NUM_FRETS + 1 }, (_, fret) => {
-    const freq = calcFretFrequency(stringDef.openFreq, fret);
-    const midi = calcFretMidi(stringDef.openMidi, fret);
-    return { freq, midi, noteName: midiToNoteName(midi) };
-  }),
-);
 
 // Inlay marker frets
 const SINGLE_DOT_FRETS = [3, 5, 7, 9, 15, 17, 19];
@@ -216,6 +222,13 @@ const FretCell = memo(function FretCell({
 
 export function PlayableFretboardPanel() {
   const toggleFretboard = useCanvasStore((s) => s.toggleFretboard);
+  const [instrumentType, setInstrumentType] = useState<'guitar' | 'bass_4' | 'bass_5'>('guitar');
+
+  const activeStrings = useMemo(() => {
+    if (instrumentType === 'bass_4') return BASS_4_STRINGS;
+    if (instrumentType === 'bass_5') return BASS_5_STRINGS;
+    return GUITAR_STRINGS;
+  }, [instrumentType]);
 
   const [activeFret, setActiveFret] = useState<{
     stringIdx: number;
@@ -241,8 +254,9 @@ export function PlayableFretboardPanel() {
 
     function handlePointerMove(e: PointerEvent) {
       if (!dragStartRef.current) return;
-      const dx = e.clientX - dragStartRef.current.pointerX;
-      const dy = e.clientY - dragStartRef.current.pointerY;
+      const scale = useCanvasStore.getState().scale || 1;
+      const dx = (e.clientX - dragStartRef.current.pointerX) / scale;
+      const dy = (e.clientY - dragStartRef.current.pointerY) / scale;
       setPos({
         x: dragStartRef.current.posX + dx,
         y: dragStartRef.current.posY + dy,
@@ -267,6 +281,7 @@ export function PlayableFretboardPanel() {
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      e.stopPropagation();
       const target = e.target as HTMLElement;
       if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('a')) {
         return;
@@ -291,10 +306,21 @@ export function PlayableFretboardPanel() {
     return () => window.removeEventListener('mouseup', handleMouseUp);
   }, []);
 
+  // Dynamic per-string note lookup table
+  const fretNoteTable = useMemo(() => {
+    return activeStrings.map((stringDef) =>
+      Array.from({ length: NUM_FRETS + 1 }, (_, fret) => {
+        const freq = calcFretFrequency(stringDef.openFreq, fret);
+        const midi = calcFretMidi(stringDef.openMidi, fret);
+        return { freq, midi, noteName: midiToNoteName(midi) };
+      }),
+    );
+  }, [activeStrings]);
+
   // Ensure AudioContext is initialized & active when plucking
   const triggerNote = useCallback(
     async (stringIdx: number, fret: number) => {
-      const stringDef = GUITAR_STRINGS[stringIdx];
+      const stringDef = activeStrings[stringIdx];
       if (!stringDef) return;
 
       const freq = calcFretFrequency(stringDef.openFreq, fret);
@@ -477,9 +503,48 @@ export function PlayableFretboardPanel() {
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#fef3c7' }}>
               Playable Guitar Fretboard
             </h3>
-            <span style={{ fontSize: 11, color: '#a1a1aa' }}>
-              Standard Tuning (E2-E4) &bull; Drag header to move &bull; Click frets or press 1-6 / Space
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              <select
+                value={instrumentType}
+                onChange={(e) => setInstrumentType(e.target.value as 'guitar' | 'bass_4' | 'bass_5')}
+                style={{
+                  backgroundColor: '#27272a',
+                  color: '#38bdf8',
+                  border: '1px solid #3b82f6',
+                  borderRadius: 4,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: '1px 4px',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="guitar">6-String Guitar</option>
+                <option value="bass_4">4-String Bass</option>
+                <option value="bass_5">5-String Bass</option>
+              </select>
+              <select
+                value={useTuningStore((s) => s.activeTuningId)}
+                onChange={(e) => useTuningStore.getState().setTuning(e.target.value)}
+                style={{
+                  backgroundColor: '#27272a',
+                  color: '#fbbf24',
+                  border: '1px solid #71717a',
+                  borderRadius: 4,
+                  fontSize: 11,
+                  padding: '1px 4px',
+                  cursor: 'pointer',
+                }}
+              >
+                {TUNING_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label} ({p.description})
+                  </option>
+                ))}
+              </select>
+              <span style={{ fontSize: 11, color: '#a1a1aa' }}>
+                &bull; Drag header to move &bull; Click frets or press 1-6 / Space
+              </span>
+            </div>
           </div>
         </div>
 
@@ -761,11 +826,11 @@ export function PlayableFretboardPanel() {
               }}
             />
 
-            {/* Render 6 Strings */}
-            {GUITAR_STRINGS.map((stringDef) => {
+            {/* Render Instrument Strings */}
+            {activeStrings.map((stringDef) => {
               const isVibrating = vibratingStrings[stringDef.index];
               const chordFret = selectedChord?.frets[stringDef.index] ?? null;
-              const rowTable = FRET_NOTE_TABLE[stringDef.index];
+              const rowTable = fretNoteTable[stringDef.index];
 
               return (
                 <div

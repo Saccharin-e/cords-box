@@ -144,40 +144,60 @@ export const DEFAULT_AMP_PEDALBOARD_STATE: AmpPedalboardState = {
   reverbMix: 0.15,
 
   ampModel: 'clean_twin',
-  ampGain: 0.4,
+  ampGain: 0.6,
   ampBass: 0.5,
   ampMid: 0.5,
   ampTreble: 0.5,
   ampPresence: 0.5,
-  ampMaster: 0.7,
+  ampMaster: 0.85,
 
   cabModel: '1x12_open',
   micDistance: 0.2,
 };
 
-let cleanTubeCurveCache: Float32Array<ArrayBuffer> | null = null;
+const tubeCurveCache = new Map<string, Float32Array<ArrayBuffer>>();
 let overdriveCurveCache: Float32Array<ArrayBuffer> | null = null;
 const cabinetIrCache = new Map<number, AudioBuffer>();
 const roomIrCache = new Map<number, AudioBuffer>();
 
-function createCleanTubeCurve(): Float32Array<ArrayBuffer> {
-  if (cleanTubeCurveCache) return cleanTubeCurveCache;
+/**
+ * Per-amp-model triode curve parameters.
+ * Asymmetric clipping: positive half clips harder (grid conduction, producing
+ * even-order harmonics) while the negative half stays cleaner (cutoff region).
+ */
+const AMP_TUBE_PARAMS: Record<AmpModelType, { posDrive: number; negDrive: number; posScale: number; negScale: number }> = {
+  clean_twin:  { posDrive: 1.2, negDrive: 0.9, posScale: 0.92, negScale: 0.97 },
+  crunch_800:  { posDrive: 1.8, negDrive: 1.3, posScale: 0.82, negScale: 0.92 },
+  high_gain:   { posDrive: 2.4, negDrive: 1.8, posScale: 0.75, negScale: 0.85 },
+  vox_chime:   { posDrive: 1.5, negDrive: 1.1, posScale: 0.88, negScale: 0.95 },
+};
 
-  const samples = 2048;
-  const curve = new Float32Array(new ArrayBuffer(samples * Float32Array.BYTES_PER_ELEMENT));
+/**
+ * Asymmetric triode tube saturation curve.
+ *
+ * Unlike the previous symmetric x/(1+k|x|) which stayed linear below 0.85,
+ * tanh(drive·x) begins gentle saturation immediately — ~8% deviation from
+ * linear at x=0.3 with drive=1.6. The positive/negative asymmetry generates
+ * second-harmonic content (characteristic tube warmth).
+ */
+function createTubeCurve(model: AmpModelType = 'clean_twin'): Float32Array<ArrayBuffer> {
+  const cached = tubeCurveCache.get(model);
+  if (cached) return cached;
 
-  // Triode-style soft saturation: y = x / (1 + k|x|) is an odd function
-  // (no DC bias) with unity slope at the origin, so normal playing levels
-  // pick up gentle harmonic coloration immediately rather than only near
-  // full scale, while the curve stays smooth and monotonic.
-  const drive = 0.3;
+  const params = AMP_TUBE_PARAMS[model];
+  const N = 2048;
+  const curve = new Float32Array(new ArrayBuffer(N * Float32Array.BYTES_PER_ELEMENT));
 
-  for (let i = 0; i < samples; i += 1) {
-    const input = (i * 2) / (samples - 1) - 1;
-    curve[i] = input / (1 + drive * Math.abs(input));
+  for (let i = 0; i < N; i += 1) {
+    const x = (i * 2) / (N - 1) - 1;
+    if (x >= 0) {
+      curve[i] = Math.tanh(x * params.posDrive) * params.posScale;
+    } else {
+      curve[i] = Math.tanh(x * params.negDrive) * params.negScale;
+    }
   }
 
-  cleanTubeCurveCache = curve;
+  tubeCurveCache.set(model, curve);
   return curve;
 }
 
@@ -288,6 +308,10 @@ export class AudioPipeline {
   private finalOutputGain: GainNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
   private analyserNode: AnalyserNode | null = null;
+
+  public getAnalyserNode(): AnalyserNode | null {
+    return this.analyserNode;
+  }
   private micStream: MediaStream | null = null;
   private strumIntervalId: number | null = null;
   private autoStrumming = false;
@@ -334,7 +358,6 @@ export class AudioPipeline {
     const volPot = comps.find((c) => c.type === 'pot_volume');
     const tonePot = comps.find((c) => c.type === 'pot_tone');
     const toneCap = comps.find((c) => c.type === 'capacitor');
-    const pickup = comps.find((c) => c.type.startsWith('pickup_'));
 
     let volPotMaxR = 250000;
     if (volPot?.value && 'resistance_kohms' in volPot.value) {
@@ -351,31 +374,31 @@ export class AudioPipeline {
       toneCapFarads = (toneCap.value.capacitance_pf ?? 47000) * 1e-12;
     }
 
-    let pickupInductanceH = 2.4;
-    let pickupResistanceR = 6500;
-    if (pickup) {
-      if (pickup.type === 'pickup_humbucker') {
-        pickupInductanceH = 4.2;
-        pickupResistanceR = 8500;
-      } else if (pickup.type === 'pickup_p90') {
-        pickupInductanceH = 3.2;
-        pickupResistanceR = 7200;
-      }
-    }
+    const wdfPickups = this.activeTopology.pickups.map(p => {
+      let l = 2.4;
+      let r = 6500;
+      if (p.id.includes('humbucker')) { l = 4.2; r = 8500; }
+      else if (p.id.includes('p90')) { l = 3.2; r = 7200; }
+      return {
+        inductanceH: l,
+        resistanceR: r,
+        delayMs: p.delayTimeMs,
+        isOutofPhase: p.isOutofPhase,
+        blendGain: p.blendGain
+      };
+    });
 
     this.wdfWorkletNode.port.postMessage({
       type: 'wdf-update',
       params: {
-        // Raw pot positions — the worklet applies its own taper, so sending
-        // the pre-tapered activeTopology values would double-taper the audio
-        // taper pots.
         volumePos: volPot?.value && 'position' in volPot.value ? volPot.value.position : 1.0,
         tonePos: tonePot?.value && 'position' in tonePot.value ? tonePot.value.position : 1.0,
         volPotMaxR,
         tonePotMaxR,
         toneCapFarads,
-        pickupInductanceH,
-        pickupResistanceR,
+        pickups: wdfPickups, // Send full array of pickups
+        isSeries: this.activeTopology.isSeries,
+        cableCapFarads: 500e-12, // ~5m instrument cable (100pF/m typical)
       },
     });
   }
@@ -389,14 +412,14 @@ export class AudioPipeline {
     masterTone: 1.0,
   };
   private ampPedalState: AmpPedalboardState = { ...DEFAULT_AMP_PEDALBOARD_STATE };
-  private masterVolumeBoost = 1.0;
+  private masterVolumeBoost = 1.8;
 
   public getMasterVolumeBoost(): number {
     return this.masterVolumeBoost;
   }
 
   public setMasterVolumeBoost(boost: number): void {
-    this.masterVolumeBoost = Math.max(0.3, Math.min(3.0, boost));
+    this.masterVolumeBoost = Math.max(0.3, Math.min(4.0, boost));
     const ctx = audioEngine.getContext();
     if (ctx && this.masterGain) {
       const now = ctx.currentTime;
@@ -405,7 +428,7 @@ export class AudioPipeline {
     if (ctx && this.finalOutputGain) {
       const now = ctx.currentTime;
       const s = this.ampPedalState;
-      this.finalOutputGain.gain.setValueAtTime(s.ampMaster * 1.5 * this.masterVolumeBoost, now);
+      this.finalOutputGain.gain.setValueAtTime(s.ampMaster * 2.8 * this.masterVolumeBoost, now);
     }
     this.emitStateChange();
   }
@@ -509,7 +532,7 @@ export class AudioPipeline {
       this.masterGain.gain.setValueAtTime(1.0, now);
     }
     if (this.finalOutputGain) {
-      this.finalOutputGain.gain.setValueAtTime(s.ampMaster * 1.5 * this.masterVolumeBoost, now);
+      this.finalOutputGain.gain.setValueAtTime(s.ampMaster * 2.8 * this.masterVolumeBoost, now);
     }
   }
 
@@ -622,7 +645,7 @@ export class AudioPipeline {
     const preampGain = ctx.createGain();
     preampGain.gain.value = 1.35;
     const preampTube = ctx.createWaveShaper();
-    preampTube.curve = createCleanTubeCurve();
+    preampTube.curve = createTubeCurve(this.ampPedalState.ampModel);
     preampTube.oversample = '4x';
 
     const interstage = ctx.createBiquadFilter();
@@ -634,7 +657,7 @@ export class AudioPipeline {
     const secondTubeGain = ctx.createGain();
     secondTubeGain.gain.value = 1.05;
     const secondTube = ctx.createWaveShaper();
-    secondTube.curve = createCleanTubeCurve();
+    secondTube.curve = createTubeCurve(this.ampPedalState.ampModel);
     secondTube.oversample = '4x';
 
     const toneBass = ctx.createBiquadFilter();
@@ -660,7 +683,7 @@ export class AudioPipeline {
     const powerAmpGain = ctx.createGain();
     powerAmpGain.gain.value = 1.05;
     const powerAmpTube = ctx.createWaveShaper();
-    powerAmpTube.curve = createCleanTubeCurve();
+    powerAmpTube.curve = createTubeCurve(this.ampPedalState.ampModel);
     powerAmpTube.oversample = '4x';
 
     // 6. 1x12 speaker/cabinet impulse response and speaker roll-off.
@@ -709,10 +732,14 @@ export class AudioPipeline {
     // ratio keep it as a safety limiter rather than an audible pump (the fast
     // 5ms attack + 4:1 stack previously risked breathing on chords).
     this.compressorNode = ctx.createDynamicsCompressor();
-    this.compressorNode.threshold.setValueAtTime(-10, ctx.currentTime);
-    this.compressorNode.knee.setValueAtTime(10, ctx.currentTime);
-    this.compressorNode.ratio.setValueAtTime(3.0, ctx.currentTime);
-    this.compressorNode.attack.setValueAtTime(0.015, ctx.currentTime);
+    // Transparent safety limiter: high threshold and steep ratio so it only
+    // engages on genuine peak overshoot (> -3 dBFS) rather than constantly
+    // clamping normal signals. Fast 3ms attack catches transients; 150ms
+    // release avoids audible pumping on sustained chords.
+    this.compressorNode.threshold.setValueAtTime(-3, ctx.currentTime);
+    this.compressorNode.knee.setValueAtTime(6, ctx.currentTime);
+    this.compressorNode.ratio.setValueAtTime(8, ctx.currentTime);
+    this.compressorNode.attack.setValueAtTime(0.003, ctx.currentTime);
     this.compressorNode.release.setValueAtTime(0.15, ctx.currentTime);
 
     // 6. Analyser Node for Visual Oscilloscope
@@ -770,7 +797,7 @@ export class AudioPipeline {
     roomReturn.connect(stereoMerger);
 
     this.finalOutputGain = ctx.createGain();
-    this.finalOutputGain.gain.value = this.ampPedalState.ampMaster * 1.5 * this.masterVolumeBoost;
+    this.finalOutputGain.gain.value = this.ampPedalState.ampMaster * 2.8 * this.masterVolumeBoost;
 
     stereoMerger.connect(this.compressorNode);
     this.compressorNode.connect(this.finalOutputGain);
@@ -816,19 +843,40 @@ export class AudioPipeline {
     freq: number,
     velocity: number,
     chordSize: number = 1,
+    startTime?: number,
+    articulation: string = 'none',
+    targetFreq?: number,
   ): boolean {
     const targetMidi = Math.round(69 + 12 * Math.log2(freq / 440));
     const sample = this.findGuitarSampleBuffer(targetMidi, velocity);
     if (!sample || !this.sampleInputNode) return false;
 
-
+    const now = startTime && startTime > ctx.currentTime ? startTime : ctx.currentTime + 0.001;
 
     // Use closest sample for all target pitches across the fretboard
     const source = ctx.createBufferSource();
     source.buffer = sample.buffer;
     const exactTargetMidi = 69 + 12 * Math.log2(freq / 440);
     const pitchShift = 2 ** ((exactTargetMidi - sample.rootMidi) / 12);
-    source.playbackRate.setValueAtTime(pitchShift, ctx.currentTime);
+
+    // Apply Articulation Pitch Automations (slides, bends, vibrato)
+    if (articulation === 'slide_up' || articulation === 'slide_down') {
+      const endFreq = targetFreq || (articulation === 'slide_up' ? freq * 1.122 : freq * 0.89);
+      const endTargetMidi = 69 + 12 * Math.log2(endFreq / 440);
+      const endPitchShift = 2 ** ((endTargetMidi - sample.rootMidi) / 12);
+      source.playbackRate.setValueAtTime(pitchShift, now);
+      source.playbackRate.linearRampToValueAtTime(endPitchShift, now + 0.15);
+    } else if (articulation === 'bend') {
+      source.playbackRate.setValueAtTime(pitchShift, now);
+      source.playbackRate.linearRampToValueAtTime(pitchShift * 1.122, now + 0.18);
+    } else if (articulation === 'vibrato') {
+      source.playbackRate.setValueAtTime(pitchShift, now);
+      source.playbackRate.linearRampToValueAtTime(pitchShift * 1.015, now + 0.08);
+      source.playbackRate.linearRampToValueAtTime(pitchShift * 0.985, now + 0.16);
+      source.playbackRate.linearRampToValueAtTime(pitchShift, now + 0.24);
+    } else {
+      source.playbackRate.setValueAtTime(pitchShift, now);
+    }
 
     const sampleGain = ctx.createGain();
     const pitchCompensation = Math.max(1.0, Math.sqrt(pitchShift));
@@ -839,8 +887,17 @@ export class AudioPipeline {
     const gainVal = Math.min(1.2, Math.max(gainFloor, (velocity * 1.25) / pitchCompensation));
     sampleGain.gain.setValueAtTime(gainVal, ctx.currentTime);
 
-    // Formant/resonance compensation for pitch-shifting
-    if (pitchShift < 0.85) {
+    // Palm Muting (mute articulation) Filter & Fast Envelope
+    if (articulation === 'mute') {
+      const muteFilter = ctx.createBiquadFilter();
+      muteFilter.type = 'lowpass';
+      muteFilter.frequency.setValueAtTime(850, now);
+      muteFilter.Q.setValueAtTime(1.0, now);
+      sampleGain.gain.setValueAtTime(gainVal * 0.6, now);
+      sampleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+      source.connect(muteFilter);
+      muteFilter.connect(sampleGain);
+    } else if (pitchShift < 0.85) {
       // Slowing down a sample (playbackRate < 0.85) drops body formants into sub-bass,
       // making it sound like a bass guitar. A dynamic highpass filter removes the mud.
       const lowCut = ctx.createBiquadFilter();
@@ -875,7 +932,7 @@ export class AudioPipeline {
         // Ignored: the source may already be disconnected during cleanup.
       }
     };
-    source.start(ctx.currentTime + 0.001);
+    source.start(startTime && startTime > ctx.currentTime ? startTime : ctx.currentTime + 0.001);
     return true;
   }
 
@@ -899,39 +956,96 @@ export class AudioPipeline {
     return this.sampleBank.isReady();
   }
 
-  private triggerSynthesizedGuitar(ctx: AudioContext, freq: number, velocity: number): boolean {
+  private triggerSynthesizedGuitar(
+    ctx: AudioContext,
+    freq: number,
+    velocity: number,
+    startTime?: number,
+    articulation: string = 'none',
+    targetFreq?: number
+  ): boolean {
     if (!this.inputNode) return false;
-    const now = ctx.currentTime;
+    const now = startTime && startTime > ctx.currentTime ? startTime : ctx.currentTime + 0.001;
     const sampleRate = ctx.sampleRate;
 
     // Physical String Waveguide Model (Direct Target Pitch - No Pitch Shifting)
-    const duration = 4.0;
+    const duration = 8.0; // Allow long acoustic string sustain
     const ksLength = Math.floor(sampleRate * duration);
     const ksBuffer = ctx.createBuffer(1, ksLength, sampleRate);
     const ksData = ksBuffer.getChannelData(0);
 
     const N = Math.max(8, Math.round(sampleRate / freq));
 
-    // 1. Pick Attack Noise Burst: Short 2.5ms bandpass noise burst (2.4kHz center)
-    let pickState = 0;
+    // 1. Guitar Plectrum Attack Excitation: Pick position comb filter (18% from bridge)
+    const pickPosRatio = 0.18;
+    const pickDelay = Math.max(1, Math.round(N * pickPosRatio));
+    const noiseBurst = new Float32Array(N);
+
+    let prevNoise = 0;
     for (let i = 0; i < N; i++) {
       const whiteNoise = (Math.random() * 2 - 1) * velocity;
-      // Bandpass pick attack filter
-      pickState = pickState * 0.4 + whiteNoise * 0.6;
-      ksData[i] = pickState;
+      // Balanced excitation: slight low-pass for warmth (electric strings are thicker and warmer than banjo strings)
+      const warmSnap = whiteNoise * 0.8 + prevNoise * 0.2;
+      prevNoise = whiteNoise;
+      noiseBurst[i] = warmSnap;
     }
 
-    // 2. Waveguide Loop Filter: Karplus-Strong 2-point averaging feedback
-    const decay = Math.min(0.996, 0.990 + (80 / freq) * 0.005);
+    // Apply plectrum release differential: y[n] = x[n] - x[n - pickDelay]
+    for (let i = 0; i < N; i++) {
+      const delayed = i >= pickDelay ? noiseBurst[i - pickDelay] : 0;
+      ksData[i] = (noiseBurst[i] - delayed * 0.75) * 0.8;
+    }
+
+    // 2. Physical Guitar String Waveguide Loop: Dispersion, Friction, and Dynamic Tension
+    // 2. Solid-Body Electric String Waveguide Loop: Less friction, longer sustain
+    const isMuted = articulation === 'palm_mute' || articulation === 'mute';
+    const baseDamping = isMuted ? 0.48 : 0.12;
+    const dampingWeight = Math.min(0.5, baseDamping + (freq / 8000));
+    // High strings cycle the loop more times per second. To have equal sustain time, 
+    // the multiplier must be closer to 1.0 for high frequencies.
+    // Math.pow(0.85, 1 / freq) means it retains ~85% of its energy per second regardless of frequency.
+    const decay = Math.pow(0.90, 1 / freq);
+
+    // Initial tension spike (pitch starts sharp and settles down)
+    // Higher velocity = harder pluck = sharper initial pitch
+    const initialTensionSpike = 0.015 * velocity; // Up to 1.5% sharp
+    const tensionDecay = 0.99995; // Relaxes very slowly over the buffer
+
+    let currentTension = initialTensionSpike;
+    let allpassState = 0;
+
     for (let i = N + 1; i < ksLength; i++) {
-      const s1 = ksData[i - N];
-      const s2 = ksData[i - N - 1];
-      ksData[i] = (s1 * 0.5 + s2 * 0.5) * decay;
+      // Dynamic fractional delay to simulate tension modulation (pitch glide)
+      const targetN = sampleRate / (freq * (1 + currentTension));
+      const intN = Math.floor(targetN);
+      const frac = targetN - intN;
+
+      // Linear interpolation for fractional delay
+      let delayedSample = 0;
+      if (i - intN - 1 >= 0) {
+        const s1 = ksData[i - intN];
+        const s2 = ksData[i - intN - 1];
+        delayedSample = s1 * (1 - frac) + s2 * frac;
+      }
+
+      // First-order All-Pass Filter for string stiffness (inharmonicity)
+      // Piano strings have very high stiffness (causing chime/bell tones). 
+      // Guitar strings have very low stiffness.
+      const stiffness = freq < 200 ? 0.02 : 0.005;
+      const allpassOut = stiffness * delayedSample + (i - intN >= 0 ? ksData[i - intN] : 0) - stiffness * allpassState;
+      allpassState = allpassOut;
+
+      // Weighted lowpass damping simulates string internal friction
+      const prevSample = ksData[i - 1] || 0;
+      ksData[i] = (allpassOut * (1 - dampingWeight) + prevSample * dampingWeight) * decay;
+
+      // Relax tension over time
+      currentTension *= tensionDecay;
     }
 
     const stringSource = ctx.createBufferSource();
     stringSource.buffer = ksBuffer;
-    stringSource.playbackRate.value = 1.0; // Native target pitch
+    stringSource.playbackRate.value = 1.0;
 
     const rawStringMix = ctx.createGain();
     rawStringMix.gain.setValueAtTime(1.0, now);
@@ -939,11 +1053,45 @@ export class AudioPipeline {
     const env = ctx.createGain();
     const peakGain = Math.min(0.8, Math.max(0.04, velocity));
     env.gain.setValueAtTime(0.0001, now);
-    env.gain.linearRampToValueAtTime(peakGain, now + 0.002);
-    env.gain.exponentialRampToValueAtTime(0.0001, now + 4.2);
+    env.gain.linearRampToValueAtTime(peakGain, now + 0.0015);
+    
+    // Allow natural KS string decay to dictate envelope over 6-8 seconds
+    env.gain.setTargetAtTime(0.0001, now + 0.2, 3.5);
+
+    // Apply Articulation Pitch Automations (slides, bends, vibrato)
+    if (articulation === 'slide_up' || articulation === 'slide_down') {
+      const endFreq = targetFreq || (articulation === 'slide_up' ? freq * 1.122 : freq * 0.89);
+      const shift = endFreq / freq;
+      stringSource.playbackRate.setValueAtTime(1.0, now);
+      stringSource.playbackRate.linearRampToValueAtTime(shift, now + 0.15);
+    } else if (articulation === 'bend') {
+      stringSource.playbackRate.setValueAtTime(1.0, now);
+      stringSource.playbackRate.linearRampToValueAtTime(1.122, now + 0.18);
+    } else if (articulation === 'vibrato') {
+      stringSource.playbackRate.setValueAtTime(1.0, now);
+      stringSource.playbackRate.linearRampToValueAtTime(1.015, now + 0.08);
+      stringSource.playbackRate.linearRampToValueAtTime(0.985, now + 0.16);
+      stringSource.playbackRate.linearRampToValueAtTime(1.0, now + 0.24);
+    } else {
+      stringSource.playbackRate.setValueAtTime(1.0, now);
+    }
 
     stringSource.connect(rawStringMix);
-    rawStringMix.connect(env);
+    
+    // Palm Muting (mute articulation) Filter & Fast Envelope
+    if (articulation === 'mute') {
+      const muteFilter = ctx.createBiquadFilter();
+      muteFilter.type = 'lowpass';
+      muteFilter.frequency.setValueAtTime(850, now);
+      muteFilter.Q.setValueAtTime(1.0, now);
+      env.gain.setValueAtTime(peakGain * 0.6, now + 0.0015);
+      env.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+      rawStringMix.connect(muteFilter);
+      muteFilter.connect(env);
+    } else {
+      rawStringMix.connect(env);
+    }
+    
     env.connect(this.inputNode);
 
     stringSource.start(now);
@@ -1144,6 +1292,9 @@ export class AudioPipeline {
     velocity: number = 0.55,
     _stringIndex: number = 0,
     chordSize: number = 1,
+    startTime?: number,
+    articulation: string = 'none',
+    targetFreq?: number,
   ): Promise<void> {
     let ctx = audioEngine.getContext();
     if (!ctx) {
@@ -1168,16 +1319,16 @@ export class AudioPipeline {
     this.routeInputThroughTopology(ctx, velocity);
 
     if (this.useSamples) {
-      if (!this.triggerRecordedGuitar(ctx, freq, velocity, chordSize)) {
+      if (!this.triggerRecordedGuitar(ctx, freq, velocity, chordSize, startTime, articulation, targetFreq)) {
         await bankPromise;
         if (this.inputNode) {
-          if (!this.triggerRecordedGuitar(ctx, freq, velocity, chordSize)) {
-            this.triggerSynthesizedGuitar(ctx, freq, velocity);
+          if (!this.triggerRecordedGuitar(ctx, freq, velocity, chordSize, startTime, articulation, targetFreq)) {
+            this.triggerSynthesizedGuitar(ctx, freq, velocity, startTime, articulation, targetFreq);
           }
         }
       }
     } else {
-      this.triggerSynthesizedGuitar(ctx, freq, velocity);
+      this.triggerSynthesizedGuitar(ctx, freq, velocity, startTime, articulation, targetFreq);
     }
   }
 
@@ -1229,7 +1380,10 @@ export class AudioPipeline {
     pickupMixNode.gain.setValueAtTime(mixNorm, now);
 
     if (topology.pickups.length === 0) {
-      // Circuit is dead/open
+      // Direct fallback routing so audio always plays even on open/empty circuits
+      rawStringMix.disconnect();
+      rawStringMix.connect(this.masterGain);
+      this.topologyRouted = true;
       return;
     }
 

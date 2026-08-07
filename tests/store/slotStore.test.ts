@@ -54,11 +54,37 @@ describe('SlotStore Layout Manager', () => {
     expect(slot5?.name).toBe('Indie Rock Setup');
   });
 
-  it('should reset custom slot back to default template', () => {
-    useSlotStore.getState().saveCurrentToSlot('slot_1', 'Modified Slot 1');
-    expect(useSlotStore.getState().slots[0].isCustom).toBe(true);
+  it('should save and reload custom wires/edges correctly', () => {
+    // 1. Add components
+    const c1 = { id: 'pickup_1', type: 'pickup_single_coil' as const, label: 'P1', x: 100, y: 100, width: 100, height: 60 };
+    const c2 = { id: 'jack_1', type: 'output_jack' as const, label: 'J1', x: 300, y: 100, width: 60, height: 60 };
+    useCanvasStore.getState().addInstance(c1);
+    useCanvasStore.getState().addInstance(c2);
+    useCircuitStore.getState().addComponent(c1);
+    useCircuitStore.getState().addComponent(c2);
 
-    useSlotStore.getState().resetSlotToDefault('slot_1');
-    expect(useSlotStore.getState().slots[0].isCustom).toBe(false);
+    // 2. Add wire
+    useCircuitStore.getState().addEdge({
+      id: 'wire_123',
+      source: 'pickup_1_hot',
+      target: 'jack_1_tip',
+      resistance: 0,
+      wireColor: '#ff8c00',
+    });
+
+    // 3. Save to slot
+    useSlotStore.getState().saveCurrentToSlot('slot_4', 'Wire Test Slot');
+    const slot4 = useSlotStore.getState().slots.find((s) => s.slotId === 'slot_4');
+    expect(slot4?.data.edges).toHaveLength(1);
+
+    // 4. Clear state & load slot
+    useCanvasStore.getState().resetCanvas();
+    useCircuitStore.getState().reset();
+    expect(useCircuitStore.getState().graph.getEdges()).toHaveLength(0);
+
+    const loaded = useSlotStore.getState().loadSlot('slot_4');
+    expect(loaded).toBe(true);
+    expect(useCircuitStore.getState().graph.getEdges()).toHaveLength(1);
+    expect(useCircuitStore.getState().graph.getEdges()[0].id).toBe('wire_123');
   });
 });

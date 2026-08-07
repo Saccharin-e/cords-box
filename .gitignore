@@ -20,8 +20,10 @@ Thumbs.db
 .env
 .env.local
 
-# Rust
+# Rust / WASM
 dsp/target/
+dsp/pkg/
+src/audio/wasm-pkg/
 .env.*.local
 
 # Vite

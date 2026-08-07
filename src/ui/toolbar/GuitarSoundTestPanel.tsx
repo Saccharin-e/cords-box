@@ -26,6 +26,7 @@ export function GuitarSoundTestPanel() {
   const [selectedPresetId, setSelectedPresetId] = useState('guitar_sound_test_template');
   const [volumeBoost, setVolumeBoost] = useState<number>(audioPipeline.getMasterVolumeBoost());
   const [usingSamples, setUsingSamples] = useState<boolean>(audioPipeline.isUsingSamples());
+  const [isSpectrumExpanded, setIsSpectrumExpanded] = useState(false);
 
   // Dragging State (Global Window Listeners)
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -37,8 +38,9 @@ export function GuitarSoundTestPanel() {
 
     function handlePointerMove(e: PointerEvent) {
       if (!dragStartRef.current) return;
-      const dx = e.clientX - dragStartRef.current.pointerX;
-      const dy = e.clientY - dragStartRef.current.pointerY;
+      const scale = useCanvasStore.getState().scale || 1;
+      const dx = (e.clientX - dragStartRef.current.pointerX) / scale;
+      const dy = (e.clientY - dragStartRef.current.pointerY) / scale;
       setPos({
         x: dragStartRef.current.posX + dx,
         y: dragStartRef.current.posY + dy,
@@ -63,14 +65,12 @@ export function GuitarSoundTestPanel() {
 
   const toggleTestPanel = useCanvasStore((s) => s.toggleTestPanel);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number | null>(null);
-
   const solverResult = useCircuitStore((s) => s.solverResult);
   const activePathCount = solverResult?.activePaths.length ?? 0;
   const isCircuitConnected = activePathCount > 0;
 
   function handlePointerDown(e: React.PointerEvent) {
+    e.stopPropagation();
     const target = e.target as HTMLElement;
     if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('a')) return;
 
@@ -111,69 +111,6 @@ export function GuitarSoundTestPanel() {
     setUsingSamples(nextMode);
     audioPipeline.setUseSamples(nextMode);
   }
-
-  // Waveform canvas animation loop
-  useEffect(() => {
-    if (!audioActive) {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      return;
-    }
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const dataArray = new Uint8Array(256);
-
-    function draw() {
-      if (!ctx || !canvas) return;
-      audioPipeline.getWaveformData(dataArray);
-
-      ctx.fillStyle = '#0a0a0c';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Grid lines background
-      ctx.strokeStyle = '#18181b';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(0, canvas.height / 2);
-      ctx.lineTo(canvas.width, canvas.height / 2);
-      ctx.stroke();
-
-      // Waveform plot
-      ctx.lineWidth = 1.8;
-      ctx.strokeStyle = isCircuitConnected ? '#d97706' : '#71717a';
-      ctx.beginPath();
-
-      const sliceWidth = (canvas.width * 1.0) / dataArray.length;
-      let x = 0;
-
-      for (let i = 0; i < dataArray.length; i++) {
-        const v = dataArray[i] / 128.0;
-        const y = (v * canvas.height) / 2;
-
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-
-        x += sliceWidth;
-      }
-
-      ctx.lineTo(canvas.width, canvas.height / 2);
-      ctx.stroke();
-
-      animationRef.current = requestAnimationFrame(draw);
-    }
-
-    draw();
-
-    return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    };
-  }, [audioActive, isCircuitConnected]);
 
   async function ensureAudioReady() {
     if (!audioEngine.isReady()) {
@@ -220,23 +157,29 @@ export function GuitarSoundTestPanel() {
 
   return (
     <div
-      className="guitar-sound-panel neu-panel"
-      id="guitar-sound-test-panel"
       style={{
-        padding: '12px 14px',
-        backgroundColor: '#18181b',
-        border: '1px solid #27272a',
-        borderRadius: 8,
         display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        width: 360,
         transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
-        userSelect: isDragging ? 'none' : 'auto',
         boxShadow: isDragging ? '0 16px 48px rgba(0,0,0,0.8)' : '0 8px 32px rgba(0,0,0,0.6)',
         transition: isDragging ? 'none' : 'box-shadow 0.2s ease',
+        borderRadius: 8,
       }}
     >
+      <div
+        className="guitar-sound-panel neu-panel"
+        id="guitar-sound-test-panel"
+        style={{
+          padding: '12px 14px',
+          backgroundColor: '#18181b',
+          border: '1px solid #27272a',
+          borderRadius: isSpectrumExpanded ? '8px 0 0 8px' : 8,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          width: 360,
+          userSelect: isDragging ? 'none' : 'auto',
+        }}
+      >
       {/* Draggable Header & Status Indicator */}
       <div
         onPointerDown={handlePointerDown}
@@ -278,6 +221,25 @@ export function GuitarSoundTestPanel() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            onClick={() => setIsSpectrumExpanded(!isSpectrumExpanded)}
+            style={{
+              background: isSpectrumExpanded ? '#14532d' : '#27272a',
+              border: '1px solid #3f3f46',
+              borderRadius: 4,
+              color: isSpectrumExpanded ? '#86efac' : '#a1a1aa',
+              fontSize: 10,
+              fontWeight: 700,
+              padding: '2px 6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            title="Toggle expanded FFT spectrum visualizer"
+          >
+            📊 {isSpectrumExpanded ? 'Spectrum On' : 'Spectrum'}
+          </button>
           <span
             style={{
               fontSize: 10,
@@ -444,29 +406,7 @@ export function GuitarSoundTestPanel() {
         </div>
       </div>
 
-      {/* Live Oscilloscope Waveform Canvas */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 10, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Live Audio Waveform
-          </span>
-          <span style={{ fontSize: 10, color: audioActive ? '#a3e635' : '#71717a' }}>
-            {audioActive ? 'DSP Active' : 'DSP Idle'}
-          </span>
-        </div>
-        <canvas
-          ref={canvasRef}
-          width={340}
-          height={48}
-          style={{
-            width: '100%',
-            height: 48,
-            backgroundColor: '#0a0a0c',
-            borderRadius: 6,
-            border: '1px solid #27272a',
-          }}
-        />
-      </div>
+
 
       {/* String Plucks (E2 - E4) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -616,6 +556,158 @@ export function GuitarSoundTestPanel() {
             </>
           )}
         </button>
+      </div>
+
+      {/* Expandable Comprehensive Spectrum Visualizer */}
+      {isSpectrumExpanded && (
+        <div
+          style={{
+            width: 480,
+            backgroundColor: '#09090b',
+            border: '1px solid #27272a',
+            borderLeft: 'none',
+            borderRadius: '0 8px 8px 0',
+            padding: '16px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ fontSize: 14, color: '#f4f4f5', fontWeight: 700 }}>
+              Live FFT Spectrum Analysis
+            </span>
+            <span style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600 }}>128-Band EQ Visualizer</span>
+          </div>
+          <ComprehensiveSpectrumVisualizer isActive={audioActive} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Sub-component for the comprehensive spectrum visualizer
+function ComprehensiveSpectrumVisualizer({ isActive }: { isActive: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  useEffect(() => {
+    if (!isActive) return;
+
+    let animId: number;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const analyser = audioPipeline.getAnalyserNode();
+    if (!analyser) return;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    // Arrays for peak hold
+    const numBars = 128;
+    const peaks = new Array(numBars).fill(0);
+    const peakDrops = new Array(numBars).fill(0);
+
+    const render = () => {
+      analyser.getByteFrequencyData(dataArray);
+
+      const width = canvas.width;
+      const height = canvas.height;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Background grid
+      ctx.fillStyle = '#0a0a0c';
+      ctx.fillRect(0, 0, width, height);
+      
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for(let y=1; y<=4; y++) {
+        ctx.moveTo(0, height * (y/5));
+        ctx.lineTo(width, height * (y/5));
+      }
+      for(let x=1; x<=5; x++) {
+        ctx.moveTo(width * (x/6), 0);
+        ctx.lineTo(width * (x/6), height);
+      }
+      ctx.stroke();
+
+      const barWidth = (width - numBars) / numBars;
+      const step = Math.floor(bufferLength / numBars);
+
+      for (let i = 0; i < numBars; i++) {
+        let sum = 0;
+        for (let j = 0; j < step; j++) {
+          sum += dataArray[i * step + j];
+        }
+        let avg = sum / step;
+        
+        // Enhance low frequencies visually to match human hearing better
+        if (i < 20) avg *= 1.2;
+        
+        const barHeight = (Math.min(255, avg) / 255) * height;
+        const x = i * (barWidth + 1);
+        const y = height - barHeight;
+        
+        // Update peaks
+        if (barHeight > peaks[i]) {
+          peaks[i] = barHeight;
+          peakDrops[i] = 0;
+        } else {
+          peakDrops[i] += 0.5;
+          peaks[i] = Math.max(0, peaks[i] - peakDrops[i]);
+        }
+
+        // Draw Peak
+        if (peaks[i] > 0) {
+          ctx.fillStyle = '#f4f4f5';
+          ctx.fillRect(x, height - peaks[i] - 2, barWidth, 2);
+        }
+
+        // Draw Bar
+        const hue = 220 - (i / numBars) * 120; // Blue to Green to Yellow
+        const gradient = ctx.createLinearGradient(0, height, 0, y);
+        gradient.addColorStop(0, `hsla(${hue}, 80%, 40%, 0.4)`);
+        gradient.addColorStop(1, `hsla(${hue}, 80%, 60%, 1.0)`);
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x, y, barWidth, barHeight);
+      }
+
+      animId = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      cancelAnimationFrame(animId);
+    };
+  }, [isActive]);
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <canvas 
+        ref={canvasRef} 
+        width={440} 
+        height={220} 
+        style={{ 
+          width: '100%', 
+          height: '220px',
+          border: '1px solid #27272a',
+          borderRadius: 4
+        }} 
+      />
+      
+      {/* X-Axis Frequency Labels */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 2px 0 2px', color: '#71717a', fontSize: 10, fontWeight: 600 }}>
+        <span>60Hz</span>
+        <span>250Hz</span>
+        <span>1kHz</span>
+        <span>4kHz</span>
+        <span>10kHz</span>
+      </div>
     </div>
   );
 }

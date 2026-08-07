@@ -11,6 +11,9 @@
 
 import { create } from 'zustand';
 import { Graph } from '@graph/Graph';
+
+export type ViewMode = 'physical' | 'schematic' | 'sound_systems';
+
 import type { CircuitGraph, ComponentType } from '@graph/types';
 import { useCircuitStore } from './circuitStore';
 
@@ -97,6 +100,8 @@ export interface ExportBox {
 
 export interface CanvasStore {
   instances: CanvasComponentInstance[];
+  activeView: ViewMode;
+  setActiveView: (view: ViewMode) => void;
   scale: number;
   panX: number;
   panY: number;
@@ -124,9 +129,10 @@ export interface CanvasStore {
   isTestPanelOpen: boolean;
   isAmpPanelOpen: boolean;
   isFretboardOpen: boolean;
+  isTabPanelOpen: boolean;
   isSlotModalOpen: boolean;
-  activeFloatingPanel: 'fretboard' | 'amp' | 'test' | null;
-  setActiveFloatingPanel: (panel: 'fretboard' | 'amp' | 'test' | null) => void;
+  activeFloatingPanel: 'test' | 'amp' | 'fretboard' | 'tab' | 'spectrum' | null;
+  setActiveFloatingPanel: (panel: 'test' | 'amp' | 'fretboard' | 'tab' | 'spectrum' | null) => void;
   inspectorWidth: number;
   setInspectorWidth: (width: number) => void;
 
@@ -151,6 +157,7 @@ export interface CanvasStore {
   toggleTestPanel: () => void;
   toggleAmpPanel: () => void;
   toggleFretboard: () => void;
+  toggleTabPanel: () => void;
   toggleSlotModal: () => void;
 
   // Actions
@@ -213,6 +220,8 @@ export interface CanvasStore {
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
   instances: [],
+  activeView: 'physical',
+  setActiveView: (view) => set({ activeView: view }),
   scale: 1,
   panX: 0,
   panY: 0,
@@ -331,6 +340,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isTestPanelOpen: false,
   isAmpPanelOpen: false,
   isFretboardOpen: false,
+  isTabPanelOpen: false,
   isSlotModalOpen: false,
   activeFloatingPanel: null,
   setActiveFloatingPanel: (panel) => set({ activeFloatingPanel: panel }),
@@ -355,20 +365,41 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   toggleInspector: () => set((s) => ({ isInspectorOpen: !s.isInspectorOpen })),
   toggleControls: () => set((s) => ({ isControlsOpen: !s.isControlsOpen })),
   toggleTestPanel: () =>
-    set((s) => ({
-      isTestPanelOpen: !s.isTestPanelOpen,
-      activeFloatingPanel: !s.isTestPanelOpen ? 'test' : s.activeFloatingPanel,
-    })),
+    set((s) => {
+      const isOpening = !s.isTestPanelOpen;
+      return {
+        isTestPanelOpen: isOpening,
+        activeFloatingPanel: isOpening ? 'test' : s.activeFloatingPanel,
+        activeView: isOpening ? 'sound_systems' : s.activeView,
+      };
+    }),
   toggleAmpPanel: () =>
-    set((s) => ({
-      isAmpPanelOpen: !s.isAmpPanelOpen,
-      activeFloatingPanel: !s.isAmpPanelOpen ? 'amp' : s.activeFloatingPanel,
-    })),
+    set((s) => {
+      const isOpening = !s.isAmpPanelOpen;
+      return {
+        isAmpPanelOpen: isOpening,
+        activeFloatingPanel: isOpening ? 'amp' : s.activeFloatingPanel,
+        activeView: isOpening ? 'sound_systems' : s.activeView,
+      };
+    }),
   toggleFretboard: () =>
-    set((s) => ({
-      isFretboardOpen: !s.isFretboardOpen,
-      activeFloatingPanel: !s.isFretboardOpen ? 'fretboard' : s.activeFloatingPanel,
-    })),
+    set((s) => {
+      const isOpening = !s.isFretboardOpen;
+      return {
+        isFretboardOpen: isOpening,
+        activeFloatingPanel: isOpening ? 'fretboard' : s.activeFloatingPanel,
+        activeView: isOpening ? 'sound_systems' : s.activeView,
+      };
+    }),
+  toggleTabPanel: () =>
+    set((s) => {
+      const isOpening = !s.isTabPanelOpen;
+      return {
+        isTabPanelOpen: isOpening,
+        activeFloatingPanel: isOpening ? 'tab' : s.activeFloatingPanel,
+        activeView: isOpening ? 'sound_systems' : s.activeView,
+      };
+    }),
   toggleSlotModal: () => set((s) => ({ isSlotModalOpen: !s.isSlotModalOpen })),
 
   pushHistory: () => {

@@ -12,14 +12,14 @@ import { GuitarSoundTestPanel } from '../toolbar/GuitarSoundTestPanel';
 import { AmpPedalboardPanel } from '../toolbar/AmpPedalboardPanel';
 import { PlayableFretboardPanel } from '../toolbar/PlayableFretboardPanel';
 import { LayoutSlotsModal } from '../settings/LayoutSlotsModal';
-
-type ViewMode = 'physical' | 'schematic';
+import { TabPanel } from '../tab/TabPanel';
 
 export function DualCanvas() {
-  const [activeView, setActiveView] = useState<ViewMode>('physical');
   const containerRef = useRef<HTMLElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
+  const activeView = useCanvasStore((s) => s.activeView);
+  const setActiveView = useCanvasStore((s) => s.setActiveView);
   const instancesCount = useCanvasStore((s) => s.instances.length);
   const wiringMode = useCanvasStore((s) => s.wiringMode);
   const selectedId = useCanvasStore((s) => s.selectedId);
@@ -27,6 +27,7 @@ export function DualCanvas() {
   const isAmpPanelOpen = useCanvasStore((s) => s.isAmpPanelOpen);
   const isFretboardOpen = useCanvasStore((s) => s.isFretboardOpen);
   const isSlotModalOpen = useCanvasStore((s) => s.isSlotModalOpen);
+  const isTabPanelOpen = useCanvasStore((s) => s.isTabPanelOpen);
   const activeFloatingPanel = useCanvasStore((s) => s.activeFloatingPanel);
   const setActiveFloatingPanel = useCanvasStore((s) => s.setActiveFloatingPanel);
   const selectedEdgeId = useCircuitStore((s) => s.selectedEdgeId);
@@ -36,6 +37,9 @@ export function DualCanvas() {
   const removeInstance = useCanvasStore((s) => s.removeInstance);
   const selectInstance = useCanvasStore((s) => s.selectInstance);
   const cancelWiring = useCanvasStore((s) => s.cancelWiring);
+  const scale = useCanvasStore((s) => s.scale);
+  const panX = useCanvasStore((s) => s.panX);
+  const panY = useCanvasStore((s) => s.panY);
   const setPan = useCanvasStore((s) => s.setPan);
   const setScale = useCanvasStore((s) => s.setScale);
 
@@ -121,6 +125,80 @@ export function DualCanvas() {
 
   const isEmpty = instancesCount === 0;
 
+  // Zoom & Pan Handlers for Sound Systems Canvas Workspace
+  const handleWheelSoundSystems = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const oldScale = scale;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const pointerX = e.clientX - rect.left;
+    const pointerY = e.clientY - rect.top;
+
+    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    const newScale = Math.min(3, Math.max(0.25, oldScale * zoomFactor));
+
+    const mousePointTo = {
+      x: (pointerX - panX) / oldScale,
+      y: (pointerY - panY) / oldScale,
+    };
+
+    const newPanX = pointerX - mousePointTo.x * newScale;
+    const newPanY = pointerY - mousePointTo.y * newScale;
+
+    setScale(newScale);
+    setPan(newPanX, newPanY);
+  };
+
+  const [isPanningBg, setIsPanningBg] = useState(false);
+  const panStartRef = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
+
+  const handlePointerDownBg = (e: React.PointerEvent) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('.neu-panel') ||
+      target.closest('.guitar-sound-panel') ||
+      target.closest('.amp-pedalboard-panel') ||
+      target.closest('.playable-fretboard-panel') ||
+      target.closest('.tab-panel') ||
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('select') ||
+      target.closest('textarea')
+    ) {
+      return;
+    }
+
+    setIsPanningBg(true);
+    panStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      panX,
+      panY,
+    };
+  };
+
+  useEffect(() => {
+    if (!isPanningBg) return;
+
+    function handlePointerMove(e: PointerEvent) {
+      const dx = e.clientX - panStartRef.current.mouseX;
+      const dy = e.clientY - panStartRef.current.mouseY;
+      setPan(panStartRef.current.panX + dx, panStartRef.current.panY + dy);
+    }
+
+    function handlePointerUp() {
+      setIsPanningBg(false);
+    }
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isPanningBg, panX, panY, setPan]);
+
   function handleResetView() {
     setScale(1);
     setPan(size.width / 2, size.height / 2);
@@ -146,6 +224,13 @@ export function DualCanvas() {
           id="tab-schematic"
         >
           Schematic
+        </button>
+        <button
+          className={`canvas-tab ${activeView === 'sound_systems' ? 'canvas-tab--active' : ''}`}
+          onClick={() => setActiveView('sound_systems')}
+          id="tab-soundsystems"
+        >
+          Sound Systems
         </button>
         {wiringMode && (
           <span
@@ -207,7 +292,7 @@ export function DualCanvas() {
       </div>
 
       {/* Konva canvas */}
-      {size.width > 0 && (
+      {size.width > 0 && activeView !== 'sound_systems' && (
         <>
           {activeView === 'physical' ? (
             <PhysicalView width={size.width} height={size.height} />
@@ -217,48 +302,106 @@ export function DualCanvas() {
         </>
       )}
 
-      {/* Retractable Guitar Audio Test Panel */}
-      {isTestPanelOpen && (
+      {/* Sound Systems Component Window Workspace */}
+      {activeView === 'sound_systems' && (
         <div
-          onPointerDown={() => setActiveFloatingPanel('test')}
+          onWheel={handleWheelSoundSystems}
+          onPointerDown={handlePointerDownBg}
           style={{
             position: 'absolute',
-            top: 70,
-            left: 20,
-            zIndex: activeFloatingPanel === 'test' ? 100 : 90,
+            inset: 0,
+            overflow: 'hidden',
+            cursor: isPanningBg ? 'grabbing' : 'default',
+            userSelect: isPanningBg ? 'none' : 'auto',
           }}
         >
-          <GuitarSoundTestPanel />
-        </div>
-      )}
+          {/* Zoomable & Pannable Canvas Surface */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              transform: `translate3d(${panX}px, ${panY}px, 0) scale(${scale})`,
+              transformOrigin: '0 0',
+              pointerEvents: 'none',
+            }}
+          >
+            <div style={{ pointerEvents: 'auto' }}>
+              {/* Retractable Guitar Audio Test Panel */}
+              {isTestPanelOpen && (
+                <div
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    setActiveFloatingPanel('test');
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 60,
+                    left: 40,
+                    zIndex: activeFloatingPanel === 'test' ? 100 : 90,
+                  }}
+                >
+                  <GuitarSoundTestPanel />
+                </div>
+              )}
 
-      {/* Retractable Amp Simulator & Pedalboard Panel */}
-      {isAmpPanelOpen && (
-        <div
-          onPointerDown={() => setActiveFloatingPanel('amp')}
-          style={{
-            position: 'absolute',
-            top: 70,
-            left: 20,
-            zIndex: activeFloatingPanel === 'amp' ? 100 : 95,
-          }}
-        >
-          <AmpPedalboardPanel />
-        </div>
-      )}
+              {/* Retractable Amp Simulator & Pedalboard Panel */}
+              {isAmpPanelOpen && (
+                <div
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    setActiveFloatingPanel('amp');
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 60,
+                    left: 440,
+                    zIndex: activeFloatingPanel === 'amp' ? 100 : 95,
+                  }}
+                >
+                  <AmpPedalboardPanel />
+                </div>
+              )}
 
-      {/* Retractable Interactive Playable Fretboard Panel */}
-      {isFretboardOpen && (
-        <div
-          onPointerDown={() => setActiveFloatingPanel('fretboard')}
-          style={{
-            position: 'absolute',
-            top: 70,
-            left: '50%',
-            zIndex: activeFloatingPanel === 'fretboard' ? 100 : 96,
-          }}
-        >
-          <PlayableFretboardPanel />
+              {/* Retractable Interactive Playable Fretboard Panel */}
+              {isFretboardOpen && (
+                <div
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    setActiveFloatingPanel('fretboard');
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 60,
+                    left: 1000,
+                    zIndex: activeFloatingPanel === 'fretboard' ? 100 : 96,
+                  }}
+                >
+                  <PlayableFretboardPanel />
+                </div>
+              )}
+
+              {/* Draggable Tab Player Panel */}
+              {isTabPanelOpen && (
+                <div
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    setActiveFloatingPanel('tab');
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 480,
+                    left: 40,
+                    zIndex: activeFloatingPanel === 'tab' ? 100 : 97,
+                  }}
+                >
+                  <TabPanel />
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -266,7 +409,7 @@ export function DualCanvas() {
       {isSlotModalOpen && <LayoutSlotsModal />}
 
       {/* Empty state overlay */}
-      {isEmpty && (
+      {isEmpty && activeView !== 'sound_systems' && (
         <div className="canvas-empty" style={{ pointerEvents: 'auto' }}>
           <div className="canvas-empty__icon" style={{ opacity: 0.4 }}>
             <svg

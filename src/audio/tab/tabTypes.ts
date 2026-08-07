@@ -1,0 +1,56 @@
+/**
+ * tabTypes.ts — Schema Definitions for Guitar Tablature
+ */
+
+export type ArticulationType =
+  | 'none'
+  | 'hammer'
+  | 'pull'
+  | 'slide_up'
+  | 'slide_down'
+  | 'bend'
+  | 'vibrato'
+  | 'palmmute'
+  | 'mute';
+
+export interface TabNote {
+  /** String index: 0 = High E, 5 = Low E */
+  stringIdx: number;
+  /** Fret number (0-24) */
+  fret: number;
+  /** Note duration in beat units (e.g. 0.25 = 16th note, 0.5 = 8th note, 1.0 = quarter note) */
+  durationBeats: number;
+  /** Normalized velocity (0.0 to 1.0) */
+  velocity: number;
+  /** Playing technique / articulation */
+  articulation: ArticulationType;
+  /** Target fret for slides or pitch bends */
+  targetFret?: number;
+}
+
+export interface TabBeat {
+  /** Offset from the beginning of the measure in beats */
+  offsetBeats: number;
+  /** Notes struck simultaneously at this beat */
+  notes: TabNote[];
+}
+
+export interface TabMeasure {
+  /** Measure index (0-based) */
+  index: number;
+  /** Beats contained in this measure */
+  beats: TabBeat[];
+}
+
+export interface TabScore {
+  /** Score title or parsed header */
+  title: string;
+  /** Tempo in Beats Per Minute */
+  tempoBpm: number;
+  /** Time signature: [numerator, denominator] e.g. [4, 4] */
+  timeSignature: [number, number];
+  /** Tuning identifier (e.g. 'standard', 'drop_d') */
+  tuningId: string;
+  /** Measures list */
+  measures: TabMeasure[];
+}

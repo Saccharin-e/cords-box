@@ -70,26 +70,42 @@ export class WdfGuitarCircuitSolver {
 
     let volumePos = 1.0;
     let tonePos = 1.0;
+    let volumeMaxOhms = 250000;
+    let toneMaxOhms = 250000;
+    let toneCapFarads = 47e-9; // Default 0.047 uF
+    let trebleBleedCapFarads = 0;
 
     for (const comp of activeComponents) {
-      if (comp.type === 'pot_volume' || comp.type === 'pot_pushpull') {
-        const val = comp.value as { position: number } | undefined;
-        volumePos = val?.position ?? 1.0;
+      if (comp.type === 'pot_volume' || comp.type === 'pot_pushpull' || comp.type === 'pot_concentric') {
+        const val = comp.value as { position?: number; maxOhms?: number } | undefined;
+        volumePos = val?.position ?? volumePos;
+        volumeMaxOhms = val?.maxOhms ?? volumeMaxOhms;
       } else if (comp.type === 'pot_tone') {
-        const val = comp.value as { position: number } | undefined;
-        tonePos = val?.position ?? 1.0;
+        const val = comp.value as { position?: number; maxOhms?: number } | undefined;
+        tonePos = val?.position ?? tonePos;
+        toneMaxOhms = val?.maxOhms ?? toneMaxOhms;
+      } else if (comp.type === 'capacitor' || comp.type === 'treble_bleed') {
+        const val = comp.value as { farads?: number } | number | undefined;
+        const capValue = typeof val === 'number' ? val : (val?.farads ?? 47e-9);
+        if (capValue < 5e-9) {
+          // Small capacitor (<5nF e.g. 1nF) -> Treble Bleed Network
+          trebleBleedCapFarads = capValue;
+        } else {
+          // Main tone capacitor
+          toneCapFarads = capValue;
+        }
       }
     }
 
     this.buildCircuit({
       pickupInductanceH: 3.2,
       pickupResistanceOhms: 6500,
-      volumePotMaxOhms: 250000,
+      volumePotMaxOhms: volumeMaxOhms,
       volumePotPos: volumePos,
-      tonePotMaxOhms: 250000,
+      tonePotMaxOhms: toneMaxOhms,
       tonePotPos: tonePos,
-      toneCapFarads: 47e-9, // 0.047 uF
-      cableCapacitanceFarads: 500e-12, // 500 pF cable
+      toneCapFarads: toneCapFarads,
+      cableCapacitanceFarads: 500e-12 + trebleBleedCapFarads, // High-frequency bypass compensation
     });
   }
 

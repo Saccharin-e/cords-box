@@ -23,11 +23,14 @@ export default function App() {
   useEffect(() => {
     document.documentElement.style.setProperty('--inspector-width', `${inspectorWidth}px`);
 
-    // Auto-load functional Guitar Sound Test Bench circuit & open test bench panel on initial load
-    if (useCanvasStore.getState().instances.length === 0) {
-      loadPresetById('guitar_sound_test_template');
-      useCanvasStore.setState({ isTestPanelOpen: true });
-    }
+    // Restore shared circuit from URL hash if present; otherwise load test bench template
+    import('@graph/circuitSerializer').then(({ importCircuitFromUrlHash }) => {
+      const restored = importCircuitFromUrlHash();
+      if (!restored && useCanvasStore.getState().instances.length === 0) {
+        loadPresetById('guitar_sound_test_template');
+        useCanvasStore.setState({ isTestPanelOpen: true });
+      }
+    });
   }, [inspectorWidth]);
 
   const gridCols = `${isSidebarOpen ? '280px' : '0px'} 1fr ${isInspectorOpen ? 'var(--inspector-width, 320px)' : '0px'}`;
