@@ -13,11 +13,22 @@ let wasmMemory;
 class WdfResistor {
   constructor(resistance) {
     this.portResistance = Math.max(0.001, resistance);
-    // No state
   }
   waveReflect(_a) { return 0; }
   step(_a) {}
   reset() {}
+}
+
+/** WDF Voltage Source + Resistor: models a pickup generating voltage Vs */
+class WdfVoltageSourceResistor {
+  constructor(resistance) {
+    this.portResistance = Math.max(0.001, resistance);
+    this.Vs = 0;
+  }
+  setVoltage(Vs) { this.Vs = Vs; }
+  waveReflect(_a) { return this.Vs; }
+  step(_a) {}
+  reset() { this.Vs = 0; }
 }
 
 /** WDF Capacitor (bilinear transform): R = T/(2C), state: b[n] = a[n-1] */
@@ -159,15 +170,17 @@ class WdfCircuit {
   _buildTree() {
     const p = this._params;
     const sr = this.sampleRate;
-
-    // Pickup branches (dynamically build parallel/series tree based on pickups)
-    let currentPickupNode = null;
     const pickups = p.pickups || [{ resistanceR: 6500, inductanceH: 2.4 }];
+
+    this._pickupSources = [];
     
+    // Pickups in parallel (or series if isSeries=true)
+    let currentPickupNode = null;
     for (const pu of pickups) {
-      const r = new WdfResistor(pu.resistanceR);
+      const r = new WdfVoltageSourceResistor(pu.resistanceR);
       const l = new WdfInductor(pu.inductanceH, sr);
       const branch = new WdfSeriesAdaptor(r, l);
+      this._pickupSources.push(r);
       
       if (!currentPickupNode) {
         currentPickupNode = branch;
@@ -249,9 +262,19 @@ class WdfCircuit {
 
   processSample(vin) {
     if (!this._root) return vin;
-    const b = this._root.waveReflect(vin);
-    this._root.step(vin);
-    return (vin + b) * 0.5;
+    
+    // Inject voltage source directly into the pickups
+    for (const source of this._pickupSources) {
+      source.setVoltage(vin);
+    }
+    
+    // Evaluate tree with open-circuit load at the jack (a=0)
+    // For a parallel root with a=0, b0 is the true open-circuit voltage
+    const b = this._root.waveReflect(0);
+    this._root.step(0);
+    
+    // The WDF series adaptors invert polarity, so we invert it back
+    return -b;
   }
 
   processBuffer(input, output) {

@@ -41,6 +41,27 @@ export class WdfResistor implements WdfElement {
   reset(): void {}
 }
 
+/** WDF Voltage Source + Resistor: models a pickup generating voltage Vs */
+export class WdfVoltageSourceResistor implements WdfElement {
+  public portResistance: number;
+  private Vs: number;
+
+  constructor(resistance: number) {
+    this.portResistance = Math.max(0.001, resistance);
+    this.Vs = 0;
+  }
+  
+  setVoltage(Vs: number) { this.Vs = Vs; }
+
+  waveReflect(_a: number): number {
+    return this.Vs;
+  }
+
+  step(_a: number): void {}
+
+  reset(): void { this.Vs = 0; }
+}
+
 /**
  * WDF Potentiometer
  * Variable resistance R_pot = maxResistance * position
