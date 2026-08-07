@@ -31,12 +31,12 @@ describe('WdfGuitarCircuitSolver', () => {
   });
 
   it('should build circuit from Graph and adapt pot values', () => {
-    const graph = new Graph('TestGuitar');
+    const graph = new Graph('Guitar');
     graph.addComponent({
       id: 'vol-1',
       type: 'pot_volume',
       label: 'Volume',
-      value: { position: 0.5, taper: 'audio' },
+      value: { resistance_kohms: 250, taper: 'audio', position: 0.5 },
     });
 
     solver.buildFromGraph(graph, null);

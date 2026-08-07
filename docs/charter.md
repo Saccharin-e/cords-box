@@ -2,36 +2,33 @@
 
 ## 1. Objective
 
-Build a sophisticated, web-based guitar-making sandbox, starting with an intuitive wiring simulator. The tool will let a user assemble a guitar wiring circuit from real components, see the live signal path as a schematic, and hear the result via a DSP-driven audio engine. While the initial build will focus exclusively on guitars, the underlying architecture will be modular to support sandboxing other stringed instruments (like bass or ukulele) in future updates.
+Build a sophisticated, web-based guitar-making sandbox, starting with an intuitive wiring simulator. The tool lets users assemble a guitar wiring circuit from real components, see the live signal path as a schematic, and hear the result via a DSP-driven audio engine powered by Wave Digital Filters (WDF). While initial development focuses on electric guitars, the underlying architecture is instrument-agnostic to support other stringed instruments (such as bass or ukulele) in future releases.
 
 ## 2. Enhanced User Experience (UI/UX)
 
-To ensure the sandbox is highly intuitive and user-friendly, the interface will prioritize visual feedback and tactile-feeling workflows:
+* **Component Library:** Drag-and-drop library for pickups (single-coil, humbucker), 3/4/5-way switches, push-pull/push-push pots, concentric pots, capacitors, resistors, and output jacks.
+* **Dual-View Rendering:** Konva.js dual-view canvas keeping a physical guitar-body layout and a node-based electrical schematic in sync at all times.
+* **Advanced Wiring & Connections:** Wire selection with customizable colors, wire types (e.g. vintage cloth push-back, modern vinyl, varying gauges), and connection methods (soldered joints vs quick-connect terminals).
+* **Real-Time Interactivity & Playable Fretboard:** Instant graph solving on every switch or pot interaction, paired with an interactive on-screen fretboard for plucking notes and auditioning strummed chords.
+* **CAD Canvas & Layout Slots:** Grid snapping, customizable theme choices, space-reclaiming retractable toolbars, layout slot persistence, and high-DPI PNG / PDF region export.
 
-*   **Component Library:** The UI will feature a drag-and-drop library for pickups, 3/4/5-way switches, push-pull/push-push pots, concentric pots, capacitors, resistors, and output jacks.
-*   **Dual-View Rendering:** The canvas will utilize a dual-view system to keep a physical guitar-body layout and a node-based electrical schematic in sync at all times.
-*   **Advanced Wiring & Connections:** Users will be able to select specific wire types (e.g., vintage cloth push-back, modern vinyl, varying gauges) and connection methods (e.g., soldered joints vs. quick-connect terminals). These will act as visual cues to help users map their physical builds.
-*   **Real-Time Interactivity:** The system will recompute the active signal path on every switch or pot interaction, providing real-time graph solving without requiring a manual "simulate" step.
+## 3. Scope & Accomplishments (v1 - Delivered)
 
-## 3. Scope & Extensibility
-
-The scope maintains the core functionality of the original wiring simulator while structuring the database for future growth.
-
-*   **In-Scope (v1 - Guitar Focus):** The application will feature single-guitar-topology simulation with editable component values for capacitor µF/pF, resistor Ω, and potentiometer kΩ plus taper. Changes will propagate to both the schematic and the audio engine immediately.
-*   **Future Scope (Instrument Agnostic):** Data schemas will be abstracted so that the root object requires an `instrument_family` tag (e.g., "Guitar"). This ensures the database and UI can effortlessly adapt to bass guitars, mandolins, or other instruments in later versions without rewriting the core logic.
-*   **Audio Engine:** The audio processing will accept a DI sample or mic input and apply EQ, phase-inversion, and filtering strictly derived from the current graph state.
+* **Guitar Topology Simulation:** Complete graph solver supporting arbitrary component connections, editable capacitor µF/pF, resistor Ω, and potentiometer kΩ values + tapers.
+* **WDF AudioWorklet Engine:** Off-thread Web Audio API processor (`guitar-processor` in `src/audio/processor.js`) running real-time wave-digital circuit solves with live parameter sync (`wdf-update`).
+* **Hybrid Sound Generator:** Dual physical modeling string synthesis (Karplus-Strong + Rust WebAssembly core) and CC0 Black & Green Guitars DI sample bank playback.
+* **Instrument Agnostic Schemas:** Data schemas enforce an `instrument_family` tag (e.g. `"Guitar"`), allowing seamless future extension to bass guitars or custom instruments.
 
 ## 4. System Architecture
 
-The sandbox will maintain a robust, three-tier decoupled architecture: a UI/Presentation Layer, a State Management Layer, and an Audio DSP Layer.
+The sandbox maintains a three-tier decoupled architecture:
 
-*   **Frontend & Rendering:** The application will use React and TypeScript for type safety, alongside Konva.js for performant layered 2D rendering of the physical and schematic views.
-*   **Audio Performance:** To avoid JavaScript garbage collection pauses on the audio thread, the DSP core will be written in C++ and compiled to WebAssembly (WASM), interfacing with the Web Audio API.
-*   **Expanded Data Schema:** The data schema for the circuit graph will manage nodes and edges. To support the enhanced user flow, the `edges` schema will be expanded to include visual properties (e.g., `"wireColor": "yellow"`, `"connectionType": "solder"`).
+* **Frontend & Rendering:** React 19 + TypeScript + Konva.js (`react-konva`) for performant layered 2D rendering.
+* **Audio Performance:** Audio processing runs in an `AudioWorklet` with optional C++/Rust WebAssembly DSP core to avoid main-thread garbage collection pauses.
+* **Expanded Data Schema:** Circuit graph manages nodes, edges, and visual metadata (wire colors, solder types, gauge).
 
 ## 5. Validation & Quality Assurance
 
-To prevent frustrating real-world build errors, the sandbox will include robust automated validation.
-
-*   **State Validator (Linter):** The system will feature a linter to flag dead shorts to ground, open circuits, and specifically same-pole jumper chains that transitively tie two "isolated" positions together.
-*   **Truth-Table Export:** Users will be able to export the resolved connectivity as a human-readable truth-table for any given switch/pot configuration, allowing them to cross-check their work against hand-derived or manufacturer reference diagrams.
+* **State Validator (Linter):** Automated linter flagging dead shorts to ground, open circuits, and same-pole jumper chains.
+* **Truth-Table Export:** Exportable connectivity truth tables for any switch/pot configuration to cross-check against reference diagrams.
+* **Automated Test Coverage:** 100% passing Vitest test suite covering graph solving, lint rules, preset libraries, slot storage, audio pipeline, and UI fretboard components.

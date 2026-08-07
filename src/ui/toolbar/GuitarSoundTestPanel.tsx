@@ -24,7 +24,6 @@ export function GuitarSoundTestPanel() {
   const [demoSongPlaying, setDemoSongPlaying] = useState(false);
   const [selectedDemoGenre, setSelectedDemoGenre] = useState<GuitarDemoGenre>('rock');
   const [selectedPresetId, setSelectedPresetId] = useState('guitar_sound_test_template');
-  const [sampleBankReady, setSampleBankReady] = useState(audioPipeline.isSampleBankReady());
   const [volumeBoost, setVolumeBoost] = useState<number>(audioPipeline.getMasterVolumeBoost());
   const [usingSamples, setUsingSamples] = useState<boolean>(audioPipeline.isUsingSamples());
 
@@ -90,7 +89,6 @@ export function GuitarSoundTestPanel() {
       setAudioActive(audioEngine.isReady());
       setAutoStrumming(audioPipeline.isAutoStrumming());
       setDemoSongPlaying(audioPipeline.isDemoSongPlaying());
-      setSampleBankReady(audioPipeline.isSampleBankReady());
       setVolumeBoost(audioPipeline.getMasterVolumeBoost());
       setUsingSamples(audioPipeline.isUsingSamples());
     };

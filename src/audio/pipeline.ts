@@ -166,16 +166,15 @@ function createCleanTubeCurve(): Float32Array<ArrayBuffer> {
   const samples = 2048;
   const curve = new Float32Array(new ArrayBuffer(samples * Float32Array.BYTES_PER_ELEMENT));
 
+  // Triode-style soft saturation: y = x / (1 + k|x|) is an odd function
+  // (no DC bias) with unity slope at the origin, so normal playing levels
+  // pick up gentle harmonic coloration immediately rather than only near
+  // full scale, while the curve stays smooth and monotonic.
+  const drive = 0.3;
+
   for (let i = 0; i < samples; i += 1) {
     const input = (i * 2) / (samples - 1) - 1;
-    // Pristine 1:1 linear clean response for input amplitudes up to 0.85
-    if (Math.abs(input) <= 0.85) {
-      curve[i] = input;
-    } else {
-      const sign = input < 0 ? -1 : 1;
-      const mag = Math.abs(input);
-      curve[i] = sign * (0.85 + Math.tanh((mag - 0.85) * 1.5) * 0.15);
-    }
+    curve[i] = input / (1 + drive * Math.abs(input));
   }
 
   cleanTubeCurveCache = curve;
@@ -367,8 +366,11 @@ export class AudioPipeline {
     this.wdfWorkletNode.port.postMessage({
       type: 'wdf-update',
       params: {
-        volumePos: this.activeTopology.masterVolume,
-        tonePos: this.activeTopology.masterTone,
+        // Raw pot positions — the worklet applies its own taper, so sending
+        // the pre-tapered activeTopology values would double-taper the audio
+        // taper pots.
+        volumePos: volPot?.value && 'position' in volPot.value ? volPot.value.position : 1.0,
+        tonePos: tonePot?.value && 'position' in tonePot.value ? tonePot.value.position : 1.0,
         volPotMaxR,
         tonePotMaxR,
         toneCapFarads,
@@ -578,6 +580,17 @@ export class AudioPipeline {
 
     // 3. Stompbox pedalboard: a restrained compressor and transparent
     // overdrive before the amp. The dry blend keeps pick attack intact.
+    // A dedicated headroom limiter sits first: fast attack, high threshold,
+    // steep ratio — it stops summed strum transients from slamming into the
+    // waveshaper stages over unity, while the musical compressor below stays
+    // free for tone and sustain shaping.
+    const headroomLimiter = ctx.createDynamicsCompressor();
+    headroomLimiter.threshold.setValueAtTime(-2, ctx.currentTime);
+    headroomLimiter.knee.setValueAtTime(0, ctx.currentTime);
+    headroomLimiter.ratio.setValueAtTime(12, ctx.currentTime);
+    headroomLimiter.attack.setValueAtTime(0.002, ctx.currentTime);
+    headroomLimiter.release.setValueAtTime(0.08, ctx.currentTime);
+
     const pedalCompressor = ctx.createDynamicsCompressor();
     pedalCompressor.threshold.setValueAtTime(-25, ctx.currentTime);
     pedalCompressor.knee.setValueAtTime(18, ctx.currentTime);
@@ -641,18 +654,14 @@ export class AudioPipeline {
     toneTreble.frequency.value = 2800;
     toneTreble.gain.value = 0.6;
 
-    // 5. Power amp: gentle sag/compression followed by a second tube stage.
+    // 5. Power amp: a second tube stage drives the speaker. Sag/compression
+    // is handled by the single final limiter below — stacked generic browser
+    // compressors risk audible pumping.
     const powerAmpGain = ctx.createGain();
     powerAmpGain.gain.value = 1.05;
     const powerAmpTube = ctx.createWaveShaper();
     powerAmpTube.curve = createCleanTubeCurve();
     powerAmpTube.oversample = '4x';
-    const powerSag = ctx.createDynamicsCompressor();
-    powerSag.threshold.setValueAtTime(-22, ctx.currentTime);
-    powerSag.knee.setValueAtTime(20, ctx.currentTime);
-    powerSag.ratio.setValueAtTime(1.5, ctx.currentTime);
-    powerSag.attack.setValueAtTime(0.04, ctx.currentTime);
-    powerSag.release.setValueAtTime(0.22, ctx.currentTime);
 
     // 6. 1x12 speaker/cabinet impulse response and speaker roll-off.
     const cabinet = ctx.createConvolver();
@@ -696,13 +705,15 @@ export class AudioPipeline {
 
     const stereoMerger = ctx.createChannelMerger(2);
 
-    // 8. Final anti-clipping dynamics limiter.
+    // 8. Final anti-clipping dynamics limiter. Slow-ish attack and a relaxed
+    // ratio keep it as a safety limiter rather than an audible pump (the fast
+    // 5ms attack + 4:1 stack previously risked breathing on chords).
     this.compressorNode = ctx.createDynamicsCompressor();
-    this.compressorNode.threshold.setValueAtTime(-8, ctx.currentTime);
-    this.compressorNode.knee.setValueAtTime(6, ctx.currentTime);
-    this.compressorNode.ratio.setValueAtTime(4.0, ctx.currentTime);
-    this.compressorNode.attack.setValueAtTime(0.005, ctx.currentTime);
-    this.compressorNode.release.setValueAtTime(0.08, ctx.currentTime);
+    this.compressorNode.threshold.setValueAtTime(-10, ctx.currentTime);
+    this.compressorNode.knee.setValueAtTime(10, ctx.currentTime);
+    this.compressorNode.ratio.setValueAtTime(3.0, ctx.currentTime);
+    this.compressorNode.attack.setValueAtTime(0.015, ctx.currentTime);
+    this.compressorNode.release.setValueAtTime(0.15, ctx.currentTime);
 
     // 6. Analyser Node for Visual Oscilloscope
     this.analyserNode = ctx.createAnalyser();
@@ -721,7 +732,8 @@ export class AudioPipeline {
     this.activeNodes.set('room-return', roomReturn);
 
     // Connect pickup -> pedals -> tube amp -> cabinet -> stereo Haas expander & room -> output.
-    this.masterGain.connect(pedalCompressor);
+    this.masterGain.connect(headroomLimiter);
+    headroomLimiter.connect(pedalCompressor);
     pedalCompressor.connect(pedalDry);
     pedalCompressor.connect(pedalDrive);
     pedalDrive.connect(overdrive);
@@ -740,8 +752,7 @@ export class AudioPipeline {
     toneMid.connect(toneTreble);
     toneTreble.connect(powerAmpGain);
     powerAmpGain.connect(powerAmpTube);
-    powerAmpTube.connect(powerSag);
-    powerSag.connect(cabinet);
+    powerAmpTube.connect(cabinet);
 
     cabinet.connect(cabHighpass);
     cabHighpass.connect(cabBody);
@@ -800,7 +811,12 @@ export class AudioPipeline {
     return this.sampleBank.findNote(targetMidi, velocity);
   }
 
-  private triggerRecordedGuitar(ctx: AudioContext, freq: number, velocity: number): boolean {
+  private triggerRecordedGuitar(
+    ctx: AudioContext,
+    freq: number,
+    velocity: number,
+    chordSize: number = 1,
+  ): boolean {
     const targetMidi = Math.round(69 + 12 * Math.log2(freq / 440));
     const sample = this.findGuitarSampleBuffer(targetMidi, velocity);
     if (!sample || !this.sampleInputNode) return false;
@@ -816,7 +832,11 @@ export class AudioPipeline {
 
     const sampleGain = ctx.createGain();
     const pitchCompensation = Math.max(1.0, Math.sqrt(pitchShift));
-    const gainVal = Math.min(1.2, Math.max(0.3, (velocity * 1.25) / pitchCompensation));
+    // Polyphony-aware gain floor: without the chord-size term every note
+    // contributes a hardcoded 0.3 into the shared bus, so a 6-note chord
+    // guarantees 1.8× before any velocity scaling — clipping on arrival.
+    const gainFloor = 0.3 / Math.sqrt(chordSize);
+    const gainVal = Math.min(1.2, Math.max(gainFloor, (velocity * 1.25) / pitchCompensation));
     sampleGain.gain.setValueAtTime(gainVal, ctx.currentTime);
 
     // Formant/resonance compensation for pitch-shifting
@@ -843,9 +863,11 @@ export class AudioPipeline {
     }
     sampleGain.connect(this.sampleInputNode);
     this.activeSampleSources.add(source);
+    this.updateSampleBusGain(ctx);
 
     source.onended = () => {
       this.activeSampleSources.delete(source);
+      this.updateSampleBusGain(ctx);
       try {
         source.disconnect();
         sampleGain.disconnect();
@@ -855,6 +877,19 @@ export class AudioPipeline {
     };
     source.start(ctx.currentTime + 0.001);
     return true;
+  }
+
+  /**
+   * Polyphony compensation on the sample bus: scale the shared input gain
+   * inversely with the number of simultaneously ringing notes (1/sqrt(n)
+   * power normalization) so already-ringing notes duck alongside the new
+   * note instead of stacking toward clipping. Smoothed to avoid clicks.
+   */
+  private updateSampleBusGain(ctx: AudioContext): void {
+    if (!this.sampleInputNode) return;
+    const count = Math.max(1, this.activeSampleSources.size);
+    const comp = 1 / Math.sqrt(count);
+    this.sampleInputNode.gain.setTargetAtTime(comp, ctx.currentTime, 0.012);
   }
 
   /**
@@ -1108,10 +1143,11 @@ export class AudioPipeline {
     freq: number = 329.63,
     velocity: number = 0.55,
     _stringIndex: number = 0,
+    chordSize: number = 1,
   ): Promise<void> {
     let ctx = audioEngine.getContext();
     if (!ctx) {
-      void audioEngine.initialize();
+      await audioEngine.initialize();
       ctx = audioEngine.getContext();
     }
     if (!ctx) return;
@@ -1132,10 +1168,10 @@ export class AudioPipeline {
     this.routeInputThroughTopology(ctx, velocity);
 
     if (this.useSamples) {
-      if (!this.triggerRecordedGuitar(ctx, freq, velocity)) {
+      if (!this.triggerRecordedGuitar(ctx, freq, velocity, chordSize)) {
         await bankPromise;
         if (this.inputNode) {
-          if (!this.triggerRecordedGuitar(ctx, freq, velocity)) {
+          if (!this.triggerRecordedGuitar(ctx, freq, velocity, chordSize)) {
             this.triggerSynthesizedGuitar(ctx, freq, velocity);
           }
         }
@@ -1164,16 +1200,26 @@ export class AudioPipeline {
     }
     const rawStringMix = this.inputNode;
 
-    // Route signals through Worklet WDF passive circuit solver if available
+    // Sample mode bypasses the canvas circuit completely: recorded DI
+    // samples go straight into the amp sim (masterGain -> pedals -> tubes ->
+    // cabinet). Only synthesized strings route through the Worklet WDF
+    // passive circuit solver / pickup-branch heuristic below.
+    this.sampleInputNode.disconnect();
+    this.sampleInputNode.connect(this.masterGain);
+
     if (this.wdfWorkletNode) {
+      // Clean rewire: on the worklet-ready reroute the bus may already be
+      // connected straight to masterGain from the no-worklet fallback route.
+      rawStringMix.disconnect();
+      this.wdfWorkletNode.disconnect();
       try {
-        this.sampleInputNode.connect(this.wdfWorkletNode);
+        rawStringMix.connect(this.wdfWorkletNode);
         this.wdfWorkletNode.connect(this.masterGain);
       } catch {
-        this.sampleInputNode.connect(this.masterGain);
+        rawStringMix.connect(this.masterGain);
       }
-    } else {
-      this.sampleInputNode.connect(this.masterGain);
+      this.topologyRouted = true;
+      return;
     }
 
     // 2. Pickup Branches (Parallel physical filtering with power-normalized mix bus)
@@ -1263,7 +1309,7 @@ export class AudioPipeline {
     const chordVelocity = Math.min(0.9, 0.85 / Math.sqrt(freqs.length / 3.0));
     freqs.forEach((freq, idx) => {
       setTimeout(() => {
-        void this.triggerPluck(freq, chordVelocity, idx % 6);
+        void this.triggerPluck(freq, chordVelocity, idx % 6, freqs.length);
       }, idx * delayMs);
     });
   }
@@ -1599,6 +1645,14 @@ export class AudioPipeline {
     this.pickupBranchGains.clear();
     this.masterToneFilter = null;
     this.outputGainNode = null;
+
+    if (this.wdfWorkletNode) {
+      try {
+        this.wdfWorkletNode.disconnect();
+      } catch {
+        // Ignored
+      }
+    }
 
     for (const source of this.activeSampleSources) {
       try {
