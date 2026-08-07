@@ -371,52 +371,47 @@ class GuitarProcessor extends AudioWorkletProcessor {
     if (!output || output.length === 0) return true;
 
     const outChan = output[0];
+    const inChan = (input && input.length > 0 && input[0].length > 0) ? input[0] : null;
 
-    // 1. Determine the raw input source (Web Audio sample bank vs WASM synth)
-    let rawBuffer = null;
-    if (input && input.length > 0 && input[0].length > 0) {
-      rawBuffer = input[0];
-    } else if (this.engine) {
+    // Run WASM DSP engine chunk if active
+    if (this.engine) {
       this.engine.process_chunk();
       // Handle potential WASM memory growth detachment
       if (!this.outBuffer || this.outBuffer.byteLength === 0) {
         this.outBuffer = new Float32Array(wasmMemory.buffer, this.outPtr, 128);
       }
-      rawBuffer = this.outBuffer;
     }
 
-    if (rawBuffer && rawBuffer.length > 0) {
-      const pickups = this.wdf._params.pickups || [];
-      const numPickups = Math.max(1, pickups.length);
-      const mixNorm = 1 / Math.sqrt(numPickups);
-      const isSeries = this.wdf._params.isSeries;
-      const seriesBoost = isSeries && numPickups > 1 ? 1.4 : 1.0;
+    const pickups = this.wdf._params.pickups || [];
+    const numPickups = Math.max(1, pickups.length);
+    const mixNorm = 1 / Math.sqrt(numPickups);
+    const isSeries = this.wdf._params.isSeries;
+    const seriesBoost = isSeries && numPickups > 1 ? 1.4 : 1.0;
 
-      for (let i = 0; i < rawBuffer.length; i++) {
-        const rawSample = rawBuffer[i];
+    for (let i = 0; i < outChan.length; i++) {
+      let rawSample = 0;
+      if (inChan) rawSample += inChan[i];
+      if (this.outBuffer) rawSample += this.outBuffer[i];
 
-        if (pickups.length === 0) {
-          outChan[i] = this.wdf.processSample(rawSample);
-          continue;
-        }
-
-        // Apply pickup EQ (peaking biquads), phase inversion, and blend gains
-        let mixedVin = 0;
-        for (let pi = 0; pi < pickups.length; pi++) {
-          const p = pickups[pi];
-          const resonator = this.pickupResonators[pi];
-          const pickupSig = resonator ? resonator.process(rawSample) : rawSample;
-
-          let gain = (p.blendGain ?? 1.0) * seriesBoost;
-          if (p.isOutofPhase) gain *= -1;
-          mixedVin += pickupSig * gain;
-        }
-        mixedVin *= mixNorm;
-        
-        outChan[i] = this.wdf.processSample(mixedVin);
+      if (pickups.length === 0) {
+        outChan[i] = this.wdf.processSample(rawSample);
+        continue;
       }
-    } else {
-      outChan.fill(0);
+
+      // Apply pickup EQ (peaking biquads), phase inversion, and blend gains
+      let mixedVin = 0;
+      for (let pi = 0; pi < pickups.length; pi++) {
+        const p = pickups[pi];
+        const resonator = this.pickupResonators[pi];
+        const pickupSig = resonator ? resonator.process(rawSample) : rawSample;
+
+        let gain = (p.blendGain ?? 1.0) * seriesBoost;
+        if (p.isOutofPhase) gain *= -1;
+        mixedVin += pickupSig * gain;
+      }
+      mixedVin *= mixNorm;
+      
+      outChan[i] = this.wdf.processSample(mixedVin);
     }
 
     // Copy to remaining channels (stereo)
