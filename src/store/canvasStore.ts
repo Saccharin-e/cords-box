@@ -98,9 +98,16 @@ export interface ExportBox {
   aspectRatio: 'auto' | '1:1' | '16:9' | '4:3' | 'a4';
 }
 
+export interface SavedPanelStates {
+  isSidebarOpen: boolean;
+  isInspectorOpen: boolean;
+  isControlsOpen: boolean;
+}
+
 export interface CanvasStore {
   instances: CanvasComponentInstance[];
   activeView: ViewMode;
+  savedPanelsBeforeSoundSystem: SavedPanelStates | null;
   setActiveView: (view: ViewMode) => void;
   scale: number;
   panX: number;
@@ -221,7 +228,45 @@ export interface CanvasStore {
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
   instances: [],
   activeView: 'physical',
-  setActiveView: (view) => set({ activeView: view }),
+  savedPanelsBeforeSoundSystem: null,
+  setActiveView: (view) =>
+    set((s) => {
+      if (view === s.activeView) return {};
+
+      if (view === 'sound_systems') {
+        const saved = s.savedPanelsBeforeSoundSystem ?? {
+          isSidebarOpen: s.isSidebarOpen,
+          isInspectorOpen: s.isInspectorOpen,
+          isControlsOpen: s.isControlsOpen,
+        };
+
+        const hasSoundPanelOpen =
+          s.isTestPanelOpen || s.isAmpPanelOpen || s.isFretboardOpen || s.isTabPanelOpen;
+        const isTestPanelOpen = hasSoundPanelOpen ? s.isTestPanelOpen : true;
+        const activeFloatingPanel = hasSoundPanelOpen ? s.activeFloatingPanel : 'test';
+
+        return {
+          activeView: 'sound_systems',
+          savedPanelsBeforeSoundSystem: saved,
+          isSidebarOpen: false,
+          isInspectorOpen: false,
+          isControlsOpen: false,
+          isTestPanelOpen,
+          activeFloatingPanel,
+        };
+      } else if (s.activeView === 'sound_systems') {
+        const restored = s.savedPanelsBeforeSoundSystem;
+        return {
+          activeView: view,
+          savedPanelsBeforeSoundSystem: null,
+          isSidebarOpen: restored ? restored.isSidebarOpen : s.isSidebarOpen,
+          isInspectorOpen: restored ? restored.isInspectorOpen : s.isInspectorOpen,
+          isControlsOpen: restored ? restored.isControlsOpen : s.isControlsOpen,
+        };
+      } else {
+        return { activeView: view };
+      }
+    }),
   scale: 1,
   panX: 0,
   panY: 0,
@@ -361,43 +406,90 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   clipboard: null,
 
   toggleToolbar: () => set((s) => ({ isToolbarOpen: !s.isToolbarOpen })),
-  toggleSidebar: () => set((s) => ({ isSidebarOpen: !s.isSidebarOpen })),
-  toggleInspector: () => set((s) => ({ isInspectorOpen: !s.isInspectorOpen })),
-  toggleControls: () => set((s) => ({ isControlsOpen: !s.isControlsOpen })),
+  toggleSidebar: () =>
+    set((s) => {
+      if (s.activeView === 'sound_systems') {
+        const restored = s.savedPanelsBeforeSoundSystem;
+        return {
+          activeView: 'physical',
+          savedPanelsBeforeSoundSystem: null,
+          isSidebarOpen: true,
+          isInspectorOpen: restored ? restored.isInspectorOpen : s.isInspectorOpen,
+          isControlsOpen: restored ? restored.isControlsOpen : s.isControlsOpen,
+        };
+      }
+      return { isSidebarOpen: !s.isSidebarOpen };
+    }),
+  toggleInspector: () =>
+    set((s) => {
+      if (s.activeView === 'sound_systems') {
+        const restored = s.savedPanelsBeforeSoundSystem;
+        return {
+          activeView: 'physical',
+          savedPanelsBeforeSoundSystem: null,
+          isInspectorOpen: true,
+          isSidebarOpen: restored ? restored.isSidebarOpen : s.isSidebarOpen,
+          isControlsOpen: restored ? restored.isControlsOpen : s.isControlsOpen,
+        };
+      }
+      return { isInspectorOpen: !s.isInspectorOpen };
+    }),
+  toggleControls: () =>
+    set((s) => {
+      if (s.activeView === 'sound_systems') {
+        const restored = s.savedPanelsBeforeSoundSystem;
+        return {
+          activeView: 'physical',
+          savedPanelsBeforeSoundSystem: null,
+          isControlsOpen: true,
+          isSidebarOpen: restored ? restored.isSidebarOpen : s.isSidebarOpen,
+          isInspectorOpen: restored ? restored.isInspectorOpen : s.isInspectorOpen,
+        };
+      }
+      return { isControlsOpen: !s.isControlsOpen };
+    }),
   toggleTestPanel: () =>
     set((s) => {
       const isOpening = !s.isTestPanelOpen;
+      if (isOpening && s.activeView !== 'sound_systems') {
+        get().setActiveView('sound_systems');
+      }
       return {
         isTestPanelOpen: isOpening,
         activeFloatingPanel: isOpening ? 'test' : s.activeFloatingPanel,
-        activeView: isOpening ? 'sound_systems' : s.activeView,
       };
     }),
   toggleAmpPanel: () =>
     set((s) => {
       const isOpening = !s.isAmpPanelOpen;
+      if (isOpening && s.activeView !== 'sound_systems') {
+        get().setActiveView('sound_systems');
+      }
       return {
         isAmpPanelOpen: isOpening,
         activeFloatingPanel: isOpening ? 'amp' : s.activeFloatingPanel,
-        activeView: isOpening ? 'sound_systems' : s.activeView,
       };
     }),
   toggleFretboard: () =>
     set((s) => {
       const isOpening = !s.isFretboardOpen;
+      if (isOpening && s.activeView !== 'sound_systems') {
+        get().setActiveView('sound_systems');
+      }
       return {
         isFretboardOpen: isOpening,
         activeFloatingPanel: isOpening ? 'fretboard' : s.activeFloatingPanel,
-        activeView: isOpening ? 'sound_systems' : s.activeView,
       };
     }),
   toggleTabPanel: () =>
     set((s) => {
       const isOpening = !s.isTabPanelOpen;
+      if (isOpening && s.activeView !== 'sound_systems') {
+        get().setActiveView('sound_systems');
+      }
       return {
         isTabPanelOpen: isOpening,
         activeFloatingPanel: isOpening ? 'tab' : s.activeFloatingPanel,
-        activeView: isOpening ? 'sound_systems' : s.activeView,
       };
     }),
   toggleSlotModal: () => set((s) => ({ isSlotModalOpen: !s.isSlotModalOpen })),

@@ -9,6 +9,7 @@
  */
 
 import { audioEngine } from './context';
+import { renderKarplusStrong } from './karplusStrong';
 import { SampleBank } from './sampleBank';
 import { WdfGuitarCircuitSolver } from './wdf/wdfCircuitSolver';
 import type { SolverResult } from '@graph/solver';
@@ -115,6 +116,10 @@ export interface AmpPedalboardState {
   // Speaker Cabinet
   cabModel: CabinetModelType;
   micDistance: number;
+
+  // Signal Chain
+  cableLengthMeters: number;
+  ampInputImpedanceOhms: number;
 }
 
 export const DEFAULT_AMP_PEDALBOARD_STATE: AmpPedalboardState = {
@@ -153,6 +158,9 @@ export const DEFAULT_AMP_PEDALBOARD_STATE: AmpPedalboardState = {
 
   cabModel: '1x12_open',
   micDistance: 0.2,
+
+  cableLengthMeters: 5,
+  ampInputImpedanceOhms: 1000000,
 };
 
 const tubeCurveCache = new Map<string, Float32Array<ArrayBuffer>>();
@@ -161,39 +169,163 @@ const cabinetIrCache = new Map<number, AudioBuffer>();
 const roomIrCache = new Map<number, AudioBuffer>();
 
 /**
- * Per-amp-model triode curve parameters.
- * Asymmetric clipping: positive half clips harder (grid conduction, producing
- * even-order harmonics) while the negative half stays cleaner (cutoff region).
+ * Koren triode model parameters per amp type.
+ *
+ * Based on Norman Koren's triode plate-current equation, these parameters
+ * produce physically realistic asymmetric soft-knee saturation:
+ * - Positive half: grid conduction clipping with strong even-order harmonics (2nd, 4th)
+ * - Negative half: cutoff region — softer compression, preserving odd harmonics
+ *
+ * `mu`: amplification factor (higher = more gain before saturation)
+ * `biasShift`: DC offset that controls where the operating point sits on the curve
+ * `satOnset`: amplitude where saturation begins (lower = earlier breakup)
+ * `asymmetry`: ratio of positive to negative clipping intensity (>1 = harder positive clip)
  */
-const AMP_TUBE_PARAMS: Record<AmpModelType, { posDrive: number; negDrive: number; posScale: number; negScale: number }> = {
-  clean_twin:  { posDrive: 1.2, negDrive: 0.9, posScale: 0.92, negScale: 0.97 },
-  crunch_800:  { posDrive: 1.8, negDrive: 1.3, posScale: 0.82, negScale: 0.92 },
-  high_gain:   { posDrive: 2.4, negDrive: 1.8, posScale: 0.75, negScale: 0.85 },
-  vox_chime:   { posDrive: 1.5, negDrive: 1.1, posScale: 0.88, negScale: 0.95 },
+const AMP_TUBE_PARAMS: Record<
+  AmpModelType,
+  {
+    mu: number;
+    biasShift: number;
+    satOnset: number;
+    asymmetry: number;
+  }
+> = {
+  // 12AX7 Fender Blackface: very linear, gentle compression above 0.7
+  clean_twin: { mu: 100, biasShift: 0.05, satOnset: 0.72, asymmetry: 1.25 },
+  // EL34 Marshall JCM800: earlier saturation, strong 2nd harmonic crunch
+  crunch_800: { mu: 60, biasShift: 0.12, satOnset: 0.42, asymmetry: 1.55 },
+  // Mesa Rectifier cascaded gain: hard compression above 0.25
+  high_gain: { mu: 35, biasShift: 0.22, satOnset: 0.25, asymmetry: 1.85 },
+  // EL84 Class-A Vox AC30: prominent cutoff-region softness, chimey character
+  vox_chime: { mu: 80, biasShift: 0.08, satOnset: 0.55, asymmetry: 1.15 },
 };
 
 /**
- * Asymmetric triode tube saturation curve.
+ * Per-amp-model tone stack coefficients.
  *
- * Unlike the previous symmetric x/(1+k|x|) which stayed linear below 0.85,
- * tanh(drive·x) begins gentle saturation immediately — ~8% deviation from
- * linear at x=0.3 with drive=1.6. The positive/negative asymmetry generates
- * second-harmonic content (characteristic tube warmth).
+ * Each amp model has a characteristic passive tone stack EQ shape applied via
+ * three BiquadFilterNodes (bass shelf, mid peak, treble shelf). These replace
+ * the previous generic fixed-value tone stack with model-accurate curves.
+ */
+const AMP_TONE_STACK: Record<
+  AmpModelType,
+  {
+    bassFreq: number;
+    bassGain: number;
+    midFreq: number;
+    midQ: number;
+    midGain: number;
+    trebleFreq: number;
+    trebleGain: number;
+  }
+> = {
+  // Fender: classic mid-scoop, pronounced bass/treble shelf
+  clean_twin: {
+    bassFreq: 120,
+    bassGain: 1.5,
+    midFreq: 400,
+    midQ: 0.9,
+    midGain: -4.5,
+    trebleFreq: 3200,
+    trebleGain: 2.0,
+  },
+  // Marshall: aggressive mid-presence, tight bass
+  crunch_800: {
+    bassFreq: 100,
+    bassGain: -1.0,
+    midFreq: 800,
+    midQ: 0.75,
+    midGain: 2.5,
+    trebleFreq: 2800,
+    trebleGain: 1.5,
+  },
+  // Mesa: deep V-scoop, tight low-end, sizzling highs
+  high_gain: {
+    bassFreq: 80,
+    bassGain: -2.0,
+    midFreq: 500,
+    midQ: 1.1,
+    midGain: -5.0,
+    trebleFreq: 4500,
+    trebleGain: 3.5,
+  },
+  // Vox: warm midrange, rolled-off highs, gentle bass
+  vox_chime: {
+    bassFreq: 140,
+    bassGain: 0.5,
+    midFreq: 600,
+    midQ: 0.65,
+    midGain: 1.0,
+    trebleFreq: 2400,
+    trebleGain: -1.5,
+  },
+};
+
+/**
+ * Koren-inspired asymmetric triode saturation waveshaper curve.
+ *
+ * Produces physically realistic soft-knee clipping where:
+ * - Positive half (grid conduction): exponential saturation onset generates
+ *   strong even-order harmonics (2nd, 4th) — the characteristic "tube warmth"
+ * - Negative half (cutoff region): gentler compression with a higher threshold,
+ *   preserving odd harmonics and keeping the waveform's negative excursion cleaner
+ *
+ * The asymmetry between positive and negative halves is what distinguishes tube
+ * saturation from symmetric digital clipping or simple tanh() curves.
  */
 function createTubeCurve(model: AmpModelType = 'clean_twin'): Float32Array<ArrayBuffer> {
   const cached = tubeCurveCache.get(model);
   if (cached) return cached;
 
-  const params = AMP_TUBE_PARAMS[model];
-  const N = 2048;
+  const p = AMP_TUBE_PARAMS[model];
+  const N = 4096; // Higher resolution for smoother saturation transitions
   const curve = new Float32Array(new ArrayBuffer(N * Float32Array.BYTES_PER_ELEMENT));
 
   for (let i = 0; i < N; i += 1) {
-    const x = (i * 2) / (N - 1) - 1;
-    if (x >= 0) {
-      curve[i] = Math.tanh(x * params.posDrive) * params.posScale;
+    const x = (i * 2) / (N - 1) - 1; // -1.0 to +1.0
+
+    // Apply bias shift (models the DC operating point of the tube)
+    const biased = x + p.biasShift;
+
+    if (biased >= 0) {
+      // Positive half — grid conduction clipping (even harmonics)
+      // Soft-knee: linear below satOnset, then exponential compression
+      const drive = biased / p.satOnset;
+      if (drive <= 1.0) {
+        // Below saturation onset: near-linear with gentle 2nd-order curve
+        curve[i] = biased * (1.0 - 0.15 * drive * drive);
+      } else {
+        // Above onset: exponential saturation approaching ceiling
+        const excess = drive - 1.0;
+        const ceiling = p.satOnset * 0.85; // Value at onset point
+        curve[i] = ceiling + (1.0 - ceiling) * (1.0 - Math.exp(-excess * p.asymmetry * 1.8));
+      }
     } else {
-      curve[i] = Math.tanh(x * params.negDrive) * params.negScale;
+      // Negative half — cutoff clipping (odd harmonics preserved)
+      // Softer compression with a later onset and gentler knee
+      const absBiased = -biased;
+      const cutoffOnset = p.satOnset * (1.0 + 0.3 / p.asymmetry);
+      const drive = absBiased / cutoffOnset;
+      if (drive <= 1.0) {
+        curve[i] = biased * (1.0 - 0.08 * drive * drive);
+      } else {
+        const excess = drive - 1.0;
+        const ceiling = cutoffOnset * 0.92;
+        curve[i] = -(ceiling + (1.0 - ceiling) * (1.0 - Math.exp(-excess * 1.2)));
+      }
+    }
+  }
+
+  // Normalize curve to [-1, 1] range
+  let maxAbs = 0;
+  for (let i = 0; i < N; i++) {
+    const abs = Math.abs(curve[i]);
+    if (abs > maxAbs) maxAbs = abs;
+  }
+  if (maxAbs > 0 && maxAbs !== 1.0) {
+    const scale = 1.0 / maxAbs;
+    for (let i = 0; i < N; i++) {
+      curve[i] *= scale;
     }
   }
 
@@ -210,9 +342,8 @@ function createOverdriveCurve(): Float32Array<ArrayBuffer> {
     const input = (i * 2) / (curve.length - 1) - 1;
     const sign = input < 0 ? -1 : 1;
     const magnitude = Math.abs(input);
-    const softKnee = magnitude < 0.24
-      ? magnitude * 1.12
-      : 0.24 + (1 - Math.exp(-(magnitude - 0.24) * 2.2)) * 0.76;
+    const softKnee =
+      magnitude < 0.24 ? magnitude * 1.12 : 0.24 + (1 - Math.exp(-(magnitude - 0.24) * 2.2)) * 0.76;
     curve[i] = sign * softKnee;
   }
 
@@ -374,17 +505,24 @@ export class AudioPipeline {
       toneCapFarads = (toneCap.value.capacitance_pf ?? 47000) * 1e-12;
     }
 
-    const wdfPickups = this.activeTopology.pickups.map(p => {
+    const wdfPickups = this.activeTopology.pickups.map((p) => {
       let l = 2.4;
       let r = 6500;
-      if (p.id.includes('humbucker')) { l = 4.2; r = 8500; }
-      else if (p.id.includes('p90')) { l = 3.2; r = 7200; }
+      if (p.id.includes('humbucker')) {
+        l = 4.2;
+        r = 8500;
+      } else if (p.id.includes('p90')) {
+        l = 3.2;
+        r = 7200;
+      }
       return {
         inductanceH: l,
         resistanceR: r,
         delayMs: p.delayTimeMs,
+        resonantFreq: p.resonantFreq,
+        resonantQ: p.resonantQ,
         isOutofPhase: p.isOutofPhase,
-        blendGain: p.blendGain
+        blendGain: p.blendGain,
       };
     });
 
@@ -398,7 +536,8 @@ export class AudioPipeline {
         toneCapFarads,
         pickups: wdfPickups, // Send full array of pickups
         isSeries: this.activeTopology.isSeries,
-        cableCapFarads: 500e-12, // ~5m instrument cable (100pF/m typical)
+        cableCapFarads: this.ampPedalState.cableLengthMeters * 100e-12, // 100pF/m typical instrument cable
+        ampInputImpedanceOhms: this.ampPedalState.ampInputImpedanceOhms,
       },
     });
   }
@@ -478,26 +617,42 @@ export class AudioPipeline {
     const toneTreble = this.activeNodes.get('tone-treble') as BiquadFilterNode | undefined;
     const presence = this.activeNodes.get('amp-presence') as BiquadFilterNode | undefined;
     const preampGain = this.activeNodes.get('preamp-gain') as GainNode | undefined;
-    const pedalCompressor = this.activeNodes.get('pedal-compressor') as DynamicsCompressorNode | undefined;
+    const pedalCompressor = this.activeNodes.get('pedal-compressor') as
+      DynamicsCompressorNode | undefined;
     const pedalDry = this.activeNodes.get('pedal-dry') as GainNode | undefined;
     const overdriveWet = this.activeNodes.get('pedal-wet') as GainNode | undefined;
     const roomSend = this.activeNodes.get('room-send') as GainNode | undefined;
     const roomReturn = this.activeNodes.get('room-return') as GainNode | undefined;
 
-    if (toneBass) toneBass.gain.setValueAtTime((s.ampBass - 0.5) * 10, now);
-    if (toneMid) toneMid.gain.setValueAtTime((s.ampMid - 0.5) * 10, now);
-    if (toneTreble) toneTreble.gain.setValueAtTime((s.ampTreble - 0.5) * 10, now);
+    // Apply per-model tone stack: model-specific base curve + user knob offset
+    const ts = AMP_TONE_STACK[s.ampModel];
+    if (toneBass) {
+      toneBass.frequency.setValueAtTime(ts.bassFreq, now);
+      toneBass.gain.setValueAtTime(ts.bassGain + (s.ampBass - 0.5) * 10, now);
+    }
+    if (toneMid) {
+      toneMid.frequency.setValueAtTime(ts.midFreq, now);
+      toneMid.Q.setValueAtTime(ts.midQ, now);
+      toneMid.gain.setValueAtTime(ts.midGain + (s.ampMid - 0.5) * 10, now);
+    }
+    if (toneTreble) {
+      toneTreble.frequency.setValueAtTime(ts.trebleFreq, now);
+      toneTreble.gain.setValueAtTime(ts.trebleGain + (s.ampTreble - 0.5) * 10, now);
+    }
     if (presence) presence.gain.setValueAtTime((s.ampPresence - 0.5) * 8, now);
 
     if (preampGain) {
       let gainBase = 0.5;
       let gainMult = 0.8;
       if (s.ampModel === 'crunch_800') {
-        gainBase = 0.7; gainMult = 1.6;
+        gainBase = 0.7;
+        gainMult = 1.6;
       } else if (s.ampModel === 'high_gain') {
-        gainBase = 0.9; gainMult = 2.4;
+        gainBase = 0.9;
+        gainMult = 2.4;
       } else if (s.ampModel === 'vox_chime') {
-        gainBase = 0.6; gainMult = 1.1;
+        gainBase = 0.6;
+        gainMult = 1.1;
       }
       preampGain.gain.setValueAtTime(gainBase + s.ampGain * gainMult, now);
     }
@@ -555,7 +710,9 @@ export class AudioPipeline {
     // Evaluate active components in solved graph
     const activeNodes = solverResult?.activeNodes;
     const activeComponents = activeNodes
-      ? graph.getComponents().filter((c) => graph.getComponentNodes(c.id).some((n) => activeNodes.has(n.id)))
+      ? graph
+          .getComponents()
+          .filter((c) => graph.getComponentNodes(c.id).some((n) => activeNodes.has(n.id)))
       : [];
 
     const result: SolverResult = solverResult ?? {
@@ -575,12 +732,13 @@ export class AudioPipeline {
 
     // Topology signature: structural features only, excluding value knobs.
     // Blend gains and master volume/tone are live parameters applied below.
-    const structureKey = topology.pickups
-      .map(
-        (p) =>
-          `${p.id}|${p.type}|${p.resonantFreq}|${p.resonantQ}|${p.isOutofPhase ? 1 : 0}|${p.delayTimeMs}`,
-      )
-      .join(';') + `|${topology.isSeries ? 1 : 0}`;
+    const structureKey =
+      topology.pickups
+        .map(
+          (p) =>
+            `${p.id}|${p.type}|${p.resonantFreq}|${p.resonantQ}|${p.isOutofPhase ? 1 : 0}|${p.delayTimeMs}`,
+        )
+        .join(';') + `|${topology.isSeries ? 1 : 0}`;
 
     if (this.masterGain && this.structuralKey === structureKey) {
       // Same circuit — knob automation path, no node churn.
@@ -660,22 +818,24 @@ export class AudioPipeline {
     secondTube.curve = createTubeCurve(this.ampPedalState.ampModel);
     secondTube.oversample = '4x';
 
+    // 4b. Per-model passive tone stack — each amp has a characteristic EQ shape
+    const ts = AMP_TONE_STACK[this.ampPedalState.ampModel];
+
     const toneBass = ctx.createBiquadFilter();
     toneBass.type = 'lowshelf';
-    toneBass.frequency.value = 160;
-    toneBass.gain.value = -0.5;
+    toneBass.frequency.value = ts.bassFreq;
+    toneBass.gain.value = ts.bassGain;
 
-    // Low-mid mud scoop filter (clears out 340 Hz boxiness)
     const toneMid = ctx.createBiquadFilter();
     toneMid.type = 'peaking';
-    toneMid.frequency.value = 340;
-    toneMid.Q.value = 0.85;
-    toneMid.gain.value = -1.5;
+    toneMid.frequency.value = ts.midFreq;
+    toneMid.Q.value = ts.midQ;
+    toneMid.gain.value = ts.midGain;
 
     const toneTreble = ctx.createBiquadFilter();
     toneTreble.type = 'highshelf';
-    toneTreble.frequency.value = 2800;
-    toneTreble.gain.value = 0.6;
+    toneTreble.frequency.value = ts.trebleFreq;
+    toneTreble.gain.value = ts.trebleGain;
 
     // 5. Power amp: a second tube stage drives the speaker. Sag/compression
     // is handled by the single final limiter below — stacked generic browser
@@ -822,8 +982,6 @@ export class AudioPipeline {
     return this.useSamples;
   }
 
-
-
   /**
    * Kick off the local sample-bank load. Non-blocking — callers that need
    * the bank before playing await the returned promise.
@@ -834,7 +992,10 @@ export class AudioPipeline {
     });
   }
 
-  private findGuitarSampleBuffer(targetMidi: number, velocity: number): { buffer: AudioBuffer; rootMidi: number } | null {
+  private findGuitarSampleBuffer(
+    targetMidi: number,
+    velocity: number,
+  ): { buffer: AudioBuffer; rootMidi: number } | null {
     return this.sampleBank.findNote(targetMidi, velocity);
   }
 
@@ -962,86 +1123,28 @@ export class AudioPipeline {
     velocity: number,
     startTime?: number,
     articulation: string = 'none',
-    targetFreq?: number
+    targetFreq?: number,
+    stringIndex: number = 0,
   ): boolean {
+    if (this.wdfWorkletNode) {
+      this.wdfWorkletNode.port.postMessage({
+        type: 'pluck',
+        string_idx: stringIndex,
+        freq: targetFreq ?? freq,
+        velocity: velocity,
+      });
+      return true;
+    }
+
     if (!this.inputNode) return false;
     const now = startTime && startTime > ctx.currentTime ? startTime : ctx.currentTime + 0.001;
-    const sampleRate = ctx.sampleRate;
 
-    // Physical String Waveguide Model (Direct Target Pitch - No Pitch Shifting)
-    const duration = 8.0; // Allow long acoustic string sustain
-    const ksLength = Math.floor(sampleRate * duration);
-    const ksBuffer = ctx.createBuffer(1, ksLength, sampleRate);
-    const ksData = ksBuffer.getChannelData(0);
-
-    const N = Math.max(8, Math.round(sampleRate / freq));
-
-    // 1. Guitar Plectrum Attack Excitation: Pick position comb filter (18% from bridge)
-    const pickPosRatio = 0.18;
-    const pickDelay = Math.max(1, Math.round(N * pickPosRatio));
-    const noiseBurst = new Float32Array(N);
-
-    let prevNoise = 0;
-    for (let i = 0; i < N; i++) {
-      const whiteNoise = (Math.random() * 2 - 1) * velocity;
-      // Balanced excitation: slight low-pass for warmth (electric strings are thicker and warmer than banjo strings)
-      const warmSnap = whiteNoise * 0.8 + prevNoise * 0.2;
-      prevNoise = whiteNoise;
-      noiseBurst[i] = warmSnap;
-    }
-
-    // Apply plectrum release differential: y[n] = x[n] - x[n - pickDelay]
-    for (let i = 0; i < N; i++) {
-      const delayed = i >= pickDelay ? noiseBurst[i - pickDelay] : 0;
-      ksData[i] = (noiseBurst[i] - delayed * 0.75) * 0.8;
-    }
-
-    // 2. Physical Guitar String Waveguide Loop: Dispersion, Friction, and Dynamic Tension
-    // 2. Solid-Body Electric String Waveguide Loop: Less friction, longer sustain
+    // Physical String Waveguide Model (Direct Target Pitch - No Pitch Shifting).
+    // Pure renderer in karplusStrong.ts so the string physics stay testable.
     const isMuted = articulation === 'palm_mute' || articulation === 'mute';
-    const baseDamping = isMuted ? 0.48 : 0.12;
-    const dampingWeight = Math.min(0.5, baseDamping + (freq / 8000));
-    // High strings cycle the loop more times per second. To have equal sustain time, 
-    // the multiplier must be closer to 1.0 for high frequencies.
-    // Math.pow(0.85, 1 / freq) means it retains ~85% of its energy per second regardless of frequency.
-    const decay = Math.pow(0.90, 1 / freq);
-
-    // Initial tension spike (pitch starts sharp and settles down)
-    // Higher velocity = harder pluck = sharper initial pitch
-    const initialTensionSpike = 0.015 * velocity; // Up to 1.5% sharp
-    const tensionDecay = 0.99995; // Relaxes very slowly over the buffer
-
-    let currentTension = initialTensionSpike;
-    let allpassState = 0;
-
-    for (let i = N + 1; i < ksLength; i++) {
-      // Dynamic fractional delay to simulate tension modulation (pitch glide)
-      const targetN = sampleRate / (freq * (1 + currentTension));
-      const intN = Math.floor(targetN);
-      const frac = targetN - intN;
-
-      // Linear interpolation for fractional delay
-      let delayedSample = 0;
-      if (i - intN - 1 >= 0) {
-        const s1 = ksData[i - intN];
-        const s2 = ksData[i - intN - 1];
-        delayedSample = s1 * (1 - frac) + s2 * frac;
-      }
-
-      // First-order All-Pass Filter for string stiffness (inharmonicity)
-      // Piano strings have very high stiffness (causing chime/bell tones). 
-      // Guitar strings have very low stiffness.
-      const stiffness = freq < 200 ? 0.02 : 0.005;
-      const allpassOut = stiffness * delayedSample + (i - intN >= 0 ? ksData[i - intN] : 0) - stiffness * allpassState;
-      allpassState = allpassOut;
-
-      // Weighted lowpass damping simulates string internal friction
-      const prevSample = ksData[i - 1] || 0;
-      ksData[i] = (allpassOut * (1 - dampingWeight) + prevSample * dampingWeight) * decay;
-
-      // Relax tension over time
-      currentTension *= tensionDecay;
-    }
+    const ksData = renderKarplusStrong(freq, velocity, ctx.sampleRate, { muted: isMuted });
+    const ksBuffer = ctx.createBuffer(1, ksData.length, ctx.sampleRate);
+    ksBuffer.getChannelData(0).set(ksData);
 
     const stringSource = ctx.createBufferSource();
     stringSource.buffer = ksBuffer;
@@ -1050,13 +1153,32 @@ export class AudioPipeline {
     const rawStringMix = ctx.createGain();
     rawStringMix.gain.setValueAtTime(1.0, now);
 
+    // Body voicing: kill subsonic rumble, add the hollow body/air bump and a
+    // touch of presence so the string reads as a guitar rather than a plink.
+    const highpass = ctx.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.setValueAtTime(70, now);
+    highpass.Q.setValueAtTime(0.7, now);
+
+    const bodyResonance = ctx.createBiquadFilter();
+    bodyResonance.type = 'peaking';
+    bodyResonance.frequency.setValueAtTime(150, now);
+    bodyResonance.Q.setValueAtTime(1.1, now);
+    bodyResonance.gain.setValueAtTime(4.5, now);
+
+    const presence = ctx.createBiquadFilter();
+    presence.type = 'highshelf';
+    presence.frequency.setValueAtTime(2600, now);
+    presence.gain.setValueAtTime(3.5, now);
+
     const env = ctx.createGain();
     const peakGain = Math.min(0.8, Math.max(0.04, velocity));
     env.gain.setValueAtTime(0.0001, now);
     env.gain.linearRampToValueAtTime(peakGain, now + 0.0015);
-    
-    // Allow natural KS string decay to dictate envelope over 6-8 seconds
-    env.gain.setTargetAtTime(0.0001, now + 0.2, 3.5);
+
+    // Let the string's own frequency-dependent decay shape the tail; the
+    // envelope only prevents clicks at start/stop.
+    env.gain.setTargetAtTime(0.0001, now + 0.5, 3.5);
 
     // Apply Articulation Pitch Automations (slides, bends, vibrato)
     if (articulation === 'slide_up' || articulation === 'slide_down') {
@@ -1077,7 +1199,10 @@ export class AudioPipeline {
     }
 
     stringSource.connect(rawStringMix);
-    
+    rawStringMix.connect(highpass);
+    highpass.connect(bodyResonance);
+    bodyResonance.connect(presence);
+
     // Palm Muting (mute articulation) Filter & Fast Envelope
     if (articulation === 'mute') {
       const muteFilter = ctx.createBiquadFilter();
@@ -1086,12 +1211,12 @@ export class AudioPipeline {
       muteFilter.Q.setValueAtTime(1.0, now);
       env.gain.setValueAtTime(peakGain * 0.6, now + 0.0015);
       env.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
-      rawStringMix.connect(muteFilter);
+      presence.connect(muteFilter);
       muteFilter.connect(env);
     } else {
-      rawStringMix.connect(env);
+      presence.connect(env);
     }
-    
+
     env.connect(this.inputNode);
 
     stringSource.start(now);
@@ -1100,11 +1225,14 @@ export class AudioPipeline {
       try {
         stringSource.disconnect();
         rawStringMix.disconnect();
+        highpass.disconnect();
+        bodyResonance.disconnect();
+        presence.disconnect();
         env.disconnect();
       } catch {
         // Ignored
       }
-    }, 4500);
+    }, 8500);
 
     return true;
   }
@@ -1115,13 +1243,11 @@ export class AudioPipeline {
   private detectActiveTopology(
     activeComponents: ReturnType<Graph['getComponents']>,
     graph: Graph,
-    solverResult: SolverResult
+    solverResult: SolverResult,
   ): CircuitTopologyState {
     const pickupComps = activeComponents.filter(
       (c) =>
-        c.type === 'pickup_single_coil' ||
-        c.type === 'pickup_humbucker' ||
-        c.type === 'pickup_p90'
+        c.type === 'pickup_single_coil' || c.type === 'pickup_humbucker' || c.type === 'pickup_p90',
     );
 
     if (pickupComps.length === 0) {
@@ -1166,25 +1292,37 @@ export class AudioPipeline {
 
     // Check for Series Connection (Bridge ground connected to Neck hot path)
     let isSeries = false;
-    const neckComp = pickupComps.find(c => c.id.includes('neck'));
-    const bridgeComp = pickupComps.find(c => c.id.includes('bridge'));
+    const neckComp = pickupComps.find((c) => c.id.includes('neck'));
+    const bridgeComp = pickupComps.find((c) => c.id.includes('bridge'));
     if (neckComp && bridgeComp) {
       // Very basic heuristic for series: check if bridge ground reaches output tip
-      const bridgeGroundNodes = graph.getComponentNodes(bridgeComp.id).filter(n => n.role === 'ground');
-      isSeries = bridgeGroundNodes.some(n => solverResult.activeNodes.has(n.id) && !solverResult.deadEndNodes.has(n.id));
+      const bridgeGroundNodes = graph
+        .getComponentNodes(bridgeComp.id)
+        .filter((n) => n.role === 'ground');
+      isSeries = bridgeGroundNodes.some(
+        (n) => solverResult.activeNodes.has(n.id) && !solverResult.deadEndNodes.has(n.id),
+      );
     }
 
     // Determine Phase Reversal (DPDT Push-Pull state)
     const hasDpdtPhase = activeComponents.some((c) => {
       const swState = graph.getSwitchState(c.id);
-      return (c.type === 'switch_dpdt' || c.type === 'pot_pushpull') && swState?.currentPosition === 2;
+      return (
+        (c.type === 'switch_dpdt' || c.type === 'pot_pushpull') && swState?.currentPosition === 2
+      );
     });
 
     const pickups: ActivePickupState[] = pickupComps.map((p, idx) => {
       const idLower = `${p.id} ${p.label ?? ''}`.toLowerCase();
-      const isNeck = idLower.includes('neck') || idLower.includes('front') || (idx === 0 && pickupComps.length > 1);
-      const isBridge = idLower.includes('bridge') || idLower.includes('rear') || (idx === 1 && pickupComps.length > 1);
-      const isMiddle = idLower.includes('middle') || (idx === 2);
+      const isNeck =
+        idLower.includes('neck') ||
+        idLower.includes('front') ||
+        (idx === 0 && pickupComps.length > 1);
+      const isBridge =
+        idLower.includes('bridge') ||
+        idLower.includes('rear') ||
+        (idx === 1 && pickupComps.length > 1);
+      const isMiddle = idLower.includes('middle') || idx === 2;
 
       let resonantFreq = 3400;
       let resonantQ = 2.2;
@@ -1305,10 +1443,13 @@ export class AudioPipeline {
     if (ctx.state === 'suspended') {
       await ctx.resume();
     }
-    
+
     // Check if graph needs building
     if (!this.masterGain) {
-      this.updatePipeline(useCircuitStore.getState().graph, useCircuitStore.getState().solverResult);
+      this.updatePipeline(
+        useCircuitStore.getState().graph,
+        useCircuitStore.getState().solverResult,
+      );
     }
     if (!this.masterGain) return;
 
@@ -1319,16 +1460,36 @@ export class AudioPipeline {
     this.routeInputThroughTopology(ctx, velocity);
 
     if (this.useSamples) {
-      if (!this.triggerRecordedGuitar(ctx, freq, velocity, chordSize, startTime, articulation, targetFreq)) {
+      if (
+        !this.triggerRecordedGuitar(
+          ctx,
+          freq,
+          velocity,
+          chordSize,
+          startTime,
+          articulation,
+          targetFreq,
+        )
+      ) {
         await bankPromise;
         if (this.inputNode) {
-          if (!this.triggerRecordedGuitar(ctx, freq, velocity, chordSize, startTime, articulation, targetFreq)) {
-            this.triggerSynthesizedGuitar(ctx, freq, velocity, startTime, articulation, targetFreq);
+          if (
+            !this.triggerRecordedGuitar(
+              ctx,
+              freq,
+              velocity,
+              chordSize,
+              startTime,
+              articulation,
+              targetFreq,
+            )
+          ) {
+            this.triggerSynthesizedGuitar(ctx, freq, velocity, startTime, articulation, targetFreq, _stringIndex);
           }
         }
       }
     } else {
-      this.triggerSynthesizedGuitar(ctx, freq, velocity, startTime, articulation, targetFreq);
+      this.triggerSynthesizedGuitar(ctx, freq, velocity, startTime, articulation, targetFreq, _stringIndex);
     }
   }
 
@@ -1351,12 +1512,10 @@ export class AudioPipeline {
     }
     const rawStringMix = this.inputNode;
 
-    // Sample mode bypasses the canvas circuit completely: recorded DI
-    // samples go straight into the amp sim (masterGain -> pedals -> tubes ->
-    // cabinet). Only synthesized strings route through the Worklet WDF
-    // passive circuit solver / pickup-branch heuristic below.
+    // Connect sampleInputNode to rawStringMix so real guitar DI samples
+    // are processed by the canvas circuit (WDF passive solver & pickup EQ).
     this.sampleInputNode.disconnect();
-    this.sampleInputNode.connect(this.masterGain);
+    this.sampleInputNode.connect(rawStringMix);
 
     if (this.wdfWorkletNode) {
       // Clean rewire: on the worklet-ready reroute the bus may already be
@@ -1427,13 +1586,15 @@ export class AudioPipeline {
       this.activeNodes.set(`pickupGain-${pickup.id}-${now}`, branchGain);
     }
 
-
     // Master Tone
     const masterToneFilter = ctx.createBiquadFilter();
     masterToneFilter.type = 'lowpass';
     const minFreq = 350;
     const maxFreq = 10000;
-    masterToneFilter.frequency.setValueAtTime(minFreq + Math.pow(topology.masterTone, 2) * (maxFreq - minFreq), now);
+    masterToneFilter.frequency.setValueAtTime(
+      minFreq + Math.pow(topology.masterTone, 2) * (maxFreq - minFreq),
+      now,
+    );
     masterToneFilter.Q.setValueAtTime(1.0, now);
     pickupMixNode.connect(masterToneFilter);
     this.masterToneFilter = masterToneFilter;
@@ -1514,7 +1675,12 @@ export class AudioPipeline {
     const beatDurationMs = 520;
     const barDurationMs = beatDurationMs * 4;
 
-    const scheduleStrum = (chord: readonly number[], startMs: number, velocity: number, noteDelayMs = 24) => {
+    const scheduleStrum = (
+      chord: readonly number[],
+      startMs: number,
+      velocity: number,
+      noteDelayMs = 24,
+    ) => {
       this.songTimeoutIds.push(
         window.setTimeout(() => {
           chord.forEach((note, noteIndex) => {
@@ -1539,20 +1705,34 @@ export class AudioPipeline {
       order.forEach((chordIndex, noteIndex) => {
         this.songTimeoutIds.push(
           window.setTimeout(
-            () => void this.triggerPluck(chord[chordIndex % chord.length], velocity, chordIndex % 6),
+            () =>
+              void this.triggerPluck(chord[chordIndex % chord.length], velocity, chordIndex % 6),
             startMs + noteIndex * stepMs,
           ),
         );
       });
     };
 
-    const scheduleNote = (frequency: number, startMs: number, velocity: number, stringIndex = 0) => {
+    const scheduleNote = (
+      frequency: number,
+      startMs: number,
+      velocity: number,
+      stringIndex = 0,
+    ) => {
       this.songTimeoutIds.push(
-        window.setTimeout(() => void this.triggerPluck(frequency, velocity, stringIndex % 6), startMs),
+        window.setTimeout(
+          () => void this.triggerPluck(frequency, velocity, stringIndex % 6),
+          startMs,
+        ),
       );
     };
 
-    const scheduleBassLine = (notes: readonly number[], startMs: number, stepMs: number, velocity = 0.13) => {
+    const scheduleBassLine = (
+      notes: readonly number[],
+      startMs: number,
+      stepMs: number,
+      velocity = 0.13,
+    ) => {
       notes.forEach((note, noteIndex) => {
         scheduleNote(note, startMs + noteIndex * stepMs, velocity, noteIndex % 3);
       });
@@ -1586,22 +1766,49 @@ export class AudioPipeline {
         scheduleBassLine(intro, 0, beatDurationMs / 2, 0.16);
         scheduleBassLine(intro, barDurationMs, beatDurationMs / 2, 0.16);
         scheduleFourBarSection(
-          [GUITAR_CHORDS.E_MINOR7, GUITAR_CHORDS.G_MAJOR, GUITAR_CHORDS.D_MAJOR, GUITAR_CHORDS.A_MINOR],
+          [
+            GUITAR_CHORDS.E_MINOR7,
+            GUITAR_CHORDS.G_MAJOR,
+            GUITAR_CHORDS.D_MAJOR,
+            GUITAR_CHORDS.A_MINOR,
+          ],
           barDurationMs * 2,
           [0, 2.5],
           0.1,
         );
         scheduleFourBarSection(
-          [GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_MAJOR, GUITAR_CHORDS.D_MAJOR, GUITAR_CHORDS.E_MINOR7],
+          [
+            GUITAR_CHORDS.C_MAJOR7,
+            GUITAR_CHORDS.G_MAJOR,
+            GUITAR_CHORDS.D_MAJOR,
+            GUITAR_CHORDS.E_MINOR7,
+          ],
           barDurationMs * 6,
           [0, 1, 2, 3],
           0.12,
         );
         scheduleBassLine([65.41, 98.0, 73.42, 82.41], barDurationMs * 6, barDurationMs, 0.14);
-        scheduleArpeggio(GUITAR_CHORDS.A_MINOR7, barDurationMs * 10, 0.09, 180, [0, 2, 3, 4, 2, 3, 5, 3]);
-        scheduleArpeggio(GUITAR_CHORDS.C_MAJOR7, barDurationMs * 11, 0.09, 180, [0, 2, 3, 4, 2, 3, 5, 3]);
+        scheduleArpeggio(
+          GUITAR_CHORDS.A_MINOR7,
+          barDurationMs * 10,
+          0.09,
+          180,
+          [0, 2, 3, 4, 2, 3, 5, 3],
+        );
+        scheduleArpeggio(
+          GUITAR_CHORDS.C_MAJOR7,
+          barDurationMs * 11,
+          0.09,
+          180,
+          [0, 2, 3, 4, 2, 3, 5, 3],
+        );
         scheduleFourBarSection(
-          [GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_MAJOR, GUITAR_CHORDS.D_MAJOR, GUITAR_CHORDS.E_MINOR7],
+          [
+            GUITAR_CHORDS.C_MAJOR7,
+            GUITAR_CHORDS.G_MAJOR,
+            GUITAR_CHORDS.D_MAJOR,
+            GUITAR_CHORDS.E_MINOR7,
+          ],
           barDurationMs * 12,
           [0, 1, 2, 3],
           0.13,
@@ -1626,11 +1833,31 @@ export class AudioPipeline {
           GUITAR_CHORDS.A7,
           GUITAR_CHORDS.E7,
         ];
-        scheduleFourBarSection(twelveBarBlues.slice(0, 4), barDurationMs * 2, [0, 1.5, 2, 3.5], 0.105);
-        scheduleFourBarSection(twelveBarBlues.slice(4, 8), barDurationMs * 6, [0, 1.5, 2, 3.5], 0.115);
+        scheduleFourBarSection(
+          twelveBarBlues.slice(0, 4),
+          barDurationMs * 2,
+          [0, 1.5, 2, 3.5],
+          0.105,
+        );
+        scheduleFourBarSection(
+          twelveBarBlues.slice(4, 8),
+          barDurationMs * 6,
+          [0, 1.5, 2, 3.5],
+          0.115,
+        );
         scheduleFourBarSection(twelveBarBlues.slice(8), barDurationMs * 10, [0, 1.5, 2, 3.5], 0.12);
-        scheduleBassLine([220.0, 246.94, 261.63, 277.18, 293.66], barDurationMs * 6, beatDurationMs / 2, 0.1);
-        scheduleBassLine([293.66, 277.18, 261.63, 246.94, 220.0], barDurationMs * 10, beatDurationMs / 2, 0.1);
+        scheduleBassLine(
+          [220.0, 246.94, 261.63, 277.18, 293.66],
+          barDurationMs * 6,
+          beatDurationMs / 2,
+          0.1,
+        );
+        scheduleBassLine(
+          [293.66, 277.18, 261.63, 246.94, 220.0],
+          barDurationMs * 10,
+          beatDurationMs / 2,
+          0.1,
+        );
         scheduleFourBarSection(
           [GUITAR_CHORDS.A7, GUITAR_CHORDS.D7, GUITAR_CHORDS.A7, GUITAR_CHORDS.E7],
           barDurationMs * 14,
@@ -1644,22 +1871,42 @@ export class AudioPipeline {
         scheduleBassLine(riff, 0, beatDurationMs / 2, 0.19);
         scheduleBassLine(riff, barDurationMs, beatDurationMs / 2, 0.19);
         scheduleFourBarSection(
-          [GUITAR_CHORDS.E5_POWER, GUITAR_CHORDS.E5_POWER, GUITAR_CHORDS.A5_POWER, GUITAR_CHORDS.D5_POWER],
+          [
+            GUITAR_CHORDS.E5_POWER,
+            GUITAR_CHORDS.E5_POWER,
+            GUITAR_CHORDS.A5_POWER,
+            GUITAR_CHORDS.D5_POWER,
+          ],
           barDurationMs * 2,
           [0, 1.5, 2.5, 3.5],
           0.16,
           16,
         );
         scheduleFourBarSection(
-          [GUITAR_CHORDS.E5_POWER, GUITAR_CHORDS.G5_POWER, GUITAR_CHORDS.A5_POWER, GUITAR_CHORDS.D5_POWER],
+          [
+            GUITAR_CHORDS.E5_POWER,
+            GUITAR_CHORDS.G5_POWER,
+            GUITAR_CHORDS.A5_POWER,
+            GUITAR_CHORDS.D5_POWER,
+          ],
           barDurationMs * 6,
           [0, 2],
           0.18,
           16,
         );
-        scheduleBassLine([82.41, 82.41, 98.0, 110.0, 123.47, 110.0], barDurationMs * 10, beatDurationMs / 2, 0.17);
+        scheduleBassLine(
+          [82.41, 82.41, 98.0, 110.0, 123.47, 110.0],
+          barDurationMs * 10,
+          beatDurationMs / 2,
+          0.17,
+        );
         scheduleFourBarSection(
-          [GUITAR_CHORDS.E5_POWER, GUITAR_CHORDS.G5_POWER, GUITAR_CHORDS.A5_POWER, GUITAR_CHORDS.D5_POWER],
+          [
+            GUITAR_CHORDS.E5_POWER,
+            GUITAR_CHORDS.G5_POWER,
+            GUITAR_CHORDS.A5_POWER,
+            GUITAR_CHORDS.D5_POWER,
+          ],
           barDurationMs * 12,
           [0, 1.5, 2, 3.5],
           0.18,
@@ -1669,25 +1916,58 @@ export class AudioPipeline {
       }
       case 'alternative-rock': {
         scheduleArpeggio(GUITAR_CHORDS.E_MINOR7, 0, 0.09, 180, [0, 2, 3, 4, 2, 3, 5, 3]);
-        scheduleArpeggio(GUITAR_CHORDS.C_MAJOR7, barDurationMs, 0.09, 180, [0, 2, 3, 4, 2, 3, 5, 3]);
+        scheduleArpeggio(
+          GUITAR_CHORDS.C_MAJOR7,
+          barDurationMs,
+          0.09,
+          180,
+          [0, 2, 3, 4, 2, 3, 5, 3],
+        );
         scheduleFourBarSection(
-          [GUITAR_CHORDS.E_MINOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.D_SUS2_F_SHARP],
+          [
+            GUITAR_CHORDS.E_MINOR7,
+            GUITAR_CHORDS.G_SIX,
+            GUITAR_CHORDS.C_MAJOR7,
+            GUITAR_CHORDS.D_SUS2_F_SHARP,
+          ],
           barDurationMs * 2,
           [0, 2.5],
           0.095,
           30,
         );
         scheduleFourBarSection(
-          [GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.D_SUS2_F_SHARP, GUITAR_CHORDS.E_MINOR7],
+          [
+            GUITAR_CHORDS.C_MAJOR7,
+            GUITAR_CHORDS.G_SIX,
+            GUITAR_CHORDS.D_SUS2_F_SHARP,
+            GUITAR_CHORDS.E_MINOR7,
+          ],
           barDurationMs * 6,
           [0, 1.5, 2.5, 3.5],
           0.105,
           30,
         );
-        scheduleArpeggio(GUITAR_CHORDS.A_MINOR7, barDurationMs * 10, 0.085, 200, [0, 2, 3, 4, 5, 3, 2, 1]);
-        scheduleArpeggio(GUITAR_CHORDS.D_SUS2_F_SHARP, barDurationMs * 11, 0.085, 200, [0, 2, 3, 4, 2, 3, 4, 1]);
+        scheduleArpeggio(
+          GUITAR_CHORDS.A_MINOR7,
+          barDurationMs * 10,
+          0.085,
+          200,
+          [0, 2, 3, 4, 5, 3, 2, 1],
+        );
+        scheduleArpeggio(
+          GUITAR_CHORDS.D_SUS2_F_SHARP,
+          barDurationMs * 11,
+          0.085,
+          200,
+          [0, 2, 3, 4, 2, 3, 4, 1],
+        );
         scheduleFourBarSection(
-          [GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.D_SUS2_F_SHARP, GUITAR_CHORDS.E_MINOR7],
+          [
+            GUITAR_CHORDS.C_MAJOR7,
+            GUITAR_CHORDS.G_SIX,
+            GUITAR_CHORDS.D_SUS2_F_SHARP,
+            GUITAR_CHORDS.E_MINOR7,
+          ],
           barDurationMs * 12,
           [0, 1.5, 2.5, 3.5],
           0.11,
@@ -1697,12 +1977,37 @@ export class AudioPipeline {
       }
       case 'dream-pop': {
         const dreamOrder = [0, 2, 3, 5, 4, 3, 2, 1];
-        const introChords = [GUITAR_CHORDS.E_MINOR7, GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.D_SUS2_F_SHARP];
-        introChords.forEach((chord, barIndex) => scheduleArpeggio(chord, barIndex * barDurationMs, 0.075, 220, dreamOrder));
-        const verseChords = [GUITAR_CHORDS.A_MINOR7, GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.D_SUS2_F_SHARP];
-        verseChords.forEach((chord, barIndex) => scheduleArpeggio(chord, barDurationMs * 4 + barIndex * barDurationMs, 0.08, 210, dreamOrder));
+        const introChords = [
+          GUITAR_CHORDS.E_MINOR7,
+          GUITAR_CHORDS.C_MAJOR7,
+          GUITAR_CHORDS.G_SIX,
+          GUITAR_CHORDS.D_SUS2_F_SHARP,
+        ];
+        introChords.forEach((chord, barIndex) =>
+          scheduleArpeggio(chord, barIndex * barDurationMs, 0.075, 220, dreamOrder),
+        );
+        const verseChords = [
+          GUITAR_CHORDS.A_MINOR7,
+          GUITAR_CHORDS.C_MAJOR7,
+          GUITAR_CHORDS.G_SIX,
+          GUITAR_CHORDS.D_SUS2_F_SHARP,
+        ];
+        verseChords.forEach((chord, barIndex) =>
+          scheduleArpeggio(
+            chord,
+            barDurationMs * 4 + barIndex * barDurationMs,
+            0.08,
+            210,
+            dreamOrder,
+          ),
+        );
         scheduleFourBarSection(
-          [GUITAR_CHORDS.E_MINOR7, GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX, GUITAR_CHORDS.D_SUS2_F_SHARP],
+          [
+            GUITAR_CHORDS.E_MINOR7,
+            GUITAR_CHORDS.C_MAJOR7,
+            GUITAR_CHORDS.G_SIX,
+            GUITAR_CHORDS.D_SUS2_F_SHARP,
+          ],
           barDurationMs * 8,
           [0, 2],
           0.075,
@@ -1711,8 +2016,21 @@ export class AudioPipeline {
         [329.63, 392.0, 440.0, 493.88].forEach((note, noteIndex) => {
           scheduleNote(note, barDurationMs * 8 + noteIndex * beatDurationMs * 2, 0.065, 5);
         });
-        const outroChords = [GUITAR_CHORDS.E_MINOR7, GUITAR_CHORDS.D_SUS2_F_SHARP, GUITAR_CHORDS.C_MAJOR7, GUITAR_CHORDS.G_SIX];
-        outroChords.forEach((chord, barIndex) => scheduleArpeggio(chord, barDurationMs * 12 + barIndex * barDurationMs, 0.07, 250, dreamOrder));
+        const outroChords = [
+          GUITAR_CHORDS.E_MINOR7,
+          GUITAR_CHORDS.D_SUS2_F_SHARP,
+          GUITAR_CHORDS.C_MAJOR7,
+          GUITAR_CHORDS.G_SIX,
+        ];
+        outroChords.forEach((chord, barIndex) =>
+          scheduleArpeggio(
+            chord,
+            barDurationMs * 12 + barIndex * barDurationMs,
+            0.07,
+            250,
+            dreamOrder,
+          ),
+        );
         break;
       }
     }
@@ -1720,11 +2038,14 @@ export class AudioPipeline {
     this.demoSongPlaying = true;
 
     this.songTimeoutIds.push(
-      window.setTimeout(() => {
-        this.demoSongPlaying = false;
-        this.songTimeoutIds = [];
-        this.emitStateChange();
-      }, barDurationMs * 16 + 1800),
+      window.setTimeout(
+        () => {
+          this.demoSongPlaying = false;
+          this.songTimeoutIds = [];
+          this.emitStateChange();
+        },
+        barDurationMs * 16 + 1800,
+      ),
     );
 
     this.emitStateChange();

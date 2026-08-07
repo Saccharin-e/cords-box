@@ -37,9 +37,6 @@ export function DualCanvas() {
   const removeInstance = useCanvasStore((s) => s.removeInstance);
   const selectInstance = useCanvasStore((s) => s.selectInstance);
   const cancelWiring = useCanvasStore((s) => s.cancelWiring);
-  const scale = useCanvasStore((s) => s.scale);
-  const panX = useCanvasStore((s) => s.panX);
-  const panY = useCanvasStore((s) => s.panY);
   const setPan = useCanvasStore((s) => s.setPan);
   const setScale = useCanvasStore((s) => s.setScale);
 
@@ -125,29 +122,33 @@ export function DualCanvas() {
 
   const isEmpty = instancesCount === 0;
 
+  // Dedicated Pan & Zoom state for Sound Systems Workspace (Isolates placement from Physical view)
+  const [soundScale, setSoundScale] = useState(1);
+  const [soundPan, setSoundPan] = useState({ x: 0, y: 0 });
+
   // Zoom & Pan Handlers for Sound Systems Canvas Workspace
   const handleWheelSoundSystems = (e: React.WheelEvent) => {
     e.preventDefault();
-    const oldScale = scale;
+    const oldScale = soundScale;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
     const pointerX = e.clientX - rect.left;
     const pointerY = e.clientY - rect.top;
 
-    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    const newScale = Math.min(3, Math.max(0.25, oldScale * zoomFactor));
+    const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+    const newScale = Math.min(2.5, Math.max(0.4, oldScale * zoomFactor));
 
     const mousePointTo = {
-      x: (pointerX - panX) / oldScale,
-      y: (pointerY - panY) / oldScale,
+      x: (pointerX - soundPan.x) / oldScale,
+      y: (pointerY - soundPan.y) / oldScale,
     };
 
     const newPanX = pointerX - mousePointTo.x * newScale;
     const newPanY = pointerY - mousePointTo.y * newScale;
 
-    setScale(newScale);
-    setPan(newPanX, newPanY);
+    setSoundScale(newScale);
+    setSoundPan({ x: newPanX, y: newPanY });
   };
 
   const [isPanningBg, setIsPanningBg] = useState(false);
@@ -173,8 +174,8 @@ export function DualCanvas() {
     panStartRef.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
-      panX,
-      panY,
+      panX: soundPan.x,
+      panY: soundPan.y,
     };
   };
 
@@ -184,7 +185,10 @@ export function DualCanvas() {
     function handlePointerMove(e: PointerEvent) {
       const dx = e.clientX - panStartRef.current.mouseX;
       const dy = e.clientY - panStartRef.current.mouseY;
-      setPan(panStartRef.current.panX + dx, panStartRef.current.panY + dy);
+      setSoundPan({
+        x: panStartRef.current.panX + dx,
+        y: panStartRef.current.panY + dy,
+      });
     }
 
     function handlePointerUp() {
@@ -197,11 +201,16 @@ export function DualCanvas() {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [isPanningBg, panX, panY, setPan]);
+  }, [isPanningBg]);
 
   function handleResetView() {
-    setScale(1);
-    setPan(size.width / 2, size.height / 2);
+    if (activeView === 'sound_systems') {
+      setSoundScale(1);
+      setSoundPan({ x: 0, y: 0 });
+    } else {
+      setScale(1);
+      setPan(size.width / 2, size.height / 2);
+    }
   }
 
   return (
@@ -313,8 +322,28 @@ export function DualCanvas() {
             overflow: 'hidden',
             cursor: isPanningBg ? 'grabbing' : 'default',
             userSelect: isPanningBg ? 'none' : 'auto',
+            backgroundColor: '#121214',
+            backgroundImage: `
+              linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+              radial-gradient(circle, rgba(255, 255, 255, 0.07) 1px, transparent 1px)
+            `,
+            backgroundSize: `${40 * soundScale}px ${40 * soundScale}px, ${40 * soundScale}px ${40 * soundScale}px, ${10 * soundScale}px ${10 * soundScale}px`,
+            backgroundPosition: `${soundPan.x}px ${soundPan.y}px, ${soundPan.x}px ${soundPan.y}px, ${soundPan.x}px ${soundPan.y}px`,
           }}
         >
+          {/* Carbon Fiber Micro-Mesh Overlay Texture (Follows Canvas Drag) */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: -2000,
+              opacity: 0.12,
+              pointerEvents: 'none',
+              backgroundImage: `repeating-linear-gradient(45deg, #000 0, #000 2px, transparent 0, transparent 8px)`,
+              transform: `translate3d(${soundPan.x}px, ${soundPan.y}px, 0)`,
+            }}
+          />
+
           {/* Zoomable & Pannable Canvas Surface */}
           <div
             style={{
@@ -323,7 +352,7 @@ export function DualCanvas() {
               left: 0,
               width: '100%',
               height: '100%',
-              transform: `translate3d(${panX}px, ${panY}px, 0) scale(${scale})`,
+              transform: `translate3d(${soundPan.x}px, ${soundPan.y}px, 0) scale(${soundScale})`,
               transformOrigin: '0 0',
               pointerEvents: 'none',
             }}
@@ -338,7 +367,7 @@ export function DualCanvas() {
                   }}
                   style={{
                     position: 'absolute',
-                    top: 60,
+                    top: 40,
                     left: 40,
                     zIndex: activeFloatingPanel === 'test' ? 100 : 90,
                   }}
@@ -356,7 +385,7 @@ export function DualCanvas() {
                   }}
                   style={{
                     position: 'absolute',
-                    top: 60,
+                    top: 40,
                     left: 440,
                     zIndex: activeFloatingPanel === 'amp' ? 100 : 95,
                   }}
@@ -374,7 +403,7 @@ export function DualCanvas() {
                   }}
                   style={{
                     position: 'absolute',
-                    top: 60,
+                    top: 40,
                     left: 1000,
                     zIndex: activeFloatingPanel === 'fretboard' ? 100 : 96,
                   }}
@@ -392,7 +421,7 @@ export function DualCanvas() {
                   }}
                   style={{
                     position: 'absolute',
-                    top: 480,
+                    top: 460,
                     left: 40,
                     zIndex: activeFloatingPanel === 'tab' ? 100 : 97,
                   }}

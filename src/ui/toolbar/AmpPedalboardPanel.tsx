@@ -495,6 +495,45 @@ export function AmpPedalboardPanel() {
               style={{ accentColor: '#a3e635', cursor: 'pointer' }}
             />
           </div>
+
+          {/* Signal Chain: Cable Length & Amp Input Impedance */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', backgroundColor: '#09090b', borderRadius: 6, border: '1px solid #27272a' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#a1a1aa', fontWeight: 600 }}>
+              <span>Cable Length:</span>
+              <span style={{ color: '#f59e0b' }}>{state.cableLengthMeters}m ({Math.round(state.cableLengthMeters * 100)}pF)</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="15"
+              step="0.5"
+              value={state.cableLengthMeters}
+              onChange={(e) => updateState({ cableLengthMeters: parseFloat(e.target.value) })}
+              style={{ accentColor: '#f59e0b', cursor: 'pointer' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', backgroundColor: '#09090b', borderRadius: 6, border: '1px solid #27272a' }}>
+            <div style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600, marginBottom: 4 }}>Amp Input Impedance:</div>
+            <select
+              value={state.ampInputImpedanceOhms}
+              onChange={(e) => updateState({ ampInputImpedanceOhms: parseInt(e.target.value) })}
+              style={{
+                backgroundColor: '#18181b',
+                color: '#e4e4e7',
+                border: '1px solid #3f3f46',
+                borderRadius: 4,
+                padding: '4px 8px',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <option value={1000000}>1MΩ — Passive (Standard)</option>
+              <option value={47000}>47kΩ — Vintage</option>
+              <option value={10000}>10kΩ — Active Pickups</option>
+            </select>
+          </div>
         </div>
       )}
     </div>

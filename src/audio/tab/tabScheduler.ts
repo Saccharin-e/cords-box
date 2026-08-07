@@ -40,6 +40,23 @@ export class TabScheduler {
     this.bpm = Math.max(30, Math.min(300, bpm));
   }
 
+  public seek(beat: number): void {
+    const maxBeats = this.getTotalBeats();
+    const targetBeat = Math.max(0, Math.min(maxBeats, beat));
+    this.currentBeat = targetBeat;
+    this.scheduledBeatIndex = Math.floor(targetBeat / 0.25);
+
+    if (this.isPlaying) {
+      const ctx = audioEngine.getContext();
+      if (ctx) {
+        this.startAudioTime = ctx.currentTime + 0.05;
+        this.startBeatOffset = targetBeat;
+      }
+    }
+
+    this.onBeatCallbacks.forEach((cb) => cb(targetBeat));
+  }
+
   public setLooping(loop: boolean): void {
     this.isLooping = loop;
   }

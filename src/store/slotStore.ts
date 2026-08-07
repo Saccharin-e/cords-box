@@ -191,9 +191,8 @@ export const useSlotStore = create<SlotStoreState>((set, get) => ({
     if (slot.presetTemplateId && !slot.isCustom) {
       const preset = PRESETS.find((p) => p.id === slot.presetTemplateId);
       if (preset) {
-        const circuitStore = useCircuitStore.getState();
-        circuitStore.reset();
-        const graph = circuitStore.graph;
+        useCircuitStore.getState().reset();
+        const graph = useCircuitStore.getState().graph;
 
         const newInstances: CanvasComponentInstance[] = [];
         for (const comp of preset.components) {
@@ -210,7 +209,7 @@ export const useSlotStore = create<SlotStoreState>((set, get) => ({
             // Ignore
           }
         }
-        circuitStore.solve();
+        useCircuitStore.getState().solve();
         useCanvasStore.getState().pushHistory();
         set({ activeSlotId: slotId });
         return true;
@@ -219,9 +218,8 @@ export const useSlotStore = create<SlotStoreState>((set, get) => ({
 
     // Load custom saved slot data
     const { instances, components, nodes, edges, switchStates } = slot.data;
-    const circuitStore = useCircuitStore.getState();
-    circuitStore.reset();
-    const graph = circuitStore.graph;
+    useCircuitStore.getState().reset();
+    const graph = useCircuitStore.getState().graph;
 
     // 1. Add components
     for (const comp of components) {
@@ -264,7 +262,7 @@ export const useSlotStore = create<SlotStoreState>((set, get) => ({
 
     // Sync to CanvasStore
     useCanvasStore.setState({ instances: JSON.parse(JSON.stringify(instances)) });
-    circuitStore.solve();
+    useCircuitStore.getState().solve();
     useCanvasStore.getState().pushHistory();
 
     set({ activeSlotId: slotId });

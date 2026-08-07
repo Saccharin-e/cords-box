@@ -2,9 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { useKeybindingsStore } from '@store/keybindingsStore';
-import { audioEngine } from '@audio/index';
 
 export function Toolbar() {
+  const activeView = useCanvasStore((s) => s.activeView);
   const wiringMode = useCanvasStore((s) => s.wiringMode);
   const toggleWiringMode = useCanvasStore((s) => s.toggleWiringMode);
   const resetCanvas = useCanvasStore((s) => s.resetCanvas);
@@ -30,15 +30,11 @@ export function Toolbar() {
   const exportJSON = useCircuitStore((s) => s.exportJSON);
   const importJSON = useCircuitStore((s) => s.importJSON);
   const resetGraph = useCircuitStore((s) => s.reset);
-  const [audioActive, setAudioActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Dropdown Open States
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
-  const [isAudioMenuOpen, setIsAudioMenuOpen] = useState(false);
-
   const fileMenuRef = useRef<HTMLDivElement>(null);
-  const audioMenuRef = useRef<HTMLDivElement>(null);
 
   // Listen to fullscreen changes
   useEffect(() => {
@@ -63,25 +59,10 @@ export function Toolbar() {
       if (fileMenuRef.current && !fileMenuRef.current.contains(e.target as Node)) {
         setIsFileMenuOpen(false);
       }
-      if (audioMenuRef.current && !audioMenuRef.current.contains(e.target as Node)) {
-        setIsAudioMenuOpen(false);
-      }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  async function handleAudioToggle() {
-    if (!audioActive) {
-      await audioEngine.initialize();
-      await audioEngine.resume();
-      setAudioActive(true);
-      useCircuitStore.getState().solve();
-    } else {
-      await audioEngine.suspend();
-      setAudioActive(false);
-    }
-  }
 
   function handleWiringToggle() {
     toggleWiringMode();
@@ -174,10 +155,24 @@ export function Toolbar() {
 
         {/* Toggle Component Library Sidebar */}
         <button
-          className={`btn btn--sm ${isSidebarOpen ? 'btn--primary' : ''}`}
+          className={`btn btn--sm ${isSidebarOpen && activeView !== 'sound_systems' ? 'btn--primary' : ''}`}
           onClick={toggleSidebar}
-          title="Toggle Component Library Panel"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
+          title={
+            activeView === 'sound_systems'
+              ? 'Library is hidden in Sound System mode (click to restore Physical view)'
+              : 'Toggle Component Library Panel'
+          }
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 11,
+            opacity: activeView === 'sound_systems' ? 0.35 : 1,
+            color: activeView === 'sound_systems' ? '#71717a' : undefined,
+            borderColor: activeView === 'sound_systems' ? '#27272a' : undefined,
+            backgroundColor: activeView === 'sound_systems' ? 'transparent' : undefined,
+            pointerEvents: 'auto',
+          }}
         >
           <svg
             width="14"
@@ -204,7 +199,6 @@ export function Toolbar() {
             className={`btn btn--sm ${isFileMenuOpen ? 'btn--primary' : ''}`}
             onClick={() => {
               setIsFileMenuOpen(!isFileMenuOpen);
-              setIsAudioMenuOpen(false);
             }}
             style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600, padding: '4px 8px' }}
           >
@@ -397,131 +391,37 @@ export function Toolbar() {
 
         <div style={{ width: 1, height: 16, backgroundColor: '#3f3f46', margin: '0 2px' }} />
 
-        {/* 3. Audio Engine Dropdown */}
-        <div ref={audioMenuRef} style={{ position: 'relative' }}>
-          <button
-            className={`btn btn--sm ${audioActive ? 'btn--primary' : ''}`}
-            onClick={() => {
-              setIsAudioMenuOpen(!isAudioMenuOpen);
-              setIsFileMenuOpen(false);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 8px', fontWeight: 600 }}
+        {/* Direct Guitar Sound Test Bench Toggle */}
+        <button
+          className={`btn btn--sm ${isTestPanelOpen ? 'btn--primary' : ''}`}
+          onClick={toggleTestPanel}
+          title="Guitar Pickups & Tone Sound Test Bench"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            fontWeight: 700,
+            backgroundColor: isTestPanelOpen ? '#d97706' : '#27272a',
+            color: '#ffffff',
+            border: isTestPanelOpen ? '1px solid #f59e0b' : '1px solid #3f3f46',
+            padding: '4px 8px',
+          }}
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-            </svg>
-            <span>{audioActive ? 'Audio ON' : 'Audio DSP'}</span>
-            <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
-          </button>
-
-          {isAudioMenuOpen && (
-            <div style={{ ...dropdownStyle, width: 230 }}>
-              <button
-                style={dropdownItemStyle}
-                onClick={() => {
-                  handleAudioToggle();
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
-                  <line x1="12" y1="2" x2="12" y2="12" />
-                </svg>
-                <span>{audioActive ? 'Power OFF Audio Engine' : 'Power ON Audio Engine'}</span>
-              </button>
-
-              <div style={dropdownDividerStyle} />
-
-              <button
-                style={{ ...dropdownItemStyle, color: isTestPanelOpen ? '#d97706' : '#e4e4e7', fontWeight: 600 }}
-                onClick={() => {
-                  setIsAudioMenuOpen(false);
-                  toggleTestPanel();
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                </svg>
-                <span>Guitar Sound Test Bench</span>
-              </button>
-
-              <button
-                style={{ ...dropdownItemStyle, color: isAmpPanelOpen ? '#38bdf8' : '#e4e4e7', fontWeight: 600 }}
-                onClick={() => {
-                  setIsAudioMenuOpen(false);
-                  toggleAmpPanel();
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="4" y1="21" x2="4" y2="14" />
-                  <line x1="4" y1="10" x2="4" y2="3" />
-                  <line x1="12" y1="21" x2="12" y2="12" />
-                </svg>
-                <span>Amp & Pedalboard Rack</span>
-              </button>
-
-              <button
-                style={{ ...dropdownItemStyle, color: isFretboardOpen ? '#f59e0b' : '#e4e4e7', fontWeight: 600 }}
-                onClick={() => {
-                  setIsAudioMenuOpen(false);
-                  toggleFretboard();
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M9 18V5l12-2v13" />
-                  <circle cx="6" cy="18" r="3" />
-                </svg>
-                <span>Playable Guitar Fretboard</span>
-              </button>
-            </div>
-          )}
-        </div>
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+          </svg>
+          <span>Test Bench</span>
+        </button>
 
         {/* Amp & Pedalboard Panel Toggle */}
         <button
@@ -624,10 +524,24 @@ export function Toolbar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {/* Toggle Floating CAD Controls Bar */}
         <button
-          className={`btn btn--sm ${isControlsOpen ? 'btn--primary' : ''}`}
+          className={`btn btn--sm ${isControlsOpen && activeView !== 'sound_systems' ? 'btn--primary' : ''}`}
           onClick={toggleControls}
-          title="Toggle Floating CAD Tools (Themes, Grid, Snap, Rotate, Copy/Paste)"
-          style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '4px 8px' }}
+          title={
+            activeView === 'sound_systems'
+              ? 'CAD tools are hidden in Sound System mode (click to restore Physical view)'
+              : 'Toggle Floating CAD Tools (Themes, Grid, Snap, Rotate, Copy/Paste)'
+          }
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            fontSize: 11,
+            padding: '4px 8px',
+            opacity: activeView === 'sound_systems' ? 0.35 : 1,
+            color: activeView === 'sound_systems' ? '#71717a' : undefined,
+            borderColor: activeView === 'sound_systems' ? '#27272a' : undefined,
+            backgroundColor: activeView === 'sound_systems' ? 'transparent' : undefined,
+          }}
         >
           <svg
             width="13"
@@ -647,10 +561,24 @@ export function Toolbar() {
 
         {/* Toggle Inspector Panel */}
         <button
-          className={`btn btn--sm ${isInspectorOpen ? 'btn--primary' : ''}`}
+          className={`btn btn--sm ${isInspectorOpen && activeView !== 'sound_systems' ? 'btn--primary' : ''}`}
           onClick={toggleInspector}
-          title="Toggle Value Inspector Panel"
-          style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '4px 8px' }}
+          title={
+            activeView === 'sound_systems'
+              ? 'Inspector is hidden in Sound System mode (click to restore Physical view)'
+              : 'Toggle Value Inspector Panel'
+          }
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            fontSize: 11,
+            padding: '4px 8px',
+            opacity: activeView === 'sound_systems' ? 0.35 : 1,
+            color: activeView === 'sound_systems' ? '#71717a' : undefined,
+            borderColor: activeView === 'sound_systems' ? '#27272a' : undefined,
+            backgroundColor: activeView === 'sound_systems' ? 'transparent' : undefined,
+          }}
         >
           <svg
             width="13"

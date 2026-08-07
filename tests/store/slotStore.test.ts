@@ -70,6 +70,8 @@ describe('SlotStore Layout Manager', () => {
       target: 'jack_1_tip',
       resistance: 0,
       wireColor: '#ff8c00',
+      connectionType: 'solder',
+      wireType: 'modern_vinyl',
     });
 
     // 3. Save to slot
