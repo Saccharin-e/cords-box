@@ -1,4 +1,4 @@
-import init, { DspEngine } from './dsp.js';
+import init, { DspEngine } from './wasm-pkg/dsp.js';
 
 let wasmMemory;
 
