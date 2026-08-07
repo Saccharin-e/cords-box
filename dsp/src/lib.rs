@@ -105,7 +105,6 @@ impl GuitarString {
         n: usize,
         velocity: f32,
         brightness: f32,
-        sample_rate: f32,
     ) {
         for i in 0..BUFFER_SIZE {
             delay_line_h[i] = 0.0;
@@ -113,18 +112,22 @@ impl GuitarString {
         }
 
         // Improved Pick Attack: Resonant noise burst
-        let burst_length = ((sample_rate * (0.003 + brightness * 0.005)) as usize)
-            .clamp(60, 300)
-            .min(n);
+        let burst_length = n;
         
         let mut filter_state = 0.0;
         let cutoff = (0.15 + brightness * 0.4).clamp(0.1, 0.9); // Lowpass coefficient
         
+        let mut seed: u32 = 12345;
+        let mut rand = || -> f32 {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            (seed as f32) / (std::u32::MAX as f32)
+        };
+
         // Pluck angle determines how energy splits between horizontal and vertical planes
-        let pan = js_sys::Math::random() as f32 * 0.4 + 0.3; // 0.3 to 0.7
+        let pan = rand() * 0.4 + 0.3; // 0.3 to 0.7
 
         for i in 0..burst_length {
-            let noise = js_sys::Math::random() as f32 * 2.0 - 1.0;
+            let noise = rand() * 2.0 - 1.0;
             // 1-pole lowpass to simulate fleshy part of pick/finger
             filter_state += cutoff * (noise - filter_state);
             
@@ -146,7 +149,8 @@ impl GuitarString {
 
         let frequency_loss = (freq / 1000.0) * 0.00004;
         let new_decay = (0.9999 - frequency_loss).clamp(0.99982, 0.9999);
-        let new_damping = (0.22 + brightness * 0.12).clamp(0.22, 0.45);
+        // Reduced damping for much brighter, longer-lasting high frequencies
+        let new_damping = (freq / 4000.0).clamp(0.01, 0.2);
         let new_dispersion = (0.04 + brightness * 0.08).clamp(0.04, 0.15);
         
         // Natural physical string decay is governed by the waveguide loop filter (self.decay).
@@ -160,7 +164,6 @@ impl GuitarString {
                 n,
                 velocity,
                 brightness,
-                sample_rate,
             );
             self.pending_write_idx_h = n % BUFFER_SIZE;
             self.pending_write_idx_v = n % BUFFER_SIZE;
@@ -184,7 +187,6 @@ impl GuitarString {
                 n,
                 velocity,
                 brightness,
-                sample_rate,
             );
             self.write_idx_h = n % BUFFER_SIZE;
             self.write_idx_v = n % BUFFER_SIZE;
@@ -296,7 +298,7 @@ impl GuitarString {
         
         // Mix planes asymmetrically (85/15) to prevent massive tremolo dropouts when they slip out of phase
         let pickup_signal = pickup_signal_h * 0.85 + pickup_signal_v * 0.15;
-        let output = pickup_signal * self.amplitude_env;
+        let output = pickup_signal * self.amplitude_env * 8.0; // Boost output for line-level
         
         self.amplitude_env *= self.amplitude_decay;
 
