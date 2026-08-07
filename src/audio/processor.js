@@ -78,7 +78,7 @@ class WdfSeriesAdaptor {
     this._updateGammas();
     const b1 = this._c1.waveReflect(0);
     const b2 = this._c2.waveReflect(0);
-    return -(b1 + b2 + a);
+    return -(b1 + b2);
   }
   step(a) {
     this._updateGammas();
@@ -113,7 +113,7 @@ class WdfParallelAdaptor {
     const b1 = this._c1.waveReflect(0);
     const b2 = this._c2.waveReflect(0);
     const G_total = this._G1 + this._G2 + 1 / this.portResistance;
-    return (2 * (this._G1 * b1 + this._G2 * b2) / G_total) - a;
+    return (2 * (this._G1 * b1 + this._G2 * b2) / G_total);
   }
   step(a) {
     this._updateGammas();
