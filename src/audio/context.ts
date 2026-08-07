@@ -42,7 +42,7 @@ export class AudioEngine {
     }
     if (!this.workletReady && this.context.audioWorklet) {
       try {
-        await this.context.audioWorklet.addModule(new URL('./processor.js', import.meta.url).href);
+        await this.context.audioWorklet.addModule(new URL(`./processor.js?t=${Date.now()}`, import.meta.url).href);
         this.workletReady = true;
       } catch {
         // Worklet module fallback

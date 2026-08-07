@@ -444,8 +444,7 @@ class GuitarProcessor extends AudioWorkletProcessor {
         this.beepPhase += (2 * Math.PI * 440) / sampleRate;
         this.beepTime -= 1 / sampleRate;
       }
-      
-      outChan[i] = mixedVin * 0.5 + synthBeep;
+      outChan[i] = rawSample * 0.5 + synthBeep;
     }
 
     // Copy to remaining channels (stereo)
