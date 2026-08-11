@@ -67,7 +67,7 @@ export function renderKarplusStrong(
   const data = new Float32Array(length);
 
   const N = Math.max(8, Math.round(sampleRate / freq));
-  const sustain = muted ? 0.5 : sustainSeconds(freq);
+  const sustain = muted ? 0.15 : sustainSeconds(freq);
   // Amplitude keeps 1/e of its energy every `sustain` seconds regardless of pitch.
   const decay = Math.exp(-1 / (sustain * sampleRate));
 
@@ -106,7 +106,7 @@ export function renderKarplusStrong(
   // seconds, partials 4–6 thin out over ~1 s, and everything above is attack
   // transient only. Guitar strings are nearly harmonic (unlike bells), so the
   // stiffness all-pass stays tiny.
-  const stiffness = muted ? 0.05 : freq < 200 ? 0.012 : 0.006;
+  const stiffness = muted ? 0.05 : 0.002;
   const fc0 = clamp((muted ? 5 : 14) * freq + 300, muted ? 400 : 1500, muted ? 2000 : 5500);
 
   // The loop filter's skirt would shave ~0.5–1.5% per cycle off the
@@ -140,19 +140,12 @@ export function renderKarplusStrong(
     allpassX1 = delayedSample;
     allpassY1 = allpassOut;
 
-    // Two-stage one-pole lowpass with a cutoff that darkens as the note
-    // settles: the attack stays bright, then the body warms over the first
-    // third of the sustain instead of ringing like a bell.
-    const elapsed = i - N;
-    const darken = 1 - 0.55 * Math.min(1, elapsed / (0.35 * sustain * sampleRate));
-    const fc = Math.max(freq * 8, fc0 * darken); // Never choke the fundamental
-    const a = Math.exp((-2 * Math.PI * fc) / sampleRate);
-    const oneMinusA = 1 - a;
+    // Classic 1-pole Karplus-Strong loop filter: fundamental stays lossless, upper harmonics damp smoothly
+    const damping = muted ? 0.65 : clamp(0.08 + (freq / 3000) * 0.1, 0.05, 0.25);
+    lp1 = allpassOut * (1 - damping) + lp1 * damping;
+    if (muted) lp1 *= 0.997;
 
-    lp1 = allpassOut * oneMinusA + lp1 * a;
-    lp2 = lp1 * oneMinusA + lp2 * a;
-
-    data[i] = lp2 * decay;
+    data[i] = lp1 * decay;
 
     currentTension *= tensionDecay;
   }
@@ -160,9 +153,10 @@ export function renderKarplusStrong(
   // ── 3. Pickup-sensing comb: a pickup at position p cancels the harmonics
   // whose node falls exactly on it — y = x(t) − x(t − 2·p·T) gives
   // |H| ∝ 2|sin(k·π·p)|, the true pickup position response.
+  // ── 3. Pickup-sensing comb: gentle pickup position response
   const combDelay = Math.max(1, Math.round(2 * pickupPosition * N));
   for (let i = combDelay; i < length; i++) {
-    data[i] = 0.5 * (data[i] - 0.9 * data[i - combDelay]);
+    data[i] = 0.5 * (data[i] - 0.4 * data[i - combDelay]);
   }
 
   return data;

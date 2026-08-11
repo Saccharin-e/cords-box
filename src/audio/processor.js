@@ -261,11 +261,16 @@ class WdfCircuit {
   }
 
   processSample(vin) {
-    if (!this._root) return vin;
+    if (!this._root) return Array.isArray(vin) ? vin[0] || 0 : vin;
     
-    // Inject voltage source directly into the pickups
-    for (const source of this._pickupSources) {
-      source.setVoltage(vin);
+    if (Array.isArray(vin)) {
+      for (let i = 0; i < this._pickupSources.length; i++) {
+        this._pickupSources[i].setVoltage(vin[i] || 0);
+      }
+    } else {
+      for (const source of this._pickupSources) {
+        source.setVoltage(vin);
+      }
     }
     
     // Evaluate tree with open-circuit load at the jack (a=0)
@@ -288,46 +293,6 @@ class WdfCircuit {
 // AudioWorklet Processor
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * RBJ peaking biquad — adds the pickup's resonant peak (2–5 kHz twang) that
- * the passive WDF network cannot produce on its own. Mirrors the peaking
- * BiquadFilterNode used on the no-worklet fallback path in pipeline.ts.
- */
-class PeakingBiquad {
-  constructor(sampleRate, freq, q, gainDb) {
-    this._update(sampleRate, freq, q, gainDb);
-  }
-  _update(sampleRate, freq, q, gainDb) {
-    const A = Math.pow(10, gainDb / 40);
-    const w0 = (2 * Math.PI * freq) / sampleRate;
-    const alpha = Math.sin(w0) / (2 * q);
-    const cw = Math.cos(w0);
-    const a0 = 1 + alpha / A;
-    this._b0 = (1 + alpha * A) / a0;
-    this._b1 = (-2 * cw) / a0;
-    this._b2 = (1 - alpha * A) / a0;
-    this._a1 = (-2 * cw) / a0;
-    this._a2 = (1 - alpha / A) / a0;
-    this._x1 = 0;
-    this._x2 = 0;
-    this._y1 = 0;
-    this._y2 = 0;
-  }
-  process(x) {
-    const y =
-      this._b0 * x +
-      this._b1 * this._x1 +
-      this._b2 * this._x2 -
-      this._a1 * this._y1 -
-      this._a2 * this._y2;
-    this._x2 = this._x1;
-    this._x1 = x;
-    this._y2 = this._y1;
-    this._y1 = y;
-    return y;
-  }
-}
-
 class GuitarProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -335,11 +300,9 @@ class GuitarProcessor extends AudioWorkletProcessor {
     this.outPtr = null;
     this.outBuffer = null;
     this.wdf = new WdfCircuit(sampleRate);
-    this.pickupResonators = [];
     this.pendingPlucks = [];
     this.initializing = false;
-    this.beepPhase = 0;
-    this.beepTime = 0;
+    this.delayLine = null;
 
     const doInit = (wasmBytes) => {
       if (this.initializing || this.engine) return;
@@ -362,8 +325,7 @@ class GuitarProcessor extends AudioWorkletProcessor {
         });
     };
 
-    // Auto-init immediately upon processor construction
-    doInit();
+    // Processor waits for 'init' message with wasmBytes from the main thread
 
     this.port.onmessage = (e) => {
       const msg = e.data;
@@ -371,14 +333,7 @@ class GuitarProcessor extends AudioWorkletProcessor {
         doInit(msg.wasmBytes);
       } else if (msg.type === 'wdf-update') {
         this.wdf.updateParams(msg.params);
-        const pickups = this.wdf._params.pickups || [];
-        const isSeries = !!this.wdf._params.isSeries;
-        this.pickupResonators = pickups.map((p) => {
-          const freq = (p.resonantFreq ?? 0) * (isSeries && pickups.length > 1 ? 0.75 : 1.0);
-          return freq > 0 ? new PeakingBiquad(sampleRate, freq, p.resonantQ ?? 2.2, 6) : null;
-        });
       } else if (msg.type === 'pluck') {
-        this.beepTime = 0.5; // Half second beep
         if (this.engine) {
           this.engine.pluck(msg.string_idx, msg.freq, msg.velocity);
         } else {
@@ -409,42 +364,38 @@ class GuitarProcessor extends AudioWorkletProcessor {
     }
 
     const pickups = this.wdf._params.pickups || [];
-    const numPickups = Math.max(1, pickups.length);
-    const mixNorm = 1 / Math.sqrt(numPickups);
-    const isSeries = this.wdf._params.isSeries;
-    const seriesBoost = isSeries && numPickups > 1 ? 1.4 : 1.0;
 
-    for (let i = 0; i < outChan.length; i++) {
-      let rawSample = 0;
-      if (inChan) rawSample += inChan[i];
-      if (this.outBuffer) rawSample += this.outBuffer[i];
+    // We apply the pickup comb filter to the combined (WebAudio + WASM) string excitation
+    if (!this.delayLine) {
+      this.delayLine = new DelayLine(20, sampleRate);
+    }
 
-      if (pickups.length === 0) {
-        outChan[i] = this.wdf.processSample(rawSample);
-        continue;
-      }
-
-      // Apply pickup EQ (peaking biquads), phase inversion, and blend gains
-      let mixedVin = 0;
-      for (let pi = 0; pi < pickups.length; pi++) {
-        const p = pickups[pi];
-        const resonator = this.pickupResonators[pi];
-        const pickupSig = resonator ? resonator.process(rawSample) : rawSample;
-
-        let gain = (p.blendGain ?? 1.0) * seriesBoost;
-        if (p.isOutofPhase) gain *= -1;
-        mixedVin += pickupSig * gain;
-      }
-      mixedVin *= mixNorm;
+    const hasEngine = this.engine && this.outBuffer;
+    const len = outChan.length; // usually 128
+    
+    for (let i = 0; i < len; i++) {
+      let rawWasm = hasEngine ? this.outBuffer[i] : 0;
+      let rawWebAudio = inChan ? inChan[i] : 0;
+      let rawSample = rawWebAudio + rawWasm;
       
-      // Bypass WDF and output rawWASMsig + beep
-      let synthBeep = 0;
-      if (this.beepTime > 0) {
-        synthBeep = Math.sin(this.beepPhase) * 0.1;
-        this.beepPhase += (2 * Math.PI * 440) / sampleRate;
-        this.beepTime -= 1 / sampleRate;
+      this.delayLine.write(rawSample);
+      
+      let vinArray = [];
+      if (pickups.length === 0) {
+        vinArray.push(rawSample);
+      } else {
+        for (const p of pickups) {
+          const delayed = this.delayLine.read(p.delayMs || 1.0);
+          const pickupSig = 0.72 * rawSample + 0.28 * delayed;
+          let gain = p.blendGain ?? 1.0;
+          if (p.isOutofPhase) gain *= -1;
+          vinArray.push(pickupSig * gain);
+        }
       }
-      outChan[i] = rawSample * 0.5 + synthBeep;
+      
+      // Pass the array of voltages to the WDF circuit model
+      // The WDF circuit naturally handles parallel averaging and series boosting
+      outChan[i] = this.wdf.processSample(vinArray);
     }
 
     // Copy to remaining channels (stereo)
@@ -453,6 +404,32 @@ class GuitarProcessor extends AudioWorkletProcessor {
     }
 
     return true;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Delay Line for pickup position comb filtering
+// ═══════════════════════════════════════════════════════════════════════════
+
+class DelayLine {
+  constructor(maxDelayMs, sampleRate) {
+    this.buffer = new Float32Array(Math.ceil(sampleRate * (maxDelayMs / 1000)) + 10);
+    this.ptr = 0;
+    this.sampleRate = sampleRate;
+  }
+  write(val) {
+    this.buffer[this.ptr] = val;
+    this.ptr = (this.ptr + 1) % this.buffer.length;
+  }
+  read(delayMs) {
+    const delaySamples = (delayMs * this.sampleRate) / 1000;
+    let readPtr = this.ptr - delaySamples;
+    if (readPtr < 0) readPtr += this.buffer.length;
+    const intPtr = Math.floor(readPtr);
+    const frac = readPtr - intPtr;
+    const idx1 = intPtr % this.buffer.length;
+    const idx2 = (intPtr + 1) % this.buffer.length;
+    return this.buffer[idx1] * (1 - frac) + this.buffer[idx2] * frac;
   }
 }
 

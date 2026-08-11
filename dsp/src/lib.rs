@@ -115,7 +115,7 @@ impl GuitarString {
         let burst_length = n;
         
         let mut filter_state = 0.0;
-        let cutoff = (0.15 + brightness * 0.4).clamp(0.1, 0.9); // Lowpass coefficient
+        let cutoff = (0.25 + brightness * 0.45).clamp(0.15, 0.95); // Lowpass coefficient
         
         let mut seed: u32 = 12345;
         let mut rand = || -> f32 {
@@ -145,13 +145,15 @@ impl GuitarString {
         let new_delay_samples = (sample_rate / freq).clamp(2.0, (BUFFER_SIZE - 2) as f32);
         let n = new_delay_samples.round() as usize;
 
-        let brightness = (freq / 220.0).sqrt().clamp(0.4, 1.3);
+        let brightness = (freq / 220.0).sqrt().clamp(0.6, 1.8);
 
         let frequency_loss = (freq / 1000.0) * 0.00004;
         let new_decay = (0.9999 - frequency_loss).clamp(0.99982, 0.9999);
-        // Reduced damping for much brighter, longer-lasting high frequencies
-        let new_damping = (freq / 4000.0).clamp(0.01, 0.2);
-        let new_dispersion = (0.04 + brightness * 0.08).clamp(0.04, 0.15);
+        // Damping set to realistic values to tame upper harmonics (warm string rather than metallic pipe)
+        let new_damping = (0.1 + (freq / 2000.0)).clamp(0.1, 0.4);
+        
+        // Dispersion must be very small for a flexible string. High values cause inharmonic "pipe/bell" overtones.
+        let new_dispersion = (0.001 + brightness * 0.005).clamp(0.001, 0.02);
         
         // Natural physical string decay is governed by the waveguide loop filter (self.decay).
         // Set amplitude_decay to 1.0 so notes sustain naturally without being artificially strangled.
@@ -281,24 +283,9 @@ impl GuitarString {
             &mut self.dispersion_x1_v, &mut self.dispersion_y1_v,
         );
 
-        // 3. Pickup Comb Filtering (Aperture Effect)
-        // A pickup at position P (e.g. 0.15) captures the forward wave and subtracts the backward wave.
-        // The delay line represents a round-trip (2L), so distance L is N/2. The wave travels 2P distance,
-        // which takes P * N samples.
-        let pickup_tap_h = delay_h * PICKUP_POS;
-        let pickup_tap_v = delay_v * PICKUP_POS;
-        
-        // Compensate for write_idx having advanced by 1 in compute_plane
-        let tap_h = Self::read_delay(&self.delay_line_h, self.write_idx_h.wrapping_sub(1) % BUFFER_SIZE, pickup_tap_h);
-        let tap_v = Self::read_delay(&self.delay_line_v, self.write_idx_v.wrapping_sub(1) % BUFFER_SIZE, pickup_tap_v);
-        
-        // Use 0.85 attenuation on the delayed tap so the fundamental is not completely choked.
-        let pickup_signal_h = out_h - 0.85 * tap_h;
-        let pickup_signal_v = out_v - 0.85 * tap_v;
-        
-        // Mix planes asymmetrically (85/15) to prevent massive tremolo dropouts when they slip out of phase
-        let pickup_signal = pickup_signal_h * 0.85 + pickup_signal_v * 0.15;
-        let output = pickup_signal * self.amplitude_env * 8.0; // Boost output for line-level
+        // 3. Output Raw String (Pickup comb filtering is now handled in processor.js)
+        // We output the raw string planes mixed asymmetrically to prevent massive tremolo dropouts
+        let output = (out_h * 0.85 + out_v * 0.15) * self.amplitude_env * 14.0; // Boost output for line-level
         
         self.amplitude_env *= self.amplitude_decay;
 
@@ -320,17 +307,7 @@ impl GuitarString {
                 &mut self.pending_dispersion_x1_v, &mut self.pending_dispersion_y1_v,
             );
 
-            let pending_pickup_tap_h = pending_delay_h * PICKUP_POS;
-            let pending_pickup_tap_v = pending_delay_v * PICKUP_POS;
-            
-            let p_tap_h = Self::read_delay(&self.pending_delay_line_h, self.pending_write_idx_h.wrapping_sub(1) % BUFFER_SIZE, pending_pickup_tap_h);
-            let p_tap_v = Self::read_delay(&self.pending_delay_line_v, self.pending_write_idx_v.wrapping_sub(1) % BUFFER_SIZE, pending_pickup_tap_v);
-            
-            let pending_pickup_signal_h = pending_out_h - 0.85 * p_tap_h;
-            let pending_pickup_signal_v = pending_out_v - 0.85 * p_tap_v;
-
-            let pending_pickup_signal = pending_pickup_signal_h * 0.85 + pending_pickup_signal_v * 0.15;
-            let pending_output = pending_pickup_signal * self.pending_amplitude_env;
+            let pending_output = (pending_out_h * 0.85 + pending_out_v * 0.15) * self.pending_amplitude_env;
             
             self.pending_amplitude_env *= self.pending_amplitude_decay;
 

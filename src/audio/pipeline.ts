@@ -15,6 +15,7 @@ import { WdfGuitarCircuitSolver } from './wdf/wdfCircuitSolver';
 import type { SolverResult } from '@graph/solver';
 import type { Graph } from '@graph/Graph';
 import { useCircuitStore } from '@store/circuitStore';
+import dspWasmUrl from './wasm-pkg/dsp_bg.wasm?url';
 
 export type InputSourceType = 'pluck' | 'strum' | 'mic';
 
@@ -468,16 +469,19 @@ export class AudioPipeline {
     });
   }
 
-  private instantiateWdfWorklet(ctx: AudioContext, graph?: Graph): void {
+  private async instantiateWdfWorklet(ctx: AudioContext, graph?: Graph): Promise<void> {
     if (!audioEngine.isWorkletReady() || !ctx.audioWorklet) return;
     if (this.wdfWorkletNode) return;
     try {
-      this.wdfWorkletNode = new AudioWorkletNode(ctx, 'guitar-processor', {
+      const node = new AudioWorkletNode(ctx, 'guitar-processor', {
         numberOfInputs: 1,
         numberOfOutputs: 1,
         outputChannelCount: [1],
       });
-      this.wdfWorkletNode.port.postMessage({ type: 'init' });
+      this.wdfWorkletNode = node;
+      const res = await fetch(dspWasmUrl);
+      const wasmBytes = await res.arrayBuffer();
+      node.port.postMessage({ type: 'init', wasmBytes }, [wasmBytes]);
       this.postWdfUpdate(graph);
     } catch {
       this.wdfWorkletNode = null;

@@ -167,7 +167,7 @@ export class WdfSeriesAdaptor implements WdfElement {
     this.gamma2 = this.child2.portResistance / this.portResistance;
   }
 
-  waveReflect(a: number): number {
+  waveReflect(_a: number): number {
     this.updateGammas();
     const b1 = this.child1.waveReflect(0);
     const b2 = this.child2.waveReflect(0);
@@ -215,7 +215,7 @@ export class WdfParallelAdaptor implements WdfElement {
     this.portResistance = 1 / G_total;
   }
 
-  waveReflect(a: number): number {
+  waveReflect(_a: number): number {
     this.updateGammas();
     const b1 = this.child1.waveReflect(0);
     const b2 = this.child2.waveReflect(0);

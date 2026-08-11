@@ -2,7 +2,7 @@
   "name": "cords-box",
   "private": true,
   "version": "0.0.0",
-  "license": "GPL-2.0-only",
+  "license": "GPL-2.0-or-later",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,6 +21,8 @@
   "dependencies": {
     "jspdf": "^4.2.1",
     "konva": "^10.3.0",
+    "openai": "^7.4.0",
+    "puppeteer": "^25.5.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-konva": "^19.2.5",

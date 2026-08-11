@@ -90,4 +90,4 @@ Pre-compiled WASM artifacts are committed for convenience — you only need this
 
 ## License
 
-This project is licensed under the GNU General Public License v2.0 (GPL-2.0-only). See the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v2.0 or later (GPL-2.0-or-later). See the [LICENSE](LICENSE) file for details.
