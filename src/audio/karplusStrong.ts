@@ -23,11 +23,14 @@ export interface KarplusStrongOptions {
   duration?: number;
   /** Palm-mute style short, dull note. Default false. */
   muted?: boolean;
+  /** String index (0–5, low-E to high-E) for per-string dispersion. Default 0. */
+  stringIndex?: number;
 }
 
 const DEFAULT_PICK_POSITION = 0.35;
 const DEFAULT_PICKUP_POSITION = 0.18;
 const DEFAULT_DURATION = 8.0;
+const DISPERSION_STAGES = 4;
 
 /**
  * Decay time constant in seconds for a given pitch. Low strings ring far
@@ -52,6 +55,20 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+// Per-string physical data for dispersion — standard 10-46 set, steel
+const STRING_DIAMETERS_M = [0.001168, 0.000914, 0.000635, 0.000432, 0.000330, 0.000254];
+const STRING_TENSIONS_N  = [77.8, 76.5, 81.8, 73.8, 68.5, 72.1];
+const SCALE_LENGTH_M = 0.648;
+const YOUNG_MODULUS_PA = 2.0e11;
+
+function computeInharmonicity(stringIdx: number): number {
+  const idx = Math.min(5, Math.max(0, stringIdx));
+  const d = STRING_DIAMETERS_M[idx];
+  const t = STRING_TENSIONS_N[idx];
+  const l = SCALE_LENGTH_M;
+  return (Math.PI * Math.PI * YOUNG_MODULUS_PA * d * d * d * d) / (64 * t * l * l);
+}
+
 export function renderKarplusStrong(
   freq: number,
   velocity: number,
@@ -62,6 +79,7 @@ export function renderKarplusStrong(
   const pickPosition = clamp(options.pickPosition ?? DEFAULT_PICK_POSITION, 0.02, 0.98);
   const pickupPosition = clamp(options.pickupPosition ?? DEFAULT_PICKUP_POSITION, 0.02, 0.98);
   const muted = options.muted ?? false;
+  const stringIndex = options.stringIndex ?? 0;
 
   const length = Math.floor(sampleRate * duration);
   const data = new Float32Array(length);
@@ -100,29 +118,32 @@ export function renderKarplusStrong(
     data[i] = (excitation[i] - 0.72 * delayed) * 0.95;
   }
 
-  // ── 2. Waveguide loop: fractional delay, dispersion all-pass, damping LPF.
-  // The loop filter's cutoff tracks the fundamental (≈14·f0) so every string
-  // gets a guitar-like harmonic-loss profile: the 2nd–3rd partials ring for
-  // seconds, partials 4–6 thin out over ~1 s, and everything above is attack
-  // transient only. Guitar strings are nearly harmonic (unlike bells), so the
-  // stiffness all-pass stays tiny.
-  const stiffness = muted ? 0.05 : 0.002;
-
-  // The loop filter's skirt would shave ~0.5–1.5% per cycle off the
-  // fundamental (a two-stage lowpass a few hundred Hz above f0 is not flat
-  // there), silently shortening bass sustain. Measure the cascade gain at the
-  // loop frequency and compensate so the fundamental is lossless in the
-  // filter; upper partials still roll off as designed.
+  // ── 2. Waveguide loop: fractional delay, 4-stage dispersion all-pass cascade,
+  // damping LPF with gain compensation.
+  //
+  // Dispersion: derived from per-string Fletcher inharmonicity coefficient B.
+  // Low E (wound, thick) gets more dispersion than high E (plain, thin).
+  const bInharm = computeInharmonicity(stringIndex);
+  const bScaled = clamp(bInharm * 400, 0.0005, 0.025);
+  const dispersionCoeff = muted ? 0.05 : bScaled;
 
   let currentTension = 0.015 * velocity;
   const tensionDecay = 0.99995;
 
-  let allpassX1 = 0;
-  let allpassY1 = 0;
+  // 4-stage allpass dispersion state
+  const apX1 = new Float64Array(DISPERSION_STAGES);
+  const apY1 = new Float64Array(DISPERSION_STAGES);
   let lp1 = 0;
 
+  // Group delay of 4-stage allpass at low frequency + damping filter
+  const damping = muted ? 0.65 : clamp(0.08 + (freq / 3000) * 0.1, 0.05, 0.25);
+  const allpassGroupDelay = DISPERSION_STAGES * ((1 + dispersionCoeff) / (1 - dispersionCoeff));
+  const lpGroupDelay = damping / (1 - damping);
+  const filterDelay = allpassGroupDelay + lpGroupDelay;
+
   for (let i = N + 1; i < length; i++) {
-    const targetN = sampleRate / (freq * (1 + currentTension));
+    const rawTargetN = sampleRate / (freq * (1 + currentTension));
+    const targetN = Math.max(2, rawTargetN - filterDelay);
     const intN = Math.floor(targetN);
     const frac = targetN - intN;
 
@@ -133,17 +154,27 @@ export function renderKarplusStrong(
       delayedSample = s1 * (1 - frac) + s2 * frac;
     }
 
-    // First-order all-pass: slight inharmonicity from string stiffness.
-    const allpassOut = -stiffness * delayedSample + allpassX1 + stiffness * allpassY1;
-    allpassX1 = delayedSample;
-    allpassY1 = allpassOut;
+    // 4-stage first-order all-pass cascade: inharmonicity from string stiffness
+    let apOut = delayedSample;
+    for (let stage = 0; stage < DISPERSION_STAGES; stage++) {
+      const output = -dispersionCoeff * apOut + apX1[stage] + dispersionCoeff * apY1[stage];
+      apX1[stage] = apOut;
+      apY1[stage] = output;
+      apOut = output;
+    }
 
-    // Classic 1-pole Karplus-Strong loop filter: fundamental stays lossless, upper harmonics damp smoothly
-    const damping = muted ? 0.65 : clamp(0.08 + (freq / 3000) * 0.1, 0.05, 0.25);
-    lp1 = allpassOut * (1 - damping) + lp1 * damping;
+    // Classic 1-pole Karplus-Strong loop filter
+    lp1 = apOut * (1 - damping) + lp1 * damping;
     if (muted) lp1 *= 0.997;
 
-    data[i] = lp1 * decay;
+    // Loop-filter gain compensation: compute |H(ω₀)| for the one-pole and
+    // scale by 1/|H(ω₀)| so the fundamental is lossless through the filter.
+    const w0 = 2 * Math.PI / targetN;
+    const oneMinusD = 1 - damping;
+    const magSq = (oneMinusD * oneMinusD) / (1 - 2 * damping * Math.cos(w0) + damping * damping);
+    const compensation = Math.min(1.15, 1 / Math.sqrt(magSq));
+
+    data[i] = lp1 * decay * compensation;
 
     currentTension *= tensionDecay;
   }
@@ -151,7 +182,6 @@ export function renderKarplusStrong(
   // ── 3. Pickup-sensing comb: a pickup at position p cancels the harmonics
   // whose node falls exactly on it — y = x(t) − x(t − 2·p·T) gives
   // |H| ∝ 2|sin(k·π·p)|, the true pickup position response.
-  // ── 3. Pickup-sensing comb: gentle pickup position response
   const combDelay = Math.max(1, Math.round(2 * pickupPosition * N));
   for (let i = combDelay; i < length; i++) {
     data[i] = 0.5 * (data[i] - 0.4 * data[i - combDelay]);

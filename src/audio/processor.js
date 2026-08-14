@@ -290,6 +290,81 @@ class WdfCircuit {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// WDF Passive Tone Stack — coupled bass/mid/treble network
+//
+// Fender/Marshall passive tone-stack topology where the three pots interact
+// through a shared resistive ladder. Unlike independent biquads, turning up
+// mid audibly pulls down bass and treble.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TONE_STACK_MODELS = {
+  fender: {
+    R_slope: 100000, C_treble: 250e-12, R_treble_pot: 250000,
+    C_bass: 100e-9, R_bass_pot: 250000,
+    C_mid: 47e-9, R_mid_pot: 25000, R_load: 1000000,
+  },
+  marshall: {
+    R_slope: 33000, C_treble: 470e-12, R_treble_pot: 220000,
+    C_bass: 22e-9, R_bass_pot: 1000000,
+    C_mid: 22e-9, R_mid_pot: 25000, R_load: 470000,
+  },
+  vox: {
+    R_slope: 100000, C_treble: 100e-12, R_treble_pot: 1000000,
+    C_bass: 47e-9, R_bass_pot: 1000000,
+    C_mid: 22e-9, R_mid_pot: 50000, R_load: 1000000,
+  },
+};
+
+class WdfToneStack {
+  constructor(sampleRate) {
+    this.sampleRate = sampleRate;
+    this._treblePot = null;
+    this._bassPot = null;
+    this._midPot = null;
+    this._root = null;
+    this.build('fender');
+  }
+
+  build(model) {
+    const c = TONE_STACK_MODELS[model] || TONE_STACK_MODELS.fender;
+    const sr = this.sampleRate;
+
+    this._treblePot = new WdfPotentiometer(c.R_treble_pot, 0.5);
+    const trebleCap = new WdfCapacitor(c.C_treble, sr);
+    const trebleBranch = new WdfSeriesAdaptor(this._treblePot, trebleCap);
+
+    this._bassPot = new WdfPotentiometer(c.R_bass_pot, 0.5);
+    const bassCap = new WdfCapacitor(c.C_bass, sr);
+    const bassBranch = new WdfSeriesAdaptor(this._bassPot, bassCap);
+
+    this._midPot = new WdfPotentiometer(c.R_mid_pot, 0.5);
+    const midCap = new WdfCapacitor(c.C_mid, sr);
+    const midBranch = new WdfSeriesAdaptor(this._midPot, midCap);
+
+    const loadR = new WdfResistor(c.R_load);
+    const slopeR = new WdfResistor(c.R_slope);
+
+    const midAndLoad = new WdfParallelAdaptor(midBranch, loadR);
+    const bassAndMidLoad = new WdfParallelAdaptor(bassBranch, midAndLoad);
+    const toneNetwork = new WdfParallelAdaptor(trebleBranch, bassAndMidLoad);
+    this._root = new WdfSeriesAdaptor(slopeR, toneNetwork);
+  }
+
+  setControls(bass, mid, treble) {
+    if (this._bassPot) this._bassPot.setPosition(Math.max(0.001, bass));
+    if (this._midPot) this._midPot.setPosition(Math.max(0.001, mid));
+    if (this._treblePot) this._treblePot.setPosition(Math.max(0.001, treble));
+  }
+
+  processSample(vin) {
+    if (!this._root) return vin;
+    const b = this._root.waveReflect(vin);
+    this._root.step(vin);
+    return (vin + b) * 0.5;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // AudioWorklet Processor
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -300,9 +375,18 @@ class GuitarProcessor extends AudioWorkletProcessor {
     this.outPtr = null;
     this.outBuffer = null;
     this.wdf = new WdfCircuit(sampleRate);
+    this.toneStack = new WdfToneStack(sampleRate);
     this.pendingPlucks = [];
     this.initializing = false;
     this.delayLine = null;
+    // Per-string frequency tracking for pitch-dependent pickup comb
+    this.stringFreqs = new Float32Array(6);
+
+    // Sag envelope follower state
+    this.sagEnvelope = 0;
+    this.sagAttackCoeff = Math.exp(-1 / (sampleRate * 0.010)); // 10ms attack
+    this.sagReleaseCoeff = Math.exp(-1 / (sampleRate * 0.150)); // 150ms release
+    this.sagAmount = 0.3;
 
     const doInit = (wasmBytes) => {
       if (this.initializing || this.engine) return;
@@ -339,6 +423,38 @@ class GuitarProcessor extends AudioWorkletProcessor {
         } else {
           this.pendingPlucks.push(msg);
         }
+        // Track per-string frequency for pickup comb
+        if (msg.string_idx >= 0 && msg.string_idx < 6) {
+          this.stringFreqs[msg.string_idx] = msg.freq;
+        }
+      } else if (msg.type === 'bend') {
+        // Pitch glide: ramp toward target frequency
+        if (this.engine) {
+          this.engine.bend(msg.string_idx, msg.targetFreq, msg.durationMs || 150);
+        }
+        if (msg.string_idx >= 0 && msg.string_idx < 6) {
+          this.stringFreqs[msg.string_idx] = msg.targetFreq;
+        }
+      } else if (msg.type === 'pickup-position' && this.engine) {
+        this.engine.set_all_pickup_positions(msg.position);
+      } else if (msg.type === 'sag-update') {
+        if (msg.sagAmount !== undefined) this.sagAmount = msg.sagAmount;
+        if (msg.releaseMs !== undefined) {
+          this.sagReleaseCoeff = Math.exp(-1 / (sampleRate * msg.releaseMs / 1000));
+        }
+      } else if (msg.type === 'tone-stack-update') {
+        // Rebuild tone stack model if changed
+        if (msg.model) {
+          this.toneStack.build(msg.model);
+        }
+        // Update bass/mid/treble pot positions
+        if (msg.bass !== undefined || msg.mid !== undefined || msg.treble !== undefined) {
+          this.toneStack.setControls(
+            msg.bass ?? 0.5,
+            msg.mid ?? 0.5,
+            msg.treble ?? 0.5
+          );
+        }
       } else if (msg.type === 'drive' && this.engine) {
         this.engine.set_drive(msg.drive);
       }
@@ -365,13 +481,29 @@ class GuitarProcessor extends AudioWorkletProcessor {
 
     const pickups = this.wdf._params.pickups || [];
 
-    // We apply the pickup comb filter to the combined (WebAudio + WASM) string excitation
+    // Subtractive pickup comb filter: uses a delay line sized for sample-based
+    // comb delays derived from the played pitch and pickup position.
     if (!this.delayLine) {
       this.delayLine = new DelayLine(20, sampleRate);
     }
 
     const hasEngine = this.engine && this.outBuffer;
     const len = outChan.length; // usually 128
+
+    // Compute a representative period in samples for the pickup comb.
+    // Use the lowest currently-sounding string frequency for the comb period.
+    let lowestFreq = 0;
+    for (let s = 0; s < 6; s++) {
+      if (this.stringFreqs[s] > 20) {
+        if (lowestFreq === 0 || this.stringFreqs[s] < lowestFreq) {
+          lowestFreq = this.stringFreqs[s];
+        }
+      }
+    }
+    const currentPeriodSamples = lowestFreq > 20 ? sampleRate / lowestFreq : 400;
+
+    // Sag envelope follower: track RMS of the block for power-amp sag modulation
+    let blockSum = 0;
     
     for (let i = 0; i < len; i++) {
       let rawWasm = hasEngine ? this.outBuffer[i] : 0;
@@ -385,8 +517,17 @@ class GuitarProcessor extends AudioWorkletProcessor {
         vinArray.push(rawSample);
       } else {
         for (const p of pickups) {
-          const delayed = this.delayLine.read(p.delayMs || 1.0);
-          const pickupSig = 0.72 * rawSample + 0.28 * delayed;
+          // Subtractive pickup comb: y[n] = 0.5 * (x[n] - k * x[n - d])
+          // d = 2 * pickupPosition * N where N = period in samples for current pitch
+          // pickupPosition is encoded as delayMs / (period_ms * 2) in the topology,
+          // but we can derive it from delayMs: pos ≈ delayMs / (1000/freq * 2 * 1000)
+          // However, delayMs is already set as a physical position proxy.
+          // Convert: pickupPosition = delayMs / (2 * periodMs)
+          const periodMs = 1000 / (lowestFreq > 20 ? lowestFreq : 250);
+          const pickupPos = Math.max(0.02, Math.min(0.98, (p.delayMs || 1.0) / (2 * periodMs)));
+          const combDelaySamples = Math.max(1, 2 * pickupPos * currentPeriodSamples);
+          const delayed = this.delayLine.readSamples(combDelaySamples);
+          const pickupSig = 0.5 * (rawSample - 0.4 * delayed);
           let gain = p.blendGain ?? 1.0;
           if (p.isOutofPhase) gain *= -1;
           vinArray.push(pickupSig * gain);
@@ -395,7 +536,25 @@ class GuitarProcessor extends AudioWorkletProcessor {
       
       // Pass the array of voltages to the WDF circuit model
       // The WDF circuit naturally handles parallel averaging and series boosting
-      outChan[i] = this.wdf.processSample(vinArray);
+      const wdfOut = this.wdf.processSample(vinArray);
+      
+      // Route through the coupled passive tone stack (replaces independent biquads)
+      const toneOut = this.toneStack.processSample(wdfOut);
+
+      // Power-amp sag: envelope follower for bias modulation
+      const absSample = Math.abs(wdfOut);
+      const sagCoeff = absSample > this.sagEnvelope ? this.sagAttackCoeff : this.sagReleaseCoeff;
+      this.sagEnvelope = sagCoeff * this.sagEnvelope + (1 - sagCoeff) * absSample;
+      // Sag gain reduction: louder sustained signal → volume dips, recovers slowly
+      const sagGainReduction = 1.0 - this.sagAmount * Math.min(1.0, this.sagEnvelope * 3.0);
+      
+      outChan[i] = toneOut * sagGainReduction;
+      blockSum += toneOut * toneOut;
+    }
+
+    // Post sag envelope to main thread periodically for preamp gain modulation
+    if (this.sagEnvelope > 0.001) {
+      this.port.postMessage({ type: 'sag-level', level: this.sagEnvelope });
     }
 
     // Copy to remaining channels (stereo)
@@ -423,6 +582,13 @@ class DelayLine {
   }
   read(delayMs) {
     const delaySamples = (delayMs * this.sampleRate) / 1000;
+    return this._readAt(delaySamples);
+  }
+  /** Read at a fractional sample delay (for pitch-tracking pickup comb) */
+  readSamples(delaySamples) {
+    return this._readAt(delaySamples);
+  }
+  _readAt(delaySamples) {
     let readPtr = this.ptr - delaySamples;
     if (readPtr < 0) readPtr += this.buffer.length;
     const intPtr = Math.floor(readPtr);

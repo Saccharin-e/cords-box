@@ -483,6 +483,24 @@ export class AudioPipeline {
       const wasmBytes = await res.arrayBuffer();
       node.port.postMessage({ type: 'init', wasmBytes }, [wasmBytes]);
       this.postWdfUpdate(graph);
+
+      // Listen for sag-level feedback from the worklet: modulate preamp gain
+      // upward when sag is high (less headroom = more saturation, the coupled
+      // gain-up/volume-down behavior of real tube power-amp sag)
+      node.port.onmessage = (e) => {
+        const msg = e.data;
+        if (msg.type === 'sag-level' && msg.level > 0) {
+          const preampGain = this.activeNodes.get('preamp-gain') as GainNode | undefined;
+          if (preampGain && ctx.state === 'running') {
+            // Increase drive into preamp proportional to sag (more sag = more crunch)
+            const sagDriveBoost = 1.0 + msg.level * 0.8; // up to +80% gain boost
+            preampGain.gain.setTargetAtTime(
+              sagDriveBoost * (this.ampPedalState.ampGain * 1.35 + 0.5),
+              ctx.currentTime, 0.05,
+            );
+          }
+        }
+      };
     } catch {
       this.wdfWorkletNode = null;
     }
@@ -1132,12 +1150,63 @@ export class AudioPipeline {
     stringIndex: number = 0,
   ): boolean {
     if (this.wdfWorkletNode) {
+      // Always pluck at the starting frequency
       this.wdfWorkletNode.port.postMessage({
         type: 'pluck',
         string_idx: stringIndex,
-        freq: targetFreq ?? freq,
+        freq: freq,
         velocity: velocity,
       });
+
+      // For articulations that involve pitch glide, send a bend message
+      if (articulation === 'slide_up' || articulation === 'slide_down') {
+        const endFreq = targetFreq || (articulation === 'slide_up' ? freq * 1.122 : freq * 0.89);
+        this.wdfWorkletNode.port.postMessage({
+          type: 'bend',
+          string_idx: stringIndex,
+          targetFreq: endFreq,
+          durationMs: 150,
+        });
+      } else if (articulation === 'bend') {
+        const endFreq = targetFreq || freq * 1.122; // whole step up
+        this.wdfWorkletNode.port.postMessage({
+          type: 'bend',
+          string_idx: stringIndex,
+          targetFreq: endFreq,
+          durationMs: 180,
+        });
+      } else if (articulation === 'vibrato') {
+        // Vibrato: schedule multiple small bends
+        const vibratoDepth = 1.015; // ~25 cents
+        const cycleMs = 80;
+        setTimeout(() => {
+          this.wdfWorkletNode?.port.postMessage({
+            type: 'bend', string_idx: stringIndex,
+            targetFreq: freq * vibratoDepth, durationMs: cycleMs,
+          });
+        }, 0);
+        setTimeout(() => {
+          this.wdfWorkletNode?.port.postMessage({
+            type: 'bend', string_idx: stringIndex,
+            targetFreq: freq / vibratoDepth, durationMs: cycleMs,
+          });
+        }, cycleMs);
+        setTimeout(() => {
+          this.wdfWorkletNode?.port.postMessage({
+            type: 'bend', string_idx: stringIndex,
+            targetFreq: freq, durationMs: cycleMs,
+          });
+        }, cycleMs * 2);
+      } else if (targetFreq && targetFreq !== freq) {
+        // Direct retune glide
+        this.wdfWorkletNode.port.postMessage({
+          type: 'bend',
+          string_idx: stringIndex,
+          targetFreq: targetFreq,
+          durationMs: 120,
+        });
+      }
+
       return true;
     }
 
