@@ -1,0 +1,15 @@
+{
+  "name": "dsp",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "dsp_bg.wasm",
+    "dsp.js",
+    "dsp.d.ts"
+  ],
+  "main": "dsp.js",
+  "types": "dsp.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

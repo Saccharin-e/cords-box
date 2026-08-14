@@ -23,7 +23,6 @@ Thumbs.db
 # Rust / WASM
 dsp/target/
 dsp/pkg/
-src/audio/wasm-pkg/
 .env.*.local
 
 # Vite
