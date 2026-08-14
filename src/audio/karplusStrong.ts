@@ -107,7 +107,6 @@ export function renderKarplusStrong(
   // transient only. Guitar strings are nearly harmonic (unlike bells), so the
   // stiffness all-pass stays tiny.
   const stiffness = muted ? 0.05 : 0.002;
-  const fc0 = clamp((muted ? 5 : 14) * freq + 300, muted ? 400 : 1500, muted ? 2000 : 5500);
 
   // The loop filter's skirt would shave ~0.5–1.5% per cycle off the
   // fundamental (a two-stage lowpass a few hundred Hz above f0 is not flat
@@ -121,7 +120,6 @@ export function renderKarplusStrong(
   let allpassX1 = 0;
   let allpassY1 = 0;
   let lp1 = 0;
-  let lp2 = 0;
 
   for (let i = N + 1; i < length; i++) {
     const targetN = sampleRate / (freq * (1 + currentTension));
