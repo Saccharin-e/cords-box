@@ -25,7 +25,7 @@ import {
   WdfParallelAdaptor,
 } from './wdfNodes';
 
-export type ToneStackModel = 'fender' | 'marshall' | 'vox';
+export type ToneStackModel = 'fender' | 'marshall' | 'mesa' | 'vox';
 
 /**
  * Real component values for passive tone stacks.
@@ -67,6 +67,17 @@ export const TONE_STACK_COMPONENTS: Record<ToneStackModel, ToneStackComponents> 
     R_mid_pot: 25000,     // 25kΩ
     R_load: 470000,       // 470kΩ
   },
+  // Mesa Boogie Rectifier–inspired: deep V-scoop, tight low end, sizzling highs.
+  mesa: {
+    R_slope: 39000,
+    C_treble: 500e-12,
+    R_treble_pot: 250000,
+    C_bass: 22e-9,
+    R_bass_pot: 250000,
+    C_mid: 47e-9,
+    R_mid_pot: 20000,
+    R_load: 470000,
+  },
   // Vox AC30 Top Boost style
   // Warm midrange, treble-cut character
   vox: {
@@ -81,6 +92,13 @@ export const TONE_STACK_COMPONENTS: Record<ToneStackModel, ToneStackComponents> 
   },
 };
 
+export const TONE_STACK_MAKEUP_GAIN: Record<ToneStackModel, number> = {
+  fender: 2.0,
+  marshall: 2.0,
+  mesa: 2.0,
+  vox: 2.0,
+};
+
 export class WdfToneStackSolver {
   private root: WdfElement | null = null;
   private treblePot: WdfPotentiometer | null = null;
@@ -88,6 +106,7 @@ export class WdfToneStackSolver {
   private midPot: WdfPotentiometer | null = null;
   private sampleRate: number;
   private model: ToneStackModel = 'fender';
+  private makeupGain = 2.0;
 
   constructor(sampleRate = 48000) {
     this.sampleRate = sampleRate;
@@ -98,7 +117,8 @@ export class WdfToneStackSolver {
    */
   build(model: ToneStackModel): void {
     this.model = model;
-    const c = TONE_STACK_COMPONENTS[model];
+    const c = TONE_STACK_COMPONENTS[model] || TONE_STACK_COMPONENTS.fender;
+    this.makeupGain = TONE_STACK_MAKEUP_GAIN[model] ?? 2.0;
     const sr = this.sampleRate;
 
     // Treble path: treble pot → treble cap → ground
@@ -158,8 +178,8 @@ export class WdfToneStackSolver {
     const b = this.root.waveReflect(vin);
     this.root.step(vin);
 
-    // Output voltage at the load
-    return (vin + b) * 0.5;
+    // Output voltage at the load, compensated for insertion loss
+    return (vin + b) * 0.5 * this.makeupGain;
   }
 
   /**

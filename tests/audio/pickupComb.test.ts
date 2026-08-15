@@ -16,14 +16,6 @@ const SR = 44100;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-function rms(data: Float32Array, fromSec: number, toSec: number): number {
-  const start = Math.floor(fromSec * SR);
-  const end = Math.min(data.length, Math.ceil(toSec * SR));
-  let sum = 0;
-  for (let i = start; i < end; i++) sum += data[i] * data[i];
-  return Math.sqrt(sum / Math.max(1, end - start));
-}
-
 /**
  * Measure RMS energy in specific partial (harmonic) bins using a sliding DFT.
  * Returns the energy in each harmonic (1 = fundamental, 2 = 2nd, etc.)
@@ -96,34 +88,6 @@ function estimateT60(data: Float32Array, windowSec = 0.1): number {
 
   // If it hasn't decayed below threshold by the end of the buffer, return buffer duration
   return rmsValues.length * windowSec;
-}
-
-/**
- * Estimate pitch from a windowed segment using autocorrelation.
- */
-function estimatePitchAt(data: Float32Array, timeSec: number, expectedFreq: number): number {
-  const start = Math.floor(timeSec * SR);
-  const N = Math.round(SR / expectedFreq);
-  const winLen = Math.min(4096, data.length - start - N * 2);
-  if (winLen < N * 2) return expectedFreq; // Not enough data
-
-  const minLag = Math.floor(N * 0.5);
-  const maxLag = Math.ceil(N * 2.0);
-  let bestLag = N;
-  let bestCorr = -Infinity;
-
-  for (let lag = minLag; lag <= Math.min(maxLag, winLen); lag++) {
-    let corr = 0;
-    for (let i = 0; i < winLen - lag; i++) {
-      corr += data[start + i] * data[start + i + lag];
-    }
-    if (corr > bestCorr) {
-      bestCorr = corr;
-      bestLag = lag;
-    }
-  }
-
-  return SR / bestLag;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────

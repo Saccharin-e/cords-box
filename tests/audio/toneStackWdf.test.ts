@@ -1,105 +1,62 @@
 /**
  * toneStackWdf.test.ts — WDF Passive Tone Stack Verification
  *
- * These tests exercise the WDF tone stack implementation that lives inside
- * processor.js (inlined for the AudioWorklet thread).  We replicate the
- * same WDF primitives from wdfNodes.ts and the WdfToneStack topology to
- * verify:
+ * These tests exercise the WDF tone stack implementation in wdfToneStack.ts
+ * and its worklet counterpart in processor.js. We verify:
  *
- * 1. Coupled interaction: turning up mid pulls down bass+treble energy
+ * 1. Insertion loss compensation: at neutral controls (0.5/0.5/0.5), the
+ *    makeup gain (+6 dB / x2.0) restores the signal to near unity (within roughly ±1.5 dB)
+ *    in the audible guitar mid/treble range (1-3 kHz).
+ * 2. Coupled interaction: turning up mid pulls down bass+treble energy
  *    (the defining property of a passive RC network that independent
  *    biquads cannot reproduce).
- * 2. Different models (fender, marshall, mesa, vox) produce distinct
+ * 3. Different models (fender, marshall, mesa, vox) produce distinct
  *    frequency responses.
- * 3. Each pot affects the expected frequency band.
- * 4. Energy conservation: output energy ≤ input energy (passive network).
+ * 4. Each pot affects the expected frequency band.
  */
 import { describe, it, expect } from 'vitest';
 import {
-  WdfResistor,
-  WdfCapacitor,
-  WdfPotentiometer,
-  WdfSeriesAdaptor,
-  WdfParallelAdaptor,
-} from '../../src/audio/wdf/wdfNodes';
+  WdfToneStackSolver,
+  type ToneStackModel,
+} from '../../src/audio/wdf/wdfToneStack';
 
 const SAMPLE_RATE = 48000;
 
-// Replicate the TONE_STACK_MODELS from processor.js so we can test them
-// without importing the worklet script (which uses `registerProcessor`).
-const TONE_STACK_MODELS: Record<string, {
-  R_slope: number; C_treble: number; R_treble_pot: number;
-  C_bass: number; R_bass_pot: number;
-  C_mid: number; R_mid_pot: number; R_load: number;
-}> = {
-  fender: {
-    R_slope: 100000, C_treble: 250e-12, R_treble_pot: 250000,
-    C_bass: 100e-9, R_bass_pot: 250000,
-    C_mid: 47e-9, R_mid_pot: 25000, R_load: 1000000,
-  },
-  marshall: {
-    R_slope: 33000, C_treble: 470e-12, R_treble_pot: 220000,
-    C_bass: 22e-9, R_bass_pot: 1000000,
-    C_mid: 22e-9, R_mid_pot: 25000, R_load: 470000,
-  },
-  mesa: {
-    R_slope: 39000, C_treble: 500e-12, R_treble_pot: 250000,
-    C_bass: 22e-9, R_bass_pot: 250000,
-    C_mid: 47e-9, R_mid_pot: 20000, R_load: 470000,
-  },
-  vox: {
-    R_slope: 100000, C_treble: 100e-12, R_treble_pot: 1000000,
-    C_bass: 47e-9, R_bass_pot: 1000000,
-    C_mid: 22e-9, R_mid_pot: 50000, R_load: 1000000,
-  },
-};
-
-/** Build a WDF tone stack tree from a model config and pot positions. */
-function buildToneStack(
-  model: string,
-  bass: number,
-  mid: number,
-  treble: number,
-) {
-  const c = TONE_STACK_MODELS[model];
-  const sr = SAMPLE_RATE;
-
-  const treblePot = new WdfPotentiometer(c.R_treble_pot, treble);
-  const trebleCap = new WdfCapacitor(c.C_treble, sr);
-  const trebleBranch = new WdfSeriesAdaptor(treblePot, trebleCap);
-
-  const bassPot = new WdfPotentiometer(c.R_bass_pot, bass);
-  const bassCap = new WdfCapacitor(c.C_bass, sr);
-  const bassBranch = new WdfSeriesAdaptor(bassPot, bassCap);
-
-  const midPot = new WdfPotentiometer(c.R_mid_pot, mid);
-  const midCap = new WdfCapacitor(c.C_mid, sr);
-  const midBranch = new WdfSeriesAdaptor(midPot, midCap);
-
-  const loadR = new WdfResistor(c.R_load);
-  const slopeR = new WdfResistor(c.R_slope);
-
-  const midAndLoad = new WdfParallelAdaptor(midBranch, loadR);
-  const bassAndMidLoad = new WdfParallelAdaptor(bassBranch, midAndLoad);
-  const toneNetwork = new WdfParallelAdaptor(trebleBranch, bassAndMidLoad);
-  const root = new WdfSeriesAdaptor(slopeR, toneNetwork);
-
-  return { root, treblePot, bassPot, midPot };
-}
-
-/** Process a single sample through the tone stack. */
-function processSample(
-  root: ReturnType<typeof buildToneStack>['root'],
-  vin: number,
+/** Measure steady-state RMS gain (Vout_rms / Vin_rms) for a pure sine wave */
+function measureSineGain(
+  model: ToneStackModel,
+  freq: number,
+  bass = 0.5,
+  mid = 0.5,
+  treble = 0.5,
+  numSamples = 2048,
 ): number {
-  const b = root.waveReflect(vin);
-  root.step(vin);
-  return (vin + b) * 0.5;
+  const solver = new WdfToneStackSolver(SAMPLE_RATE);
+  solver.build(model);
+  solver.setControls(bass, mid, treble);
+
+  let inSumSq = 0;
+  let outSumSq = 0;
+  const settleSamples = 512;
+
+  for (let i = 0; i < numSamples; i++) {
+    const vin = Math.sin((2 * Math.PI * freq * i) / SAMPLE_RATE);
+    const vout = solver.processSample(vin);
+    if (i >= settleSamples) {
+      inSumSq += vin * vin;
+      outSumSq += vout * vout;
+    }
+  }
+
+  const count = numSamples - settleSamples;
+  const inRms = Math.sqrt(inSumSq / count);
+  const outRms = Math.sqrt(outSumSq / count);
+  return outRms / inRms;
 }
 
-/** Measure energy in a frequency band by running a sine sweep through the stack. */
+/** Measure band energy by sweeping frequencies */
 function measureBandEnergy(
-  model: string,
+  model: ToneStackModel,
   bass: number,
   mid: number,
   treble: number,
@@ -107,74 +64,73 @@ function measureBandEnergy(
   freqHigh: number,
   steps = 16,
 ): number {
-  const N = 2048; // More samples for WDF settling (passive RC components need time)
   let totalEnergy = 0;
-
   for (let s = 0; s < steps; s++) {
     const freq = freqLow * Math.pow(freqHigh / freqLow, s / (steps - 1));
-    const { root } = buildToneStack(model, bass, mid, treble);
-    let energy = 0;
-
-    for (let i = 0; i < N; i++) {
-      const vin = Math.sin(2 * Math.PI * freq * i / SAMPLE_RATE);
-      const vout = processSample(root, vin);
-      // Skip first 256 samples (transient settling for RC time constants)
-      if (i >= 256) {
-        energy += vout * vout;
-      }
-    }
-    totalEnergy += energy;
+    const gain = measureSineGain(model, freq, bass, mid, treble, 1024);
+    totalEnergy += gain * gain;
   }
-
   return totalEnergy;
 }
 
-/** Measure impulse response energy for a given configuration. */
-function measureImpulseEnergy(
-  model: string,
-  bass: number,
-  mid: number,
-  treble: number,
-  N = 512,
-): number {
-  const { root } = buildToneStack(model, bass, mid, treble);
-  let energy = 0;
-
-  for (let i = 0; i < N; i++) {
-    const vin = i === 0 ? 1.0 : 0.0;
-    const vout = processSample(root, vin);
-    energy += vout * vout;
-  }
-
-  return energy;
-}
-
 describe('WDF Passive Tone Stack', () => {
-  it('passes some energy through (not a dead circuit)', () => {
-    for (const model of Object.keys(TONE_STACK_MODELS)) {
-      const energy = measureImpulseEnergy(model, 0.5, 0.5, 0.5);
-      expect(energy, `${model} should pass energy`).toBeGreaterThan(0);
+  const models: ToneStackModel[] = ['fender', 'marshall', 'mesa', 'vox'];
+
+  it('compensates insertion loss across swept frequencies (110 Hz, 440 Hz, 1 kHz, 3 kHz) at neutral controls', () => {
+    // Check gain at key guitar frequencies with neutral controls (0.5, 0.5, 0.5):
+    // 110 Hz (low A), 440 Hz (concert A / guitar high midrange), 1 kHz, 3 kHz (presence/treble)
+    const testFreqs = [110, 440, 1000, 3000];
+
+    for (const model of models) {
+      const gains: Record<number, number> = {};
+      const dbs: Record<number, number> = {};
+
+      for (const freq of testFreqs) {
+        const gain = measureSineGain(model, freq, 0.5, 0.5, 0.5);
+        gains[freq] = gain;
+        dbs[freq] = 20 * Math.log10(gain);
+      }
+
+      // 1-3 kHz presence band should be centered near unity (within roughly ±1.5 dB)
+      const avgPresenceDb = (dbs[1000] + dbs[3000]) / 2;
+      expect(
+        avgPresenceDb,
+        `${model}: average 1-3 kHz gain (${avgPresenceDb.toFixed(2)} dB) should be within ±1.5 dB of unity`,
+      ).toBeGreaterThanOrEqual(-1.5);
+      expect(
+        avgPresenceDb,
+        `${model}: average 1-3 kHz gain (${avgPresenceDb.toFixed(2)} dB) should be within ±1.5 dB of unity`,
+      ).toBeLessThanOrEqual(1.5);
+
+      // Across all frequencies (including bass and mid scoop), gain should be in a musically solid range:
+      // no severe attenuation (>-6 dB anywhere at neutral) and no uncontrolled gain (<+3 dB anywhere)
+      for (const freq of testFreqs) {
+        expect(
+          dbs[freq],
+          `${model} at ${freq}Hz: gain (${dbs[freq].toFixed(2)} dB) should be between -6 dB and +3 dB`,
+        ).toBeGreaterThanOrEqual(-6.0);
+        expect(
+          dbs[freq],
+          `${model} at ${freq}Hz: gain (${dbs[freq].toFixed(2)} dB) should be between -6 dB and +3 dB`,
+        ).toBeLessThanOrEqual(3.0);
+      }
     }
   });
 
-  it('output energy ≤ input energy (passive network conservation)', () => {
-    // A passive RC network can only attenuate, never amplify
-    for (const model of Object.keys(TONE_STACK_MODELS)) {
-      const energy = measureImpulseEnergy(model, 1.0, 1.0, 1.0, 1024);
-      // Impulse input energy = 1.0² = 1.0
-      expect(energy, `${model} should not amplify`).toBeLessThanOrEqual(1.0);
+  it('passes some energy through (not a dead circuit)', () => {
+    for (const model of models) {
+      const gain = measureSineGain(model, 440, 0.5, 0.5, 0.5);
+      expect(gain, `${model} should pass energy`).toBeGreaterThan(0.1);
     }
   });
 
   it('different models produce different frequency responses', () => {
-    // Measure total energy across a wide band — each model should differ
     const energies: Record<string, number> = {};
-    for (const model of Object.keys(TONE_STACK_MODELS)) {
+    for (const model of models) {
       energies[model] = measureBandEnergy(model, 0.5, 0.5, 0.5, 200, 6000, 8);
     }
 
     const values = Object.values(energies);
-    // At least one pair should differ by more than 5%
     let foundDifference = false;
     for (let i = 0; i < values.length; i++) {
       for (let j = i + 1; j < values.length; j++) {
@@ -188,20 +144,13 @@ describe('WDF Passive Tone Stack', () => {
   });
 
   it('mid pot interaction: boosting mid reduces bass + treble energy', () => {
-    // This is the key test — in a coupled passive network, the three pots
-    // share a resistive ladder, so adjusting one band affects the others.
-    // Independent biquads can't reproduce this coupling.
     for (const model of ['fender', 'marshall'] as const) {
-      // Measure bass energy with mid at 0.1 vs mid at 0.9
       const bassWithLowMid = measureBandEnergy(model, 0.5, 0.1, 0.5, 60, 200);
       const bassWithHighMid = measureBandEnergy(model, 0.5, 0.9, 0.5, 60, 200);
 
-      // Measure treble energy with mid at 0.1 vs mid at 0.9
       const trebleWithLowMid = measureBandEnergy(model, 0.5, 0.1, 0.5, 2000, 8000);
       const trebleWithHighMid = measureBandEnergy(model, 0.5, 0.9, 0.5, 2000, 8000);
 
-      // When mid is boosted, bass and treble should change
-      // (in a passive network, boosting mid scoops energy from bass/treble)
       const bassChanged = Math.abs(bassWithLowMid - bassWithHighMid) > 0.001 * bassWithLowMid;
       const trebleChanged = Math.abs(trebleWithLowMid - trebleWithHighMid) > 0.001 * trebleWithLowMid;
 
@@ -213,10 +162,9 @@ describe('WDF Passive Tone Stack', () => {
   });
 
   it('treble pot affects high-frequency energy', () => {
-    for (const model of ['fender', 'marshall', 'mesa', 'vox'] as const) {
+    for (const model of models) {
       const trebleLow = measureBandEnergy(model, 0.5, 0.5, 0.1, 3000, 10000);
       const trebleHigh = measureBandEnergy(model, 0.5, 0.5, 0.9, 3000, 10000);
-      // Treble at 0.9 should pass more high-frequency energy than at 0.1
       expect(
         trebleHigh,
         `${model}: treble pot at 0.9 should pass more HF than at 0.1`,
@@ -225,10 +173,9 @@ describe('WDF Passive Tone Stack', () => {
   });
 
   it('bass pot affects low-frequency energy', () => {
-    for (const model of ['fender', 'marshall', 'mesa', 'vox'] as const) {
+    for (const model of models) {
       const bassLow = measureBandEnergy(model, 0.1, 0.5, 0.5, 40, 200);
       const bassHigh = measureBandEnergy(model, 0.9, 0.5, 0.5, 40, 200);
-      // Bass at 0.9 should pass more low-frequency energy than at 0.1
       expect(
         bassHigh,
         `${model}: bass pot at 0.9 should pass more LF than at 0.1`,
@@ -237,18 +184,16 @@ describe('WDF Passive Tone Stack', () => {
   });
 
   it('mesa model has deeper mid scoop than fender', () => {
-    // Mesa Boogie is characterized by a more aggressive V-scoop
     const fenderMidEnergy = measureBandEnergy('fender', 0.5, 0.5, 0.5, 400, 1000);
     const mesaMidEnergy = measureBandEnergy('mesa', 0.5, 0.5, 0.5, 400, 1000);
     const fenderFullEnergy = measureBandEnergy('fender', 0.5, 0.5, 0.5, 40, 10000);
     const mesaFullEnergy = measureBandEnergy('mesa', 0.5, 0.5, 0.5, 40, 10000);
 
-    // Mesa's mid-to-full ratio should be lower (more scooped)
     const fenderRatio = fenderMidEnergy / fenderFullEnergy;
     const mesaRatio = mesaMidEnergy / mesaFullEnergy;
     expect(
       mesaRatio,
       'Mesa should have a deeper mid scoop than Fender',
-    ).toBeLessThanOrEqual(fenderRatio * 1.1); // Allow 10% tolerance
+    ).toBeLessThanOrEqual(fenderRatio * 1.1);
   });
 });

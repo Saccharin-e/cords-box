@@ -323,6 +323,13 @@ const TONE_STACK_MODELS = {
   },
 };
 
+const TONE_STACK_MAKEUP_GAIN = {
+  fender: 2.0,
+  marshall: 2.0,
+  mesa: 2.0,
+  vox: 2.0,
+};
+
 class WdfToneStack {
   constructor(sampleRate) {
     this.sampleRate = sampleRate;
@@ -330,11 +337,13 @@ class WdfToneStack {
     this._bassPot = null;
     this._midPot = null;
     this._root = null;
+    this._makeupGain = 2.0;
     this.build('fender');
   }
 
   build(model) {
     const c = TONE_STACK_MODELS[model] || TONE_STACK_MODELS.fender;
+    this._makeupGain = TONE_STACK_MAKEUP_GAIN[model] ?? 2.0;
     const sr = this.sampleRate;
 
     this._treblePot = new WdfPotentiometer(c.R_treble_pot, 0.5);
@@ -368,7 +377,7 @@ class WdfToneStack {
     if (!this._root) return vin;
     const b = this._root.waveReflect(vin);
     this._root.step(vin);
-    return (vin + b) * 0.5;
+    return (vin + b) * 0.5 * this._makeupGain;
   }
 }
 
