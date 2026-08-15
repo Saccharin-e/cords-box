@@ -166,7 +166,7 @@ export const DEFAULT_AMP_PEDALBOARD_STATE: AmpPedalboardState = {
 
 const tubeCurveCache = new Map<string, Float32Array<ArrayBuffer>>();
 let overdriveCurveCache: Float32Array<ArrayBuffer> | null = null;
-const cabinetIrCache = new Map<number, AudioBuffer>();
+const cabinetIrCache = new Map<string, AudioBuffer>();
 const roomIrCache = new Map<number, AudioBuffer>();
 
 /**
@@ -305,31 +305,92 @@ function createOverdriveCurve(): Float32Array<ArrayBuffer> {
   return curve;
 }
 
-function createCabinetImpulseResponse(ctx: AudioContext): AudioBuffer {
-  const cached = cabinetIrCache.get(ctx.sampleRate);
+// Per-cabinet-model modal resonance tables.
+// Each mode is [frequencyHz, decayRate (1/s), relativeAmplitude].
+// Lower modes ring longer (smaller decay rate); higher breakup modes die fast.
+const CABINET_MODES: Record<CabinetModelType, Array<[number, number, number]>> = {
+  '1x12_open': [
+    [105, 90, 0.40],    // baffle fundamental
+    [245, 110, 0.28],   // back-panel reflection (open back)
+    [680, 160, 0.18],   // first cone breakup
+    [1250, 200, 0.14],  // cone/surround coupling
+    [2600, 280, 0.09],  // high cone breakup
+    [4200, 380, 0.04],  // edge diffraction
+  ],
+  '2x12_tweed': [
+    [95, 80, 0.42],     // larger baffle fundamental
+    [210, 100, 0.30],   // cabinet depth mode
+    [450, 130, 0.22],   // inter-speaker coupling
+    [820, 170, 0.15],   // cone breakup
+    [1800, 240, 0.10],  // high-mid breakup
+    [3200, 320, 0.06],  // presence peak
+    [5000, 420, 0.03],  // air/diffusion
+  ],
+  '4x12_stack': [
+    [120, 70, 0.45],    // sealed box fundamental
+    [280, 95, 0.32],    // cabinet depth standing wave
+    [520, 130, 0.22],   // inter-speaker mode
+    [900, 170, 0.16],   // first cone breakup (G12T-75 style)
+    [1600, 220, 0.11],  // second breakup
+    [2800, 300, 0.07],  // presence dip/peak
+    [4500, 400, 0.04],  // high breakup
+    [6200, 500, 0.02],  // air mode
+  ],
+  '4x12_metal': [
+    [130, 65, 0.48],    // tight sealed box
+    [310, 85, 0.35],    // box mode (tighter Q)
+    [580, 120, 0.24],   // inter-speaker coupling
+    [1050, 160, 0.18],  // V30-style early breakup
+    [2200, 240, 0.12],  // aggressive presence
+    [3600, 320, 0.08],  // cone edge
+    [5200, 420, 0.04],  // sizzle
+    [7000, 550, 0.02],  // air/fizz
+  ],
+};
+
+function createCabinetImpulseResponse(
+  ctx: AudioContext,
+  model: CabinetModelType = '1x12_open',
+): AudioBuffer {
+  const cacheKey = `${ctx.sampleRate}:${model}`;
+  const cached = cabinetIrCache.get(cacheKey);
   if (cached) return cached;
 
-  const length = Math.floor(ctx.sampleRate * 0.055); // 55ms broadband speaker IR
+  const length = Math.floor(ctx.sampleRate * 0.055); // 55ms IR
   const impulse = ctx.createBuffer(1, length, ctx.sampleRate);
   const data = impulse.getChannelData(0);
 
-  // Dense broadband 1x12 Celestion speaker impulse:
-  // High-density noise reflections simulating speaker cone paper texture,
-  // 105 Hz baffle fundamental & 2.6 kHz cone breakup
-  let filterState = 0;
+  const modes = CABINET_MODES[model] || CABINET_MODES['1x12_open'];
+
+  // 1. Additive modal synthesis: sum exponentially-decaying sinusoidal modes
+  //    representing the speaker cone's breakup modes and cabinet resonances.
+  for (let i = 0; i < length; i++) {
+    const t = i / ctx.sampleRate;
+    let sample = 0;
+    for (const [freq, decayRate, amplitude] of modes) {
+      sample += amplitude * Math.sin(2 * Math.PI * freq * t) * Math.exp(-t * decayRate);
+    }
+    data[i] = sample;
+  }
+
+  // 2. Direct impulse: the initial transient of the speaker's first excursion
+  data[0] += 0.9;
+  data[1] += -0.4;
+
+  // 3. Blend a small amount of filtered noise for high-frequency diffusion
+  //    realism (~20 dB below the modal content). A real cone has micro-texture
+  //    that isn't purely modal.
+  let noiseFilterState = 0;
+  // Use a deterministic LCG so the IR is reproducible across sessions
+  let noiseSeed = 54321;
   for (let i = 0; i < length; i++) {
     const t = i / ctx.sampleRate;
     const env = Math.exp(-t * 140);
-    const noise = Math.random() * 2 - 1;
-    filterState = filterState * 0.45 + noise * 0.55;
-
-    const coneRes = Math.sin(2 * Math.PI * 2600 * t) * 0.2;
-    const baffleRes = Math.sin(2 * Math.PI * 105 * t) * 0.35;
-
-    data[i] = (filterState * 0.4 + coneRes + baffleRes) * env;
+    noiseSeed = (noiseSeed * 1664525 + 1013904223) | 0;
+    const noise = ((noiseSeed >>> 0) / 4294967296) * 2 - 1;
+    noiseFilterState = noiseFilterState * 0.45 + noise * 0.55;
+    data[i] += noiseFilterState * 0.04 * env; // ~20 dB below modes
   }
-  data[0] = 0.9;
-  data[1] = -0.4;
 
   // Peak-normalize impulse
   let maxAbs = 0;
@@ -343,7 +404,7 @@ function createCabinetImpulseResponse(ctx: AudioContext): AudioBuffer {
     }
   }
 
-  cabinetIrCache.set(ctx.sampleRate, impulse);
+  cabinetIrCache.set(cacheKey, impulse);
   return impulse;
 }
 
@@ -819,7 +880,7 @@ export class AudioPipeline {
 
     // 6. 1x12 speaker/cabinet impulse response and speaker roll-off.
     const cabinet = ctx.createConvolver();
-    cabinet.buffer = createCabinetImpulseResponse(ctx);
+    cabinet.buffer = createCabinetImpulseResponse(ctx, this.ampPedalState.cabModel);
     cabinet.normalize = true;
     const cabHighpass = ctx.createBiquadFilter();
     cabHighpass.type = 'highpass';

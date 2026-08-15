@@ -411,7 +411,7 @@ class GuitarProcessor extends AudioWorkletProcessor {
       init(wasmBytes)
         .then((wasm) => {
           wasmMemory = wasm.memory;
-          this.engine = new DspEngine(sampleRate);
+          this.engine = new DspEngine(sampleRate, Date.now() & 0xFFFFFFFF);
           this.outPtr = this.engine.output_ptr();
           this.outBuffer = new Float32Array(wasmMemory.buffer, this.outPtr, 128);
           for (const p of this.pendingPlucks) {

@@ -22,9 +22,10 @@ export class DspEngine {
     }
     /**
      * @param {number} sample_rate
+     * @param {number} seed
      */
-    constructor(sample_rate) {
-        const ret = wasm.dspengine_new(sample_rate);
+    constructor(sample_rate, seed) {
+        const ret = wasm.dspengine_new(sample_rate, seed);
         this.__wbg_ptr = ret;
         DspEngineFinalization.register(this, this.__wbg_ptr, this);
         return this;

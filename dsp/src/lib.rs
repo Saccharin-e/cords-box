@@ -121,10 +121,14 @@ struct GuitarString {
     crossfade_length: usize,
 
     string_idx: usize,
+
+    // Free-running PRNG state — each string has its own stream so
+    // simultaneous plucks get decorrelated noise bursts.
+    prng_state: u32,
 }
 
 impl GuitarString {
-    fn new() -> Self {
+    fn new(prng_seed: u32) -> Self {
         Self {
             delay_line_h: [0.0; BUFFER_SIZE],
             delay_line_v: [0.0; BUFFER_SIZE],
@@ -174,10 +178,19 @@ impl GuitarString {
             crossfade_length: 128,
 
             string_idx: 0,
+            prng_state: prng_seed,
         }
     }
 
+    /// Advance the per-string LCG PRNG and return a value in [0, 1).
+    #[inline(always)]
+    fn prng_next(&mut self) -> f32 {
+        self.prng_state = self.prng_state.wrapping_mul(1664525).wrapping_add(1013904223);
+        (self.prng_state as f32) / (std::u32::MAX as f32)
+    }
+
     fn fill_excitation(
+        &mut self,
         delay_line_h: &mut [f32; BUFFER_SIZE],
         delay_line_v: &mut [f32; BUFFER_SIZE],
         n: usize,
@@ -189,23 +202,20 @@ impl GuitarString {
             delay_line_v[i] = 0.0;
         }
 
-        // Improved Pick Attack: Resonant noise burst
+        // Improved Pick Attack: Resonant noise burst.
+        // The PRNG is the string's own free-running state — never reset per
+        // pluck — so every call gets an independent noise sequence and pan.
         let burst_length = n;
         
         let mut filter_state = 0.0;
         let cutoff = (0.25 + brightness * 0.45).clamp(0.15, 0.95); // Lowpass coefficient
-        
-        let mut seed: u32 = 12345;
-        let mut rand = || -> f32 {
-            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
-            (seed as f32) / (std::u32::MAX as f32)
-        };
 
-        // Pluck angle determines how energy splits between horizontal and vertical planes
-        let pan = rand() * 0.4 + 0.3; // 0.3 to 0.7
+        // Pluck angle determines how energy splits between horizontal and vertical planes.
+        // Because the PRNG advances continuously, each pluck gets a different angle.
+        let pan = self.prng_next() * 0.4 + 0.3; // 0.3 to 0.7
 
         for i in 0..burst_length {
-            let noise = rand() * 2.0 - 1.0;
+            let noise = self.prng_next() * 2.0 - 1.0;
             // 1-pole lowpass to simulate fleshy part of pick/finger
             filter_state += cutoff * (noise - filter_state);
             
@@ -248,13 +258,22 @@ impl GuitarString {
         self.string_idx = string_idx;
 
         if self.is_active {
-            Self::fill_excitation(
-                &mut self.pending_delay_line_h,
-                &mut self.pending_delay_line_v,
-                n,
-                velocity,
-                brightness,
-            );
+            // fill_excitation needs &mut self for PRNG, but also writes to
+            // pending delay lines.  We borrow the pending lines through raw
+            // pointers to satisfy the borrow checker while keeping the PRNG
+            // on self advancing.
+            let pending_h = &mut self.pending_delay_line_h as *mut [f32; BUFFER_SIZE];
+            let pending_v = &mut self.pending_delay_line_v as *mut [f32; BUFFER_SIZE];
+            // SAFETY: pending_delay_line_{h,v} do not alias prng_state.
+            unsafe {
+                self.fill_excitation(
+                    &mut *pending_h,
+                    &mut *pending_v,
+                    n,
+                    velocity,
+                    brightness,
+                );
+            }
             self.pending_write_idx_h = n % BUFFER_SIZE;
             self.pending_write_idx_v = n % BUFFER_SIZE;
             self.pending_prev_sample_h = 0.0;
@@ -269,13 +288,18 @@ impl GuitarString {
             self.pending_amplitude_decay = new_amplitude_decay;
             self.crossfade_position = 0;
         } else {
-            Self::fill_excitation(
-                &mut self.delay_line_h,
-                &mut self.delay_line_v,
-                n,
-                velocity,
-                brightness,
-            );
+            let main_h = &mut self.delay_line_h as *mut [f32; BUFFER_SIZE];
+            let main_v = &mut self.delay_line_v as *mut [f32; BUFFER_SIZE];
+            // SAFETY: delay_line_{h,v} do not alias prng_state.
+            unsafe {
+                self.fill_excitation(
+                    &mut *main_h,
+                    &mut *main_v,
+                    n,
+                    velocity,
+                    brightness,
+                );
+            }
             self.write_idx_h = n % BUFFER_SIZE;
             self.write_idx_v = n % BUFFER_SIZE;
             self.prev_sample_h = 0.0;
@@ -509,6 +533,10 @@ impl GuitarString {
     }
 }
 
+// Sympathetic coupling parameters
+const SYMPATHETIC_COUPLING_GAIN: f32 = 0.003;
+const SYMPATHETIC_THRESHOLD: f32 = 0.05;
+
 #[wasm_bindgen]
 pub struct DspEngine {
     strings: Vec<GuitarString>,
@@ -520,10 +548,14 @@ pub struct DspEngine {
 #[wasm_bindgen]
 impl DspEngine {
     #[wasm_bindgen(constructor)]
-    pub fn new(sample_rate: f32) -> Self {
+    pub fn new(sample_rate: f32, seed: u32) -> Self {
         let mut strings = Vec::with_capacity(MAX_STRINGS);
-        for _ in 0..MAX_STRINGS {
-            strings.push(GuitarString::new());
+        for i in 0..MAX_STRINGS {
+            // Each string gets a unique PRNG seed derived from the master
+            // seed via Knuth's multiplicative hash, so simultaneous plucks
+            // produce decorrelated noise bursts.
+            let string_seed = seed ^ ((i as u32).wrapping_mul(2654435761));
+            strings.push(GuitarString::new(string_seed));
         }
 
         Self {
@@ -583,10 +615,29 @@ impl DspEngine {
             return;
         }
 
+        // Per-sample buffer for individual string outputs (sympathetic coupling)
+        let mut string_outputs = [0.0f32; MAX_STRINGS];
+
         for i in 0..128 {
             let mut mix = 0.0;
+            for (si, s) in self.strings.iter_mut().enumerate() {
+                let out = s.process_sample();
+                string_outputs[si] = out;
+                mix += out;
+            }
+
+            // Sympathetic string coupling: feed a tiny fraction of the summed
+            // output back into each near-silent string's delay line. This
+            // models the shared bridge transmitting vibration between strings.
+            // Gated by amplitude_env so it only excites quiet strings —
+            // prevents feedback runaway on sustained chords.
+            let coupling_input = mix * SYMPATHETIC_COUPLING_GAIN;
             for s in &mut self.strings {
-                mix += s.process_sample();
+                if s.is_active && s.amplitude_env < SYMPATHETIC_THRESHOLD {
+                    let idx = if s.write_idx_h > 0 { s.write_idx_h - 1 } else { BUFFER_SIZE - 1 };
+                    s.delay_line_h[idx] += coupling_input * 0.7;
+                    s.delay_line_v[idx] += coupling_input * 0.3;
+                }
             }
 
             // Tube waveshaping is applied upstream in processor.js now;
