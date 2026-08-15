@@ -202,64 +202,17 @@ const AMP_TUBE_PARAMS: Record<
 };
 
 /**
- * Per-amp-model tone stack coefficients.
- *
- * Each amp model has a characteristic passive tone stack EQ shape applied via
- * three BiquadFilterNodes (bass shelf, mid peak, treble shelf). These replace
- * the previous generic fixed-value tone stack with model-accurate curves.
+ * Maps each pipeline amp model to the WDF passive tone-stack model in
+ * processor.js.  The tone stack is now solved per-sample inside the
+ * AudioWorklet's WdfToneStack (a coupled RC network where bass/mid/treble
+ * pots interact through a shared resistive ladder), replacing the previous
+ * three independent BiquadFilterNodes.
  */
-const AMP_TONE_STACK: Record<
-  AmpModelType,
-  {
-    bassFreq: number;
-    bassGain: number;
-    midFreq: number;
-    midQ: number;
-    midGain: number;
-    trebleFreq: number;
-    trebleGain: number;
-  }
-> = {
-  // Fender: classic mid-scoop, pronounced bass/treble shelf
-  clean_twin: {
-    bassFreq: 120,
-    bassGain: 1.5,
-    midFreq: 400,
-    midQ: 0.9,
-    midGain: -4.5,
-    trebleFreq: 3200,
-    trebleGain: 2.0,
-  },
-  // Marshall: aggressive mid-presence, tight bass
-  crunch_800: {
-    bassFreq: 100,
-    bassGain: -1.0,
-    midFreq: 800,
-    midQ: 0.75,
-    midGain: 2.5,
-    trebleFreq: 2800,
-    trebleGain: 1.5,
-  },
-  // Mesa: deep V-scoop, tight low-end, sizzling highs
-  high_gain: {
-    bassFreq: 80,
-    bassGain: -2.0,
-    midFreq: 500,
-    midQ: 1.1,
-    midGain: -5.0,
-    trebleFreq: 4500,
-    trebleGain: 3.5,
-  },
-  // Vox: warm midrange, rolled-off highs, gentle bass
-  vox_chime: {
-    bassFreq: 140,
-    bassGain: 0.5,
-    midFreq: 600,
-    midQ: 0.65,
-    midGain: 1.0,
-    trebleFreq: 2400,
-    trebleGain: -1.5,
-  },
+const AMP_TONE_STACK_MODEL: Record<AmpModelType, string> = {
+  clean_twin: 'fender',
+  crunch_800: 'marshall',
+  high_gain: 'mesa',
+  vox_chime: 'vox',
 };
 
 /**
@@ -501,6 +454,9 @@ export class AudioPipeline {
           }
         }
       };
+
+      // Sync the WDF tone stack with the current amp model and knob state
+      this.postToneStackUpdate();
     } catch {
       this.wdfWorkletNode = null;
     }
@@ -562,6 +518,24 @@ export class AudioPipeline {
         cableCapFarads: this.ampPedalState.cableLengthMeters * 100e-12, // 100pF/m typical instrument cable
         ampInputImpedanceOhms: this.ampPedalState.ampInputImpedanceOhms,
       },
+    });
+  }
+
+  /**
+   * Sync the WDF passive tone stack in the AudioWorklet with the current
+   * amp model and bass/mid/treble knob positions.  The worklet solves the
+   * coupled RC network per-sample, replacing the previous independent
+   * BiquadFilterNodes in the main-thread Web Audio graph.
+   */
+  private postToneStackUpdate(): void {
+    if (!this.wdfWorkletNode) return;
+    const s = this.ampPedalState;
+    this.wdfWorkletNode.port.postMessage({
+      type: 'tone-stack-update',
+      model: AMP_TONE_STACK_MODEL[s.ampModel],
+      bass: s.ampBass,
+      mid: s.ampMid,
+      treble: s.ampTreble,
     });
   }
 
@@ -635,9 +609,6 @@ export class AudioPipeline {
     const s = this.ampPedalState;
     const now = ctx.currentTime;
 
-    const toneBass = this.activeNodes.get('tone-bass') as BiquadFilterNode | undefined;
-    const toneMid = this.activeNodes.get('tone-mid') as BiquadFilterNode | undefined;
-    const toneTreble = this.activeNodes.get('tone-treble') as BiquadFilterNode | undefined;
     const presence = this.activeNodes.get('amp-presence') as BiquadFilterNode | undefined;
     const preampGain = this.activeNodes.get('preamp-gain') as GainNode | undefined;
     const pedalCompressor = this.activeNodes.get('pedal-compressor') as
@@ -647,21 +618,9 @@ export class AudioPipeline {
     const roomSend = this.activeNodes.get('room-send') as GainNode | undefined;
     const roomReturn = this.activeNodes.get('room-return') as GainNode | undefined;
 
-    // Apply per-model tone stack: model-specific base curve + user knob offset
-    const ts = AMP_TONE_STACK[s.ampModel];
-    if (toneBass) {
-      toneBass.frequency.setValueAtTime(ts.bassFreq, now);
-      toneBass.gain.setValueAtTime(ts.bassGain + (s.ampBass - 0.5) * 10, now);
-    }
-    if (toneMid) {
-      toneMid.frequency.setValueAtTime(ts.midFreq, now);
-      toneMid.Q.setValueAtTime(ts.midQ, now);
-      toneMid.gain.setValueAtTime(ts.midGain + (s.ampMid - 0.5) * 10, now);
-    }
-    if (toneTreble) {
-      toneTreble.frequency.setValueAtTime(ts.trebleFreq, now);
-      toneTreble.gain.setValueAtTime(ts.trebleGain + (s.ampTreble - 0.5) * 10, now);
-    }
+    // Tone stack is now solved per-sample inside the AudioWorklet's WdfToneStack
+    // (a coupled passive RC network). Sync knob positions via postMessage.
+    this.postToneStackUpdate();
     if (presence) presence.gain.setValueAtTime((s.ampPresence - 0.5) * 8, now);
 
     if (preampGain) {
@@ -841,24 +800,13 @@ export class AudioPipeline {
     secondTube.curve = createTubeCurve(this.ampPedalState.ampModel);
     secondTube.oversample = '4x';
 
-    // 4b. Per-model passive tone stack — each amp has a characteristic EQ shape
-    const ts = AMP_TONE_STACK[this.ampPedalState.ampModel];
-
-    const toneBass = ctx.createBiquadFilter();
-    toneBass.type = 'lowshelf';
-    toneBass.frequency.value = ts.bassFreq;
-    toneBass.gain.value = ts.bassGain;
-
-    const toneMid = ctx.createBiquadFilter();
-    toneMid.type = 'peaking';
-    toneMid.frequency.value = ts.midFreq;
-    toneMid.Q.value = ts.midQ;
-    toneMid.gain.value = ts.midGain;
-
-    const toneTreble = ctx.createBiquadFilter();
-    toneTreble.type = 'highshelf';
-    toneTreble.frequency.value = ts.trebleFreq;
-    toneTreble.gain.value = ts.trebleGain;
+    // 4b. Passive tone stack — the coupled RC network (bass/mid/treble pots
+    // sharing a resistive ladder) is now solved per-sample inside the
+    // AudioWorklet's WdfToneStack.  A unity-gain pass-through replaces the
+    // old three-band BiquadFilterNode chain here so the signal path stays
+    // continuous without double-filtering.
+    const toneStackPassthrough = ctx.createGain();
+    toneStackPassthrough.gain.value = 1.0;
 
     // 5. Power amp: a second tube stage drives the speaker. Sag/compression
     // is handled by the single final limiter below — stacked generic browser
@@ -934,9 +882,6 @@ export class AudioPipeline {
     this.activeNodes.set('pedal-dry', pedalDry);
     this.activeNodes.set('pedal-wet', pedalWet);
     this.activeNodes.set('preamp-gain', preampGain);
-    this.activeNodes.set('tone-bass', toneBass);
-    this.activeNodes.set('tone-mid', toneMid);
-    this.activeNodes.set('tone-treble', toneTreble);
     this.activeNodes.set('amp-presence', ampPresence);
     this.activeNodes.set('room-send', roomSend);
     this.activeNodes.set('room-return', roomReturn);
@@ -957,10 +902,8 @@ export class AudioPipeline {
     preampTube.connect(interstage);
     interstage.connect(secondTubeGain);
     secondTubeGain.connect(secondTube);
-    secondTube.connect(toneBass);
-    toneBass.connect(toneMid);
-    toneMid.connect(toneTreble);
-    toneTreble.connect(powerAmpGain);
+    secondTube.connect(toneStackPassthrough);
+    toneStackPassthrough.connect(powerAmpGain);
     powerAmpGain.connect(powerAmpTube);
     powerAmpTube.connect(cabinet);
 

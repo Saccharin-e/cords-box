@@ -308,6 +308,14 @@ const TONE_STACK_MODELS = {
     C_bass: 22e-9, R_bass_pot: 1000000,
     C_mid: 22e-9, R_mid_pot: 25000, R_load: 470000,
   },
+  // Mesa Boogie Rectifier–inspired: deep V-scoop, tight low end, sizzling highs.
+  // Smaller slope resistor and larger treble cap push more high-frequency energy;
+  // larger mid cap with lower pot resistance create the characteristic mid-scoop.
+  mesa: {
+    R_slope: 39000, C_treble: 500e-12, R_treble_pot: 250000,
+    C_bass: 22e-9, R_bass_pot: 250000,
+    C_mid: 47e-9, R_mid_pot: 20000, R_load: 470000,
+  },
   vox: {
     R_slope: 100000, C_treble: 100e-12, R_treble_pot: 1000000,
     C_bass: 47e-9, R_bass_pot: 1000000,
