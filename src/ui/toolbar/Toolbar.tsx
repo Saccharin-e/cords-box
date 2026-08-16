@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { useKeybindingsStore } from '@store/keybindingsStore';
+import { Button } from '../common/Button';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 
 export function Toolbar() {
   const activeView = useCanvasStore((s) => s.activeView);
@@ -35,6 +37,9 @@ export function Toolbar() {
   // Dropdown Open States
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
   const fileMenuRef = useRef<HTMLDivElement>(null);
+
+  // Confirm Reset State
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   // Listen to fullscreen changes
   useEffect(() => {
@@ -93,10 +98,13 @@ export function Toolbar() {
   }
 
   function handleReset() {
-    if (confirm('Reset entire canvas and remove all placed components?')) {
-      resetCanvas();
-      resetGraph();
-    }
+    setIsConfirmOpen(true);
+  }
+
+  function executeReset() {
+    setIsConfirmOpen(false);
+    resetCanvas();
+    resetGraph();
   }
 
   return (
@@ -154,8 +162,8 @@ export function Toolbar() {
         </div>
 
         {/* Toggle Component Library Sidebar */}
-        <button
-          className={`btn btn--sm ${isSidebarOpen && activeView !== 'sound_systems' ? 'btn--primary' : ''}`}
+        <Button
+          className={`btn--sm ${isSidebarOpen && activeView !== 'sound_systems' ? 'btn--primary' : ''}`}
           onClick={toggleSidebar}
           title={
             activeView === 'sound_systems'
@@ -188,15 +196,15 @@ export function Toolbar() {
             <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
           </svg>
           <span>Library</span>
-        </button>
+        </Button>
       </div>
 
       {/* Center Section: Compact Dropdown Navigation */}
       <nav className="toolbar__actions" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {/* 1. File Menu Dropdown */}
         <div ref={fileMenuRef} style={{ position: 'relative' }}>
-          <button
-            className={`btn btn--sm ${isFileMenuOpen ? 'btn--primary' : ''}`}
+          <Button
+            className={`btn--sm ${isFileMenuOpen ? 'btn--primary' : ''}`}
             onClick={() => {
               setIsFileMenuOpen(!isFileMenuOpen);
             }}
@@ -216,11 +224,12 @@ export function Toolbar() {
             </svg>
             <span>File</span>
             <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
-          </button>
+          </Button>
 
           {isFileMenuOpen && (
             <div style={dropdownStyle}>
-              <button
+              <Button
+                variant="ghost"
                 style={dropdownItemStyle}
                 onClick={() => {
                   setIsFileMenuOpen(false);
@@ -242,11 +251,12 @@ export function Toolbar() {
                   <polyline points="21 15 16 10 5 21" />
                 </svg>
                 <span>Export Image / PDF...</span>
-              </button>
+              </Button>
 
               <div style={dropdownDividerStyle} />
 
-              <button
+              <Button
+                variant="ghost"
                 style={dropdownItemStyle}
                 onClick={() => {
                   setIsFileMenuOpen(false);
@@ -268,9 +278,10 @@ export function Toolbar() {
                   <polyline points="7 3 7 8 15 8" />
                 </svg>
                 <span>Save JSON Harness</span>
-              </button>
+              </Button>
 
-              <button
+              <Button
+                variant="ghost"
                 style={dropdownItemStyle}
                 onClick={() => {
                   setIsFileMenuOpen(false);
@@ -290,9 +301,10 @@ export function Toolbar() {
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 </svg>
                 <span>Open JSON Harness...</span>
-              </button>
+              </Button>
 
-              <button
+              <Button
+                variant="ghost"
                 style={dropdownItemStyle}
                 onClick={() => {
                   setIsFileMenuOpen(false);
@@ -312,9 +324,10 @@ export function Toolbar() {
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                 </svg>
                 <span>Layout Slots & Templates...</span>
-              </button>
+              </Button>
 
-              <button
+              <Button
+                variant="ghost"
                 style={dropdownItemStyle}
                 onClick={() => {
                   setIsFileMenuOpen(false);
@@ -336,11 +349,12 @@ export function Toolbar() {
                   <line x1="12" y1="17" x2="12.01" y2="17" />
                 </svg>
                 <span>Shortcuts & Keybindings (?)</span>
-              </button>
+              </Button>
 
               <div style={dropdownDividerStyle} />
 
-              <button
+              <Button
+                variant="ghost"
                 style={{ ...dropdownItemStyle, color: '#f87171' }}
                 onClick={() => {
                   setIsFileMenuOpen(false);
@@ -361,14 +375,14 @@ export function Toolbar() {
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                 </svg>
                 <span>Clear Canvas</span>
-              </button>
+              </Button>
             </div>
           )}
         </div>
 
         {/* 2. Wire Tool Toggle Button */}
-        <button
-          className={`btn btn--sm ${wiringMode ? 'btn--primary' : ''}`}
+        <Button
+          className={`btn--sm ${wiringMode ? 'btn--primary' : ''}`}
           id="btn-wire"
           onClick={handleWiringToggle}
           title="Click lugs on components to draw wires"
@@ -387,13 +401,13 @@ export function Toolbar() {
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
           <span>{wiringMode ? 'Wiring…' : 'Wire'}</span>
-        </button>
+        </Button>
 
         <div style={{ width: 1, height: 16, backgroundColor: '#3f3f46', margin: '0 2px' }} />
 
         {/* Direct Guitar Sound Test Bench Toggle */}
-        <button
-          className={`btn btn--sm ${isTestPanelOpen ? 'btn--primary' : ''}`}
+        <Button
+          className={`btn--sm ${isTestPanelOpen ? 'btn--primary' : ''}`}
           onClick={toggleTestPanel}
           title="Guitar Pickups & Tone Sound Test Bench"
           style={{
@@ -421,11 +435,11 @@ export function Toolbar() {
             <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
           </svg>
           <span>Test Bench</span>
-        </button>
+        </Button>
 
         {/* Amp & Pedalboard Panel Toggle */}
-        <button
-          className={`btn btn--sm ${isAmpPanelOpen ? 'btn--primary' : ''}`}
+        <Button
+          className={`btn--sm ${isAmpPanelOpen ? 'btn--primary' : ''}`}
           onClick={toggleAmpPanel}
           title="Customizable Amp Simulator & Stompbox Pedalboard"
           style={{
@@ -445,11 +459,11 @@ export function Toolbar() {
             <line x1="12" y1="21" x2="12" y2="12" />
           </svg>
           <span>Amp</span>
-        </button>
+        </Button>
 
         {/* Playable Guitar Fretboard Panel Toggle */}
-        <button
-          className={`btn btn--sm ${isFretboardOpen ? 'btn--primary' : ''}`}
+        <Button
+          className={`btn--sm ${isFretboardOpen ? 'btn--primary' : ''}`}
           onClick={toggleFretboard}
           title="Interactive Playable Guitar Fretboard Simulation"
           style={{
@@ -469,11 +483,11 @@ export function Toolbar() {
             <circle cx="18" cy="16" r="3" />
           </svg>
           <span>Fretboard</span>
-        </button>
+        </Button>
 
         {/* Guitar Tab Player & Editor Panel Toggle */}
-        <button
-          className={`btn btn--sm ${isTabPanelOpen ? 'btn--primary' : ''}`}
+        <Button
+          className={`btn--sm ${isTabPanelOpen ? 'btn--primary' : ''}`}
           onClick={toggleTabPanel}
           title="ASCII Guitar Tab Editor & Playback Scheduler"
           style={{
@@ -495,11 +509,11 @@ export function Toolbar() {
             <polyline points="10 9 9 9 8 9" />
           </svg>
           <span>Tab Player</span>
-        </button>
+        </Button>
 
         {/* Saveable Layout Slots Modal Toggle */}
-        <button
-          className={`btn btn--sm ${isSlotModalOpen ? 'btn--primary' : ''}`}
+        <Button
+          className={`btn--sm ${isSlotModalOpen ? 'btn--primary' : ''}`}
           onClick={toggleSlotModal}
           title="Save and Load Canvas Layout Slots & Circuit Templates"
           style={{
@@ -517,14 +531,14 @@ export function Toolbar() {
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
           </svg>
           <span>Slots</span>
-        </button>
+        </Button>
       </nav>
 
       {/* Right Section: Retractable Panel Toggles */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {/* Toggle Floating CAD Controls Bar */}
-        <button
-          className={`btn btn--sm ${isControlsOpen && activeView !== 'sound_systems' ? 'btn--primary' : ''}`}
+        <Button
+          className={`btn--sm ${isControlsOpen && activeView !== 'sound_systems' ? 'btn--primary' : ''}`}
           onClick={toggleControls}
           title={
             activeView === 'sound_systems'
@@ -557,11 +571,11 @@ export function Toolbar() {
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
           <span>CAD</span>
-        </button>
+        </Button>
 
         {/* Toggle Inspector Panel */}
-        <button
-          className={`btn btn--sm ${isInspectorOpen && activeView !== 'sound_systems' ? 'btn--primary' : ''}`}
+        <Button
+          className={`btn--sm ${isInspectorOpen && activeView !== 'sound_systems' ? 'btn--primary' : ''}`}
           onClick={toggleInspector}
           title={
             activeView === 'sound_systems'
@@ -601,11 +615,12 @@ export function Toolbar() {
             <line x1="17" y1="16" x2="23" y2="16" />
           </svg>
           <span>Inspector</span>
-        </button>
+        </Button>
 
         {/* Shortcuts & Keybindings Info Button (Icon-Only) */}
-        <button
-          className="btn btn--sm"
+        <Button
+          variant="icon"
+          aria-label="Keyboard Shortcuts & Controls Reference (Press ?)"
           onClick={openSettings}
           title="Keyboard Shortcuts & Controls Reference (Press ?)"
           style={{
@@ -637,11 +652,12 @@ export function Toolbar() {
             <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
             <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
-        </button>
+        </Button>
 
         {/* Fullscreen Toggle Button */}
-        <button
-          className="btn btn--sm"
+        <Button
+          variant="icon"
+          aria-label={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           onClick={toggleFullscreen}
           title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           style={{
@@ -685,8 +701,18 @@ export function Toolbar() {
               </>
             )}
           </svg>
-        </button>
+        </Button>
       </div>
+
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        title="Clear Canvas"
+        message="Reset entire canvas and remove all placed components? This action cannot be undone."
+        confirmLabel="Clear Canvas"
+        isDestructive={true}
+        onConfirm={executeReset}
+        onCancel={() => setIsConfirmOpen(false)}
+      />
     </header>
   );
 }

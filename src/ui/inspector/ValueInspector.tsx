@@ -16,9 +16,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
-import type { PotentiometerValue, CapacitorValue, ResistorValue, CircuitEdge } from '@graph/types';
 import { buildWireVisuals } from '../canvas/wireUtils';
 import { getShape } from '../canvas/shapes';
+import { Button } from '../common/Button';
+import { Slider } from '../common/Slider';
+import type { PotentiometerValue, CapacitorValue, ResistorValue, CircuitEdge } from '@graph/types';
 
 export function ValueInspector() {
   const selectedId = useCanvasStore((s) => s.selectedId);
@@ -33,7 +35,6 @@ export function ValueInspector() {
   const updateInstance = useCanvasStore((s) => s.updateInstance);
   const pushHistory = useCanvasStore((s) => s.pushHistory);
   const bringToFront = useCanvasStore((s) => s.bringToFront);
-  const sendToBack = useCanvasStore((s) => s.sendToBack);
   const bringForward = useCanvasStore((s) => s.bringForward);
   const sendBackward = useCanvasStore((s) => s.sendBackward);
 
@@ -50,6 +51,10 @@ export function ValueInspector() {
   const removeComponent = useCircuitStore((s) => s.removeComponent);
 
   const inst = instances.find((i) => i.id === selectedId);
+  const isLocked = inst?.isLocked ?? false;
+  const toggleLock = () => {
+    if (inst) updateInstance(inst.id, { isLocked: !isLocked });
+  };
   const component = inst ? graph.getComponent(inst.id) : undefined;
   const edge = selectedEdgeId ? graph.getEdge(selectedEdgeId) : undefined;
 
@@ -137,23 +142,20 @@ export function ValueInspector() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 10, color: '#71717a' }}>{isCollapsed ? '▲' : '▼'}</span>
-          <button
+          <Button
+            variant="icon"
+            aria-label="Close Inspector Sidebar"
             onClick={(e) => {
               e.stopPropagation();
               toggleInspector();
             }}
             style={{
-              background: 'transparent',
-              border: 'none',
               color: '#a1a1aa',
               fontSize: 14,
-              cursor: 'pointer',
-              padding: '0 4px',
             }}
-            title="Close Inspector Sidebar"
           >
             ✕
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -200,32 +202,32 @@ export function ValueInspector() {
                     CAD Actions & Orientation
                   </div>
                   <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
-                    <button
-                      className="btn btn--sm"
+                    <Button
+                      className="btn--sm"
                       onClick={() => rotateSelected(90)}
                       title="Rotate 90° Clockwise"
                       style={{ flex: 1, padding: '4px' }}
                     >
                       ↻ Rotate 90°
-                    </button>
+                    </Button>
                   </div>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    <button
-                      className="btn btn--sm"
+                    <Button
+                      className="btn--sm"
                       onClick={flipSelectedH}
                       title="Flip Horizontal"
                       style={{ flex: 1, padding: '4px' }}
                     >
                       ⇄ Flip H
-                    </button>
-                    <button
-                      className="btn btn--sm"
+                    </Button>
+                    <Button
+                      className="btn--sm"
                       onClick={flipSelectedV}
                       title="Flip Vertical"
                       style={{ flex: 1, padding: '4px' }}
                     >
                       ⇅ Flip V
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </InspectorSection>
@@ -308,41 +310,42 @@ export function ValueInspector() {
                   Layering
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-                  <button
-                    className="btn btn--secondary"
+                  <Button
+                    variant="secondary"
                     style={{ fontSize: 10, padding: '4px 6px' }}
                     onClick={() => bringToFront(component.id)}
                   >
                     Bring to Front
-                  </button>
-                  <button
-                    className="btn btn--secondary"
-                    style={{ fontSize: 10, padding: '4px 6px' }}
-                    onClick={() => sendToBack(component.id)}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={toggleLock}
+                    style={{ padding: '2px 4px', fontSize: 10 }}
+                    title={isLocked ? 'Unlock component' : 'Lock component'}
                   >
-                    Send to Back
-                  </button>
-                  <button
-                    className="btn btn--secondary"
+                    {isLocked ? '🔒 Locked' : '🔓 Unlocked'}
+                  </Button>
+                  <Button
+                    variant="secondary"
                     style={{ fontSize: 10, padding: '4px 6px' }}
                     onClick={() => bringForward(component.id)}
                   >
                     Bring Forward
-                  </button>
-                  <button
-                    className="btn btn--secondary"
+                  </Button>
+                  <Button
+                    variant="secondary"
                     style={{ fontSize: 10, padding: '4px 6px' }}
                     onClick={() => sendBackward(component.id)}
                   >
                     Send Backward
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {/* Delete Component Button */}
               <div style={{ marginTop: 12, marginBottom: 16 }}>
-                <button
-                  className="btn btn--primary"
+                <Button
+                  variant="primary"
                   style={{
                     width: '100%',
                     borderColor: 'rgba(239, 68, 68, 0.4)',
@@ -366,7 +369,7 @@ export function ValueInspector() {
                     </svg>
                     Delete Component
                   </span>
-                </button>
+                </Button>
               </div>
             </>
           ) : (
@@ -528,9 +531,9 @@ function SwitchInspector({ compId, type }: { compId: string; type: string }) {
         {/* Position Selector Buttons */}
         <div style={{ display: 'flex', gap: 4 }}>
           {Array.from({ length: totalPos }, (_, i) => i + 1).map((pos) => (
-            <button
+            <Button
               key={pos}
-              className={`btn btn--sm ${currentPos === pos ? 'btn--primary' : ''}`}
+              className={`btn--sm ${currentPos === pos ? 'btn--primary' : ''}`}
               style={{
                 flex: 1,
                 padding: '4px 0',
@@ -540,7 +543,7 @@ function SwitchInspector({ compId, type }: { compId: string; type: string }) {
               onClick={() => handlePosClick(pos)}
             >
               {isPushPull ? (pos === 1 ? 'Pushed' : 'Pulled') : `P${pos}`}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -656,32 +659,17 @@ function PotentiometerInspector({
       </InspectorRow>
 
       {/* Knob Position Slider */}
-      <div style={{ marginTop: 10 }}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontSize: 11,
-            marginBottom: 4,
-          }}
-        >
-          <span style={{ color: 'var(--color-text-secondary)' }}>Knob Shaft Rotation</span>
-          <span className="inspector-mono" style={{ color: 'var(--color-accent-amber)' }}>
-            {Math.round(localPos * 100)}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={localPos}
-          onChange={(e) => handleSliderChange(parseFloat(e.target.value))}
-          onPointerUp={handleSliderCommit}
-          onKeyUp={handleSliderCommit}
-          style={{ width: '100%', accentColor: 'var(--color-accent-amber)' }}
-        />
-      </div>
+      <Slider
+        label="Knob Shaft Rotation"
+        value={localPos}
+        min={0}
+        max={1}
+        step={0.01}
+        unit="%"
+        accentColor="var(--color-accent-amber)"
+        onChange={handleSliderChange}
+        onCommit={handleSliderCommit}
+      />
     </InspectorSection>
   );
 }
@@ -1299,27 +1287,21 @@ function FreeShapeInspector({ inst }: { inst: any }) {
       </InspectorRow>
 
       {/* Stroke Width */}
-      <InspectorRow label="Line Weight">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
-          <input
-            type="range"
-            min={1}
-            max={10}
-            step={0.5}
-            value={localWidth}
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              setLocalWidth(val);
-              updateInstance(inst.id, { strokeWidth: val }, true);
-            }}
-            onPointerUp={pushHistory}
-            style={{ flex: 1 }}
-          />
-          <span style={{ fontSize: 10, color: 'var(--color-text-muted)', width: 24, textAlign: 'right' }}>
-            {localWidth}px
-          </span>
-        </div>
-      </InspectorRow>
+      <Slider
+        label="Line Weight"
+        value={localWidth}
+        min={1}
+        max={10}
+        step={0.5}
+        unit="px"
+        accentColor="#a855f7"
+        onChange={(val) => {
+          setLocalWidth(val);
+          updateInstance(inst.id, { strokeWidth: val }, true);
+        }}
+        onCommit={pushHistory}
+        containerStyle={{ marginTop: 12, marginBottom: 12 }}
+      />
 
       {/* Dash Style */}
       <InspectorRow label="Line Style">
@@ -1336,27 +1318,21 @@ function FreeShapeInspector({ inst }: { inst: any }) {
 
       {/* Corner Radius for Rectangles / Notes */}
       {(inst.type === 'shape_rect' || inst.type === 'text_box') && (
-        <InspectorRow label="Corner Rounding">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
-            <input
-              type="range"
-              min={0}
-              max={30}
-              step={1}
-              value={localRadius}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                setLocalRadius(val);
-                updateInstance(inst.id, { cornerRadius: val }, true);
-              }}
-              onPointerUp={pushHistory}
-              style={{ flex: 1 }}
-            />
-            <span style={{ fontSize: 10, color: 'var(--color-text-muted)', width: 24, textAlign: 'right' }}>
-              {localRadius}px
-            </span>
-          </div>
-        </InspectorRow>
+        <Slider
+          label="Corner Rounding"
+          value={localRadius}
+          min={0}
+          max={30}
+          step={1}
+          unit="px"
+          accentColor="#a855f7"
+          onChange={(val) => {
+            setLocalRadius(val);
+            updateInstance(inst.id, { cornerRadius: val }, true);
+          }}
+          onCommit={pushHistory}
+          containerStyle={{ marginTop: 12, marginBottom: 12 }}
+        />
       )}
     </InspectorSection>
   );

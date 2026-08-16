@@ -14,6 +14,8 @@ import { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useTuningStore, TUNING_PRESETS } from '@store/tuningStore';
 import { audioEngine, audioPipeline } from '@audio/index';
+import { Button } from '../common/Button';
+import { Slider } from '../common/Slider';
 
 export interface GuitarStringDef {
   index: number;
@@ -584,21 +586,19 @@ export function PlayableFretboardPanel() {
             </div>
           )}
 
-          <button
+          <Button
+            variant="icon"
+            aria-label="Close Fretboard"
             onClick={toggleFretboard}
             style={{
-              background: 'transparent',
-              border: 'none',
               color: '#a1a1aa',
               fontSize: 18,
-              cursor: 'pointer',
               padding: '2px 8px',
               borderRadius: 4,
             }}
-            title="Close Fretboard"
           >
             ✕
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -621,10 +621,10 @@ export function PlayableFretboardPanel() {
           {CHORD_PRESETS.map((chord) => {
             const isSelected = selectedChord?.name === chord.name;
             return (
-              <button
+              <Button
                 key={chord.name}
                 onClick={() => void strumChord(chord)}
-                className="btn btn--sm"
+                className="btn--sm"
                 style={{
                   padding: '4px 10px',
                   fontSize: 11,
@@ -633,27 +633,27 @@ export function PlayableFretboardPanel() {
                   color: isSelected ? '#ffffff' : '#e4e4e7',
                   border: isSelected ? '1px solid #f59e0b' : '1px solid #3f3f46',
                   borderRadius: 4,
-                  cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}
               >
                 {chord.name}
-              </button>
+              </Button>
             );
           })}
         </div>
 
         {/* Strum Speed Control */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, color: '#a1a1aa' }}>Strum:</span>
-          <input
-            type="range"
+          <Slider
+            label="Strum Timing (ms)"
+            value={strumSpeed}
             min={10}
             max={70}
-            value={strumSpeed}
-            onChange={(e) => setStrumSpeed(Number(e.target.value))}
-            style={{ width: 70, accentColor: '#d97706', cursor: 'pointer' }}
-            title="Strum timing speed"
+            step={1}
+            unit="raw"
+            accentColor="#d97706"
+            onChange={(val) => setStrumSpeed(val)}
+            containerStyle={{ marginTop: 0, width: 120 }}
           />
         </div>
       </div>

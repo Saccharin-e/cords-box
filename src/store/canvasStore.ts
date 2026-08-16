@@ -37,6 +37,7 @@ export interface CanvasComponentInstance {
   flippedH?: boolean;
   flippedV?: boolean;
   groupId?: string;
+  isLocked?: boolean;
   // Customization & Editable Fields
   value?: unknown;
   customLabel?: string;

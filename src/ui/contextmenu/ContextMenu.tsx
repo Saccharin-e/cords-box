@@ -11,6 +11,7 @@
 import { useEffect } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
+import { Button } from '../common/Button';
 
 export interface ContextMenuState {
   x: number;
@@ -100,7 +101,7 @@ export function ContextMenu({ menu, onClose }: Props) {
           <div className="context-menu__header" style={headerStyle}>
             COMPONENT: {menu.targetId}
           </div>
-          <button
+          <Button
             className="context-menu__item"
             style={itemStyle}
             onClick={() => {
@@ -109,8 +110,8 @@ export function ContextMenu({ menu, onClose }: Props) {
             }}
           >
             Bring to Front
-          </button>
-          <button
+          </Button>
+          <Button
             className="context-menu__item"
             style={itemStyle}
             onClick={() => {
@@ -119,8 +120,8 @@ export function ContextMenu({ menu, onClose }: Props) {
             }}
           >
             Send to Back
-          </button>
-          <button
+          </Button>
+          <Button
             className="context-menu__item"
             style={itemStyle}
             onClick={() => {
@@ -129,8 +130,8 @@ export function ContextMenu({ menu, onClose }: Props) {
             }}
           >
             Bring Forward
-          </button>
-          <button
+          </Button>
+          <Button
             className="context-menu__item"
             style={itemStyle}
             onClick={() => {
@@ -139,9 +140,9 @@ export function ContextMenu({ menu, onClose }: Props) {
             }}
           >
             Send Backward
-          </button>
+          </Button>
           <div style={{ height: 1, backgroundColor: '#27272a', margin: '4px 0' }} />
-          <button
+          <Button
             className="context-menu__item context-menu__item--danger"
             style={dangerItemStyle}
             onClick={handleDeleteTarget}
@@ -161,7 +162,7 @@ export function ContextMenu({ menu, onClose }: Props) {
               Delete Component
             </span>
             <span style={shortcutStyle}>Del</span>
-          </button>
+          </Button>
         </>
       )}
 
@@ -170,7 +171,7 @@ export function ContextMenu({ menu, onClose }: Props) {
           <div className="context-menu__header" style={headerStyle}>
             WIRE EDGE
           </div>
-          <button
+          <Button
             className="context-menu__item context-menu__item--danger"
             style={dangerItemStyle}
             onClick={handleDeleteTarget}
@@ -190,7 +191,7 @@ export function ContextMenu({ menu, onClose }: Props) {
               Delete Wire
             </span>
             <span style={shortcutStyle}>Del</span>
-          </button>
+          </Button>
         </>
       )}
 
@@ -199,7 +200,7 @@ export function ContextMenu({ menu, onClose }: Props) {
           <div className="context-menu__header" style={headerStyle}>
             CANVAS STAGE
           </div>
-          <button
+          <Button
             className="context-menu__item"
             style={itemStyle}
             onClick={() => {
@@ -227,8 +228,8 @@ export function ContextMenu({ menu, onClose }: Props) {
               </svg>
               {wiringMode ? 'Cancel Wiring' : 'Wiring Mode'}
             </span>
-          </button>
-          <button className="context-menu__item" style={itemStyle} onClick={handleResetView}>
+          </Button>
+          <Button className="context-menu__item" style={itemStyle} onClick={handleResetView}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <svg
                 width="12"
@@ -244,9 +245,9 @@ export function ContextMenu({ menu, onClose }: Props) {
               </svg>
               Reset Pan & Zoom
             </span>
-          </button>
+          </Button>
           <div style={dividerStyle} />
-          <button
+          <Button
             className="context-menu__item context-menu__item--danger"
             style={dangerItemStyle}
             onClick={handleClearAll}
@@ -265,7 +266,7 @@ export function ContextMenu({ menu, onClose }: Props) {
               </svg>
               Clear Canvas
             </span>
-          </button>
+          </Button>
         </>
       )}
     </div>

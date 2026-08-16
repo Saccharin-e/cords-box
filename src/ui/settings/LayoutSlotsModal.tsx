@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import { useSlotStore } from '@store/slotStore';
 import { useCanvasStore } from '@store/canvasStore';
+import { Button } from '../common/Button';
 
 export function LayoutSlotsModal() {
   const toggleSlotModal = useCanvasStore((s) => s.toggleSlotModal);
@@ -111,21 +112,20 @@ export function LayoutSlotsModal() {
             </div>
           </div>
 
-          <button
+          <Button
+            variant="icon"
+            aria-label="Close"
             onClick={toggleSlotModal}
             style={{
-              background: 'transparent',
-              border: 'none',
               color: '#a1a1aa',
               fontSize: 18,
-              cursor: 'pointer',
               padding: '2px 8px',
               borderRadius: 4,
             }}
             title="Close"
           >
             ✕
-          </button>
+          </Button>
         </div>
 
         {/* 6 Slots Grid */}
@@ -178,7 +178,7 @@ export function LayoutSlotsModal() {
                         }}
                         autoFocus
                       />
-                      <button
+                      <Button
                         onClick={() => handleSaveRename(slot.slotId)}
                         style={{
                           padding: '2px 8px',
@@ -187,11 +187,10 @@ export function LayoutSlotsModal() {
                           border: 'none',
                           borderRadius: 4,
                           fontSize: 11,
-                          cursor: 'pointer',
                         }}
                       >
                         Save
-                      </button>
+                      </Button>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
@@ -207,20 +206,19 @@ export function LayoutSlotsModal() {
                       >
                         {slot.name}
                       </span>
-                      <button
+                      <Button
+                        variant="icon"
+                        aria-label="Rename Slot"
                         onClick={() => handleStartRename(slot.slotId, slot.name)}
                         style={{
-                          background: 'transparent',
-                          border: 'none',
                           color: '#71717a',
-                          cursor: 'pointer',
                           fontSize: 11,
                           padding: 2,
                         }}
                         title="Rename Slot"
                       >
                         ✏️
-                      </button>
+                      </Button>
                     </div>
                   )}
 
@@ -284,7 +282,7 @@ export function LayoutSlotsModal() {
 
                 {/* Slot Action Buttons */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                  <button
+                  <Button
                     onClick={() => {
                       loadSlot(slot.slotId);
                       toggleSlotModal();
@@ -298,7 +296,6 @@ export function LayoutSlotsModal() {
                       borderRadius: 6,
                       fontSize: 11,
                       fontWeight: 700,
-                      cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -317,9 +314,9 @@ export function LayoutSlotsModal() {
                       <polyline points="9 18 15 12 9 6" />
                     </svg>
                     <span>Load Slot</span>
-                  </button>
+                  </Button>
 
-                  <button
+                  <Button
                     onClick={() => saveCurrentToSlot(slot.slotId)}
                     style={{
                       flex: 1,
@@ -330,7 +327,6 @@ export function LayoutSlotsModal() {
                       borderRadius: 6,
                       fontSize: 11,
                       fontWeight: 700,
-                      cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -349,10 +345,12 @@ export function LayoutSlotsModal() {
                       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                     </svg>
                     <span>Save Current Here</span>
-                  </button>
+                  </Button>
 
                   {slot.isCustom && (
-                    <button
+                    <Button
+                      variant="icon"
+                      aria-label="Reset Slot to Default Template"
                       onClick={() => resetSlotToDefault(slot.slotId)}
                       style={{
                         padding: '6px 8px',
@@ -361,12 +359,11 @@ export function LayoutSlotsModal() {
                         border: '1px solid #3f3f46',
                         borderRadius: 6,
                         fontSize: 11,
-                        cursor: 'pointer',
                       }}
                       title="Reset Slot to Default Template"
                     >
                       ↺
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -390,7 +387,7 @@ export function LayoutSlotsModal() {
           <span>
             💡 Saved layout slots persist automatically in your browser's local storage.
           </span>
-          <button
+          <Button
             onClick={toggleSlotModal}
             style={{
               padding: '4px 12px',
@@ -400,11 +397,10 @@ export function LayoutSlotsModal() {
               borderRadius: 4,
               fontSize: 11,
               fontWeight: 600,
-              cursor: 'pointer',
             }}
           >
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>

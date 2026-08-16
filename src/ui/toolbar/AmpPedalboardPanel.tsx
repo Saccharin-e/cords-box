@@ -16,6 +16,8 @@ import {
   type DriveType,
 } from '@audio/pipeline';
 import { useCanvasStore } from '@store/canvasStore';
+import { Button } from '../common/Button';
+import { Slider } from '../common/Slider';
 
 export function AmpPedalboardPanel() {
   const toggleAmpPanel = useCanvasStore((s) => s.toggleAmpPanel);
@@ -138,26 +140,24 @@ export function AmpPedalboardPanel() {
           </span>
         </div>
 
-        <button
-          onClick={toggleAmpPanel}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#a1a1aa',
-            fontSize: 14,
-            cursor: 'pointer',
-            padding: '2px 4px',
-            borderRadius: 4,
-          }}
-          title="Close Panel"
-        >
-          ✕
-        </button>
-      </div>
+          <Button
+            variant="icon"
+            aria-label="Close Panel"
+            onClick={toggleAmpPanel}
+            style={{
+              color: '#a1a1aa',
+              fontSize: 14,
+              padding: '2px 4px',
+              borderRadius: 4,
+            }}
+          >
+            ✕
+          </Button>
+        </div>
 
       {/* Mode Tabs */}
       <div style={{ display: 'flex', gap: 4, backgroundColor: '#09090b', padding: 3, borderRadius: 6 }}>
-        <button
+        <Button
           onClick={() => setActiveTab('amp')}
           style={{
             flex: 1,
@@ -178,8 +178,8 @@ export function AmpPedalboardPanel() {
             <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
           </svg>
           <span>Amp Head</span>
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={() => setActiveTab('pedals')}
           style={{
             flex: 1,
@@ -190,7 +190,6 @@ export function AmpPedalboardPanel() {
             color: activeTab === 'pedals' ? '#38bdf8' : '#a1a1aa',
             border: 'none',
             borderRadius: 4,
-            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -204,8 +203,8 @@ export function AmpPedalboardPanel() {
             <rect x="8" y="14" width="8" height="3" rx="1" />
           </svg>
           <span>Pedalboard</span>
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={() => setActiveTab('cabinet')}
           style={{
             flex: 1,
@@ -216,7 +215,6 @@ export function AmpPedalboardPanel() {
             color: activeTab === 'cabinet' ? '#a3e635' : '#a1a1aa',
             border: 'none',
             borderRadius: 4,
-            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -230,7 +228,7 @@ export function AmpPedalboardPanel() {
             <line x1="18" y1="6" x2="18" y2="6.01" />
           </svg>
           <span>Cabinet & Mic</span>
-        </button>
+        </Button>
       </div>
 
       {/* Tab Content 1: Amp Head */}
@@ -296,15 +294,16 @@ export function AmpPedalboardPanel() {
             />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#09090b', padding: '6px 10px', borderRadius: 6, border: '1px solid #27272a' }}>
-            <span style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600 }}>Speaker Volume Boost (+0..+12dB):</span>
-            <input
-              type="range"
-              min="0.8"
-              max="3.5"
-              step="0.1"
-              defaultValue={audioPipeline.getMasterVolumeBoost()}
-              onChange={(e) => audioPipeline.setMasterVolumeBoost(Number(e.target.value))}
-              style={{ width: 120, cursor: 'pointer' }}
+            <Slider
+              label="Speaker Volume Boost (+0..+12dB)"
+              min={0.8}
+              max={3.5}
+              step={0.1}
+              unit="x"
+              value={audioPipeline.getMasterVolumeBoost()}
+              onChange={(val) => audioPipeline.setMasterVolumeBoost(val)}
+              accentColor="#fbbf24"
+              containerStyle={{ marginTop: 0, width: '100%' }}
             />
           </div>
         </div>
@@ -481,35 +480,31 @@ export function AmpPedalboardPanel() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', backgroundColor: '#09090b', borderRadius: 6, border: '1px solid #27272a' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#a1a1aa', fontWeight: 600 }}>
-              <span>Microphone Position / Distance:</span>
-              <span style={{ color: '#a3e635' }}>{Math.round(state.micDistance * 100)}% Off-Cap</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
+            <Slider
+              label="Microphone Position / Distance"
+              min={0}
+              max={1}
+              step={0.01}
+              unit="%"
               value={state.micDistance}
-              onChange={(e) => updateState({ micDistance: parseFloat(e.target.value) })}
-              style={{ accentColor: '#a3e635', cursor: 'pointer' }}
+              onChange={(val) => updateState({ micDistance: val })}
+              accentColor="#a3e635"
+              containerStyle={{ marginTop: 0, width: '100%' }}
             />
           </div>
 
           {/* Signal Chain: Cable Length & Amp Input Impedance */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', backgroundColor: '#09090b', borderRadius: 6, border: '1px solid #27272a' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#a1a1aa', fontWeight: 600 }}>
-              <span>Cable Length:</span>
-              <span style={{ color: '#f59e0b' }}>{state.cableLengthMeters}m ({Math.round(state.cableLengthMeters * 100)}pF)</span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="15"
-              step="0.5"
+            <Slider
+              label="Cable Length"
+              min={1}
+              max={15}
+              step={0.5}
+              unit="px" // We can use px or just omit it, but the UI expects m. Slider doesn't have 'm' unit natively without raw. So we'll use 'raw' below.
               value={state.cableLengthMeters}
-              onChange={(e) => updateState({ cableLengthMeters: parseFloat(e.target.value) })}
-              style={{ accentColor: '#f59e0b', cursor: 'pointer' }}
+              onChange={(val) => updateState({ cableLengthMeters: val })}
+              accentColor="#f59e0b"
+              containerStyle={{ marginTop: 0, width: '100%' }}
             />
           </div>
 
@@ -557,7 +552,6 @@ function KnobControl({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
         gap: 4,
         padding: '6px 4px',
         backgroundColor: '#09090b',
@@ -565,21 +559,17 @@ function KnobControl({
         border: '1px solid #27272a',
       }}
     >
-      <span style={{ fontSize: 10, color: '#a1a1aa', fontWeight: 600, textAlign: 'center' }}>
-        {label}
-      </span>
-      <input
-        type="range"
-        min="0"
-        max="1"
-        step="0.01"
+      <Slider
+        label={label}
         value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        style={{ width: '100%', accentColor: color, cursor: 'pointer' }}
+        min={0}
+        max={1}
+        step={0.01}
+        unit="%"
+        accentColor={color}
+        onChange={onChange}
+        containerStyle={{ marginTop: 0, width: '100%' }}
       />
-      <span style={{ fontSize: 10, color, fontWeight: 700 }}>
-        {Math.round(value * 100)}%
-      </span>
     </div>
   );
 }
@@ -626,7 +616,7 @@ function PedalCard({
             {title}
           </span>
         </div>
-        <button
+        <Button
           onClick={onToggle}
           style={{
             padding: '2px 8px',
@@ -636,11 +626,10 @@ function PedalCard({
             color: enabled ? '#000000' : '#a1a1aa',
             border: 'none',
             borderRadius: 4,
-            cursor: 'pointer',
           }}
         >
           {enabled ? 'ON' : 'OFF'}
-        </button>
+        </Button>
       </div>
 
       {enabled && (

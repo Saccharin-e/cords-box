@@ -16,6 +16,8 @@ import { parseAsciiTab } from '@audio/tab/tabParser';
 import { tabScheduler } from '@audio/tab/tabScheduler';
 import type { TabScore } from '@audio/tab/tabTypes';
 import { useCanvasStore } from '@store/canvasStore';
+import { Button } from '../common/Button';
+import { Slider } from '../common/Slider';
 
 export const TAB_PRESETS: { id: string; label: string; tab: string; bpm: number; durationDesc: string }[] = [
   {
@@ -498,21 +500,19 @@ export function TabPanel() {
           </div>
         </div>
 
-        <button
+        <Button
+          variant="icon"
+          aria-label="Close Panel"
           onClick={toggleTabPanel}
           style={{
-            backgroundColor: 'transparent',
-            border: '1px solid #27272a',
             color: '#a1a1aa',
-            cursor: 'pointer',
             fontSize: '14px',
-            fontWeight: 'bold',
             padding: '2px 8px',
             borderRadius: '5px',
           }}
         >
           ✕
-        </button>
+        </Button>
       </div>
 
       {/* Preset Selector & Tempo Control Bar */}
@@ -544,15 +544,17 @@ export function TabPanel() {
           </select>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '130px' }}>
-          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>Tempo: {bpm} BPM</label>
-          <input
-            type="range"
-            min="40"
-            max="240"
+        <div style={{ width: '150px' }}>
+          <Slider
+            label="Tempo (BPM)"
             value={bpm}
-            onChange={(e) => handleBpmChange(Number(e.target.value))}
-            style={{ cursor: 'pointer', accentColor: '#38bdf8' }}
+            min={40}
+            max={240}
+            step={1}
+            unit="raw"
+            accentColor="#38bdf8"
+            onChange={(val) => handleBpmChange(val)}
+            containerStyle={{ marginTop: 0 }}
           />
         </div>
       </div>
@@ -821,7 +823,7 @@ export function TabPanel() {
 
       {/* Control Action Buttons (App Theme) */}
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <button
+        <Button
           onClick={() => handleParse()}
           style={{
             padding: '6px 12px',
@@ -829,15 +831,14 @@ export function TabPanel() {
             color: '#e4e4e7',
             border: '1px solid #3f3f46',
             borderRadius: '6px',
-            cursor: 'pointer',
             fontSize: '12px',
             fontWeight: 600,
           }}
         >
           Parse & Sync
-        </button>
+        </Button>
 
-        <button
+        <Button
           onClick={handlePlayToggle}
           style={{
             padding: '6px 18px',
@@ -845,16 +846,15 @@ export function TabPanel() {
             color: '#fff',
             border: 'none',
             borderRadius: '6px',
-            cursor: 'pointer',
             fontWeight: 700,
             fontSize: '12px',
             boxShadow: isPlaying ? '0 0 10px rgba(220, 38, 38, 0.5)' : '0 0 10px rgba(22, 163, 74, 0.4)',
           }}
         >
           {isPlaying ? 'Pause' : 'Play Tab'}
-        </button>
+        </Button>
 
-        <button
+        <Button
           onClick={handleStop}
           style={{
             padding: '6px 14px',
@@ -862,12 +862,11 @@ export function TabPanel() {
             color: '#fff',
             border: 'none',
             borderRadius: '6px',
-            cursor: 'pointer',
             fontSize: '12px',
           }}
         >
           Stop
-        </button>
+        </Button>
 
         {/* MIDI File Ingestion & Live Web MIDI Controller */}
         <label
@@ -908,7 +907,7 @@ export function TabPanel() {
           />
         </label>
 
-        <button
+        <Button
           onClick={async () => {
             if (!parsedScore) return;
             const { downloadMidiFile } = await import('@audio/midi/midiExporter');
@@ -920,13 +919,12 @@ export function TabPanel() {
             color: '#ffffff',
             border: '1px solid #10b981',
             borderRadius: '6px',
-            cursor: 'pointer',
             fontSize: '12px',
             fontWeight: 600,
           }}
         >
           📤 Export .MID
-        </button>
+        </Button>
       </div>
     </div>
   );

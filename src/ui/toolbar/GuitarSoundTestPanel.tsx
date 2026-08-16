@@ -17,6 +17,8 @@ import {
 import { useCircuitStore } from '@store/circuitStore';
 import { useCanvasStore } from '@store/canvasStore';
 import { PRESETS, loadPresetById, type PresetDefinition } from '@presets/presetLibrary';
+import { Button } from '../common/Button';
+import { Slider } from '../common/Slider';
 
 export function GuitarSoundTestPanel() {
   const [audioActive, setAudioActive] = useState(false);
@@ -221,7 +223,7 @@ export function GuitarSoundTestPanel() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button
+          <Button
             onClick={() => setIsSpectrumExpanded(!isSpectrumExpanded)}
             style={{
               background: isSpectrumExpanded ? '#14532d' : '#27272a',
@@ -231,7 +233,6 @@ export function GuitarSoundTestPanel() {
               fontSize: 10,
               fontWeight: 700,
               padding: '2px 6px',
-              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: 4,
@@ -239,7 +240,7 @@ export function GuitarSoundTestPanel() {
             title="Toggle expanded FFT spectrum visualizer"
           >
             📊 {isSpectrumExpanded ? 'Spectrum On' : 'Spectrum'}
-          </button>
+          </Button>
           <span
             style={{
               fontSize: 10,
@@ -252,22 +253,20 @@ export function GuitarSoundTestPanel() {
           >
             {isCircuitConnected ? `${activePathCount} Path Active` : 'Circuit Open'}
           </span>
-          <button
+          <Button
+            variant="icon"
+            aria-label="Close Panel"
             onClick={toggleTestPanel}
             style={{
-              background: 'none',
-              border: 'none',
               color: '#a1a1aa',
               fontSize: 14,
-              cursor: 'pointer',
               padding: '2px 4px',
               borderRadius: 4,
               lineHeight: 1,
             }}
-            title="Close Panel"
           >
             ✕
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -332,7 +331,7 @@ export function GuitarSoundTestPanel() {
             </span>
           </span>
         </div>
-        <button
+        <Button
           onClick={handleToggleSoundSource}
           style={{
             padding: '4px 8px',
@@ -342,11 +341,10 @@ export function GuitarSoundTestPanel() {
             border: '1px solid #3f3f46',
             backgroundColor: usingSamples ? '#102a35' : '#14532d',
             color: usingSamples ? '#38bdf8' : '#a3e635',
-            cursor: 'pointer',
           }}
         >
           {usingSamples ? 'Switch to WDF Synth' : 'Switch to Local WAV'}
-        </button>
+        </Button>
       </div>
 
       {/* Master Volume Booster Control */}
@@ -361,31 +359,21 @@ export function GuitarSoundTestPanel() {
           borderRadius: 6,
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#fbbf24', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-            🔊 Master Volume Boost
-          </span>
-          <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 800 }}>
-            {Math.round(volumeBoost * 100)}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min="0.5"
-          max="3.5"
-          step="0.1"
+        <Slider
+          label="🔊 Master Volume Boost"
           value={volumeBoost}
-          onChange={(e) => handleVolumeBoostChange(Number(e.target.value))}
-          style={{
-            width: '100%',
-            cursor: 'pointer',
-            accentColor: '#d97706',
-          }}
-          title="Adjust overall master output volume boost"
+          min={0.5}
+          max={3.5}
+          step={0.1}
+          unit="x"
+          accentColor="#d97706"
+          onChange={(val) => handleVolumeBoostChange(val)}
+          readoutColor="#f59e0b"
+          containerStyle={{ marginTop: 0 }}
         />
         <div style={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
           {[1.0, 1.5, 2.0, 3.0].map((b) => (
-            <button
+            <Button
               key={b}
               onClick={() => handleVolumeBoostChange(b)}
               style={{
@@ -397,11 +385,10 @@ export function GuitarSoundTestPanel() {
                 color: volumeBoost === b ? '#fff' : '#a1a1aa',
                 border: '1px solid #3f3f46',
                 borderRadius: 4,
-                cursor: 'pointer',
               }}
             >
-              {Math.round(b * 100)}%
-            </button>
+              {b.toFixed(1)}x
+            </Button>
           ))}
         </div>
       </div>
@@ -413,10 +400,10 @@ export function GuitarSoundTestPanel() {
         <span style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600 }}>Guitar String Plucks:</span>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4 }}>
           {Object.entries(GUITAR_STRINGS).map(([name, freq]) => (
-            <button
+            <Button
               key={name}
               onClick={() => handlePluck(Number(freq))}
-              className="btn btn--sm"
+              className="btn--sm"
               style={{
                 padding: '4px 0',
                 fontSize: 11,
@@ -425,13 +412,12 @@ export function GuitarSoundTestPanel() {
                 color: '#f4f4f5',
                 border: '1px solid #3f3f46',
                 borderRadius: 4,
-                cursor: 'pointer',
                 textAlign: 'center',
               }}
               title={`Pluck ${name} (${freq} Hz)`}
             >
               {name}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -440,41 +426,41 @@ export function GuitarSoundTestPanel() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600 }}>Strum Guitar Chords:</span>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          <button
+          <Button
             onClick={() => handleStrum(GUITAR_CHORDS.E_MAJOR)}
             style={btnChordStyle}
           >
             E Maj
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => handleStrum(GUITAR_CHORDS.A_MINOR)}
             style={btnChordStyle}
           >
             Am
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => handleStrum(GUITAR_CHORDS.G_MAJOR)}
             style={btnChordStyle}
           >
             G Maj
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => handleStrum(GUITAR_CHORDS.D_MAJOR)}
             style={btnChordStyle}
           >
             D Maj
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => handleStrum(GUITAR_CHORDS.E5_POWER)}
             style={btnChordStyle}
           >
             E5 Power
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Auto Strum Loop Button */}
-      <button
+      <Button
         onClick={handleToggleAutoStrum}
         style={{
           padding: '8px 12px',
@@ -485,7 +471,6 @@ export function GuitarSoundTestPanel() {
           borderColor: autoStrumming ? '#d97706' : '#3f3f46',
           backgroundColor: autoStrumming ? '#78350f' : '#27272a',
           color: autoStrumming ? '#fef3c7' : '#f4f4f5',
-          cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -494,7 +479,7 @@ export function GuitarSoundTestPanel() {
         }}
       >
         <span>{autoStrumming ? '⏸ Stop Auto-Strum Loop' : '▶ Start Continuous Strumming Loop'}</span>
-      </button>
+      </Button>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <label style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600 }} htmlFor="guitar-demo-genre">
@@ -522,7 +507,7 @@ export function GuitarSoundTestPanel() {
         </select>
       </div>
 
-      <button
+      <Button
         onClick={handleGenreShowcase}
         style={{
           width: '100%',
@@ -533,7 +518,6 @@ export function GuitarSoundTestPanel() {
           border: '1px solid #0e7490',
           backgroundColor: demoSongPlaying ? '#083344' : '#102a35',
           color: '#cffafe',
-          cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -555,7 +539,7 @@ export function GuitarSoundTestPanel() {
               <span>Play Song Demo</span>
             </>
           )}
-        </button>
+        </Button>
       </div>
 
       {/* Expandable Comprehensive Spectrum Visualizer */}
@@ -721,6 +705,5 @@ const btnChordStyle: React.CSSProperties = {
   color: '#e4e4e7',
   border: '1px solid #3f3f46',
   borderRadius: 4,
-  cursor: 'pointer',
   textAlign: 'center',
 };

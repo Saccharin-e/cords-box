@@ -5,8 +5,11 @@
 import { useState } from 'react';
 import jsPDF from 'jspdf';
 import { useCanvasStore } from '@store/canvasStore';
+import { Button } from '../common/Button';
+import { Slider } from '../common/Slider';
 
 export function ExportModal() {
+  const [error, setError] = useState<string | null>(null);
   const [format, setFormat] = useState<'png' | 'pdf'>('png');
   const isExportModalOpen = useCanvasStore((s) => s.isExportModalOpen);
   const toggleExportModal = useCanvasStore((s) => s.toggleExportModal);
@@ -28,9 +31,10 @@ export function ExportModal() {
       ),
     );
     if (canvasEls.length === 0) {
-      alert('Canvas stage not ready for export.');
+      setError('Canvas stage not ready for export.');
       return;
     }
+    setError(null);
 
     // Temporarily hide export overlay lines for clean snapshot
     const wasShowingBox = showExportBox;
@@ -145,16 +149,23 @@ export function ExportModal() {
               EXPORT CIRCUIT DESIGN
             </span>
           </div>
-          <button onClick={toggleExportModal} style={closeBtnStyle}>
+          <Button variant="icon" aria-label="Close" onClick={toggleExportModal} style={closeBtnStyle}>
             ✕
-          </button>
+          </Button>
         </div>
+
+        {error && (
+          <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '8px 12px', borderRadius: 6, marginBottom: 16, fontSize: 13 }}>
+            {error}
+          </div>
+        )}
 
         {/* Format Selector */}
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>Export Format</label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 6 }}>
-            <button
+            <Button
+              variant="ghost"
               onClick={() => setFormat('png')}
               style={{
                 ...formatBtnStyle,
@@ -179,9 +190,10 @@ export function ExportModal() {
                 <div style={{ fontWeight: 700 }}>PNG Image</div>
                 <div style={{ fontSize: 10, opacity: 0.7 }}>2x HD Raster Image</div>
               </div>
-            </button>
+            </Button>
 
-            <button
+            <Button
+              variant="ghost"
               onClick={() => setFormat('pdf')}
               style={{
                 ...formatBtnStyle,
@@ -208,7 +220,7 @@ export function ExportModal() {
                 <div style={{ fontWeight: 700 }}>PDF Document</div>
                 <div style={{ fontSize: 10, opacity: 0.7 }}>Print-Ready Vector PDF</div>
               </div>
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -223,7 +235,8 @@ export function ExportModal() {
             }}
           >
             <label style={labelStyle}>Export Region Bounds</label>
-            <button
+            <Button
+              variant="secondary"
               onClick={recalculateAutoExportBox}
               style={{ ...secondaryBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
@@ -242,7 +255,7 @@ export function ExportModal() {
                 <line x1="8" y1="12" x2="16" y2="12" />
               </svg>
               Auto-Fit Rectangular Bounds
-            </button>
+            </Button>
           </div>
 
           {/* Canvas Box Info */}
@@ -299,35 +312,19 @@ export function ExportModal() {
           </div>
 
           {/* Margin / Padding Slider */}
-          <div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: 12,
-                color: '#a1a1aa',
-                marginBottom: 4,
-              }}
-            >
-              <span>Adequate Canvas Padding</span>
-              <span style={{ color: '#38bdf8', fontWeight: 600 }}>
-                {localPadding} px
-              </span>
-            </div>
-            <input
-              type="range"
-              min="20"
-              max="150"
-              value={localPadding}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                setLocalPadding(val);
-                setExportBox({ padding: val });
-                recalculateAutoExportBox();
-              }}
-              style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
-            />
-          </div>
+          <Slider
+            label="Adequate Canvas Padding"
+            value={localPadding}
+            min={20}
+            max={150}
+            unit="px"
+            accentColor="#38bdf8"
+            onChange={(val) => {
+              setLocalPadding(val);
+              setExportBox({ padding: val });
+              recalculateAutoExportBox();
+            }}
+          />
         </div>
 
         {/* Checkbox: Show Overlay Bounds Line on Canvas */}
@@ -349,12 +346,12 @@ export function ExportModal() {
 
         {/* Actions */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-          <button onClick={toggleExportModal} style={cancelBtnStyle}>
+          <Button variant="secondary" onClick={toggleExportModal} style={cancelBtnStyle}>
             Cancel
-          </button>
-          <button onClick={handleExport} style={exportActionBtnStyle}>
+          </Button>
+          <Button variant="primary" onClick={handleExport} style={exportActionBtnStyle}>
             {format === 'png' ? 'Export PNG' : 'Export PDF'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

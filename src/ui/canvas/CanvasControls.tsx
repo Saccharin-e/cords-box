@@ -6,6 +6,7 @@
 
 import { useCanvasStore, type CanvasTheme, type GridStyle } from '@store/canvasStore';
 import { useKeybindingsStore } from '@store/keybindingsStore';
+import { Button } from '../common/Button';
 
 export function CanvasControls() {
   const openSettings = useKeybindingsStore((s) => s.openSettings);
@@ -114,7 +115,7 @@ export function CanvasControls() {
         <div style={dividerStyle} />
 
         {/* Snap & Labels Toggles */}
-        <button
+        <Button
           onClick={toggleSnapToGrid}
           style={{
             ...buttonStyle,
@@ -126,9 +127,9 @@ export function CanvasControls() {
         >
           <IconMagnet color={snapToGrid ? '#38bdf8' : '#71717a'} />
           <span>Snap {snapToGrid ? 'ON' : 'OFF'}</span>
-        </button>
+        </Button>
 
-        <button
+        <Button
           onClick={toggleShowComponentLabels}
           style={{
             ...buttonStyle,
@@ -140,99 +141,117 @@ export function CanvasControls() {
         >
           <IconTag color={showComponentLabels ? '#38bdf8' : '#71717a'} />
           <span>Labels {showComponentLabels ? 'ON' : 'OFF'}</span>
-        </button>
+        </Button>
       </div>
 
       {/* ── ROW 2: CAD Editing & Transform Tools ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
         {/* Undo / Redo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <button onClick={undo} style={buttonStyle} title="Undo (Ctrl+Z)">
+          <Button variant="icon" aria-label="Undo" onClick={undo} style={buttonStyle} title="Undo (Ctrl+Z)">
             <IconUndo />
-          </button>
-          <button onClick={redo} style={buttonStyle} title="Redo (Ctrl+Y)">
+          </Button>
+          <Button variant="icon" aria-label="Redo" onClick={redo} style={buttonStyle} title="Redo (Ctrl+Y)">
             <IconRedo />
-          </button>
+          </Button>
         </div>
 
         <div style={dividerStyle} />
 
         {/* Transforms */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <button
+          <Button
+            variant="icon"
+            aria-label="Rotate CW 90°"
             onClick={() => rotateSelected(90)}
             disabled={!hasSelection}
             style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
             title="Rotate CW 90° (R)"
           >
             <IconRotateCw />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="icon"
+            aria-label="Rotate CCW 90°"
             onClick={() => rotateSelected(-90)}
             disabled={!hasSelection}
             style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
             title="Rotate CCW 90° (Shift+R)"
           >
             <IconRotateCcw />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="icon"
+            aria-label="Flip Horizontal"
             onClick={flipSelectedH}
             disabled={!hasSelection}
             style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
             title="Flip Horizontal (H)"
           >
             <IconFlipH />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="icon"
+            aria-label="Flip Vertical"
             onClick={flipSelectedV}
             disabled={!hasSelection}
             style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
             title="Flip Vertical (V)"
           >
             <IconFlipV />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="icon"
+            aria-label="Group Components"
             onClick={groupSelected}
             disabled={selectedIds.length < 2}
             style={{ ...buttonStyle, opacity: selectedIds.length >= 2 ? 1 : 0.4 }}
             title="Group Components (Ctrl+G)"
           >
             <IconGroup />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="icon"
+            aria-label="Ungroup Components"
             onClick={ungroupSelected}
             disabled={!hasSelection}
             style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
             title="Ungroup Components (Ctrl+Shift+G)"
           >
             <IconUngroup />
-          </button>
+          </Button>
         </div>
 
         <div style={dividerStyle} />
 
         {/* Editing */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <button
+          <Button
+            variant="icon"
+            aria-label="Copy"
             onClick={copySelected}
             disabled={!hasSelection}
             style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
             title="Copy (Ctrl+C)"
           >
             <IconCopy />
-          </button>
-          <button onClick={pasteSelected} style={buttonStyle} title="Paste (Ctrl+V)">
+          </Button>
+          <Button variant="icon" aria-label="Paste" onClick={pasteSelected} style={buttonStyle} title="Paste (Ctrl+V)">
             <IconPaste />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="icon"
+            aria-label="Duplicate"
             onClick={duplicateSelected}
             disabled={!hasSelection}
             style={{ ...buttonStyle, opacity: hasSelection ? 1 : 0.4 }}
             title="Duplicate (Ctrl+D)"
           >
             <IconDuplicate />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="icon"
+            aria-label="Delete"
             onClick={removeSelected}
             disabled={!hasSelection}
             style={{
@@ -243,11 +262,13 @@ export function CanvasControls() {
             title="Delete (Delete / Backspace)"
           >
             <IconTrash />
-          </button>
+          </Button>
         </div>
 
         {/* Shortcuts & Keybindings Customizer */}
-        <button
+        <Button
+          variant="icon"
+          aria-label="Keyboard Shortcuts"
           onClick={openSettings}
           style={{ ...buttonStyle, color: '#38bdf8' }}
           title="Keyboard Shortcuts & Controls Reference (Press ?)"
@@ -267,12 +288,14 @@ export function CanvasControls() {
             <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
             <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
-        </button>
+        </Button>
 
         <div style={dividerStyle} />
 
         {/* Retract Floating Bar */}
-        <button
+        <Button
+          variant="icon"
+          aria-label="Collapse CAD Floating Bar"
           onClick={toggleControls}
           style={{ ...buttonStyle, color: '#a1a1aa' }}
           title="Collapse CAD Floating Bar"
@@ -287,7 +310,7 @@ export function CanvasControls() {
           >
             <polyline points="6 9 12 15 18 9" />
           </svg>
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { useKeybindingsStore, formatShortcut, type Keybinding } from '@store/keybindingsStore';
+import { Button } from '../common/Button';
 
 export function SettingsModal() {
   const keybindings = useKeybindingsStore((s) => s.keybindings);
@@ -137,22 +138,18 @@ export function SettingsModal() {
             </div>
           </div>
 
-          <button
+          <Button
+            variant="icon"
+            aria-label="Close Settings"
             onClick={closeSettings}
             style={{
-              background: 'none',
-              border: 'none',
               color: '#a1a1aa',
-              cursor: 'pointer',
               padding: 4,
               borderRadius: 6,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
             }}
           >
             <IconClose />
-          </button>
+          </Button>
         </div>
 
         {/* Modal Tabs & Search */}
@@ -168,7 +165,7 @@ export function SettingsModal() {
           }}
         >
           <div style={{ display: 'flex', gap: 8 }}>
-            <button
+            <Button
               onClick={() => setActiveTab('shortcuts')}
               style={{
                 padding: '6px 14px',
@@ -179,12 +176,11 @@ export function SettingsModal() {
                 borderColor: activeTab === 'shortcuts' ? '#38bdf8' : 'transparent',
                 backgroundColor: activeTab === 'shortcuts' ? 'rgba(56, 189, 248, 0.15)' : '#27272a',
                 color: activeTab === 'shortcuts' ? '#38bdf8' : '#a1a1aa',
-                cursor: 'pointer',
               }}
             >
               Keyboard Shortcuts ({allBindingsList.length})
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => setActiveTab('mouse')}
               style={{
                 padding: '6px 14px',
@@ -195,11 +191,10 @@ export function SettingsModal() {
                 borderColor: activeTab === 'mouse' ? '#38bdf8' : 'transparent',
                 backgroundColor: activeTab === 'mouse' ? 'rgba(56, 189, 248, 0.15)' : '#27272a',
                 color: activeTab === 'mouse' ? '#38bdf8' : '#a1a1aa',
-                cursor: 'pointer',
               }}
             >
               Mouse & Canvas Gestures
-            </button>
+            </Button>
           </div>
 
           {activeTab === 'shortcuts' && (
@@ -245,7 +240,7 @@ export function SettingsModal() {
                     Press new key combination for <strong>{keybindings[recordingId]?.name}</strong>
                     ... (Press ESC to cancel)
                   </span>
-                  <button
+                  <Button
                     onClick={() => setRecordingId(null)}
                     style={{
                       background: 'none',
@@ -254,11 +249,10 @@ export function SettingsModal() {
                       borderRadius: 4,
                       padding: '2px 8px',
                       fontSize: 11,
-                      cursor: 'pointer',
                     }}
                   >
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               )}
 
@@ -322,7 +316,7 @@ export function SettingsModal() {
                               {formatShortcut(item)}
                             </span>
 
-                            <button
+                            <Button
                               onClick={() => setRecordingId(item.id)}
                               style={{
                                 padding: '2px 8px',
@@ -331,11 +325,10 @@ export function SettingsModal() {
                                 border: '1px solid #52525b',
                                 backgroundColor: recordingId === item.id ? '#eab308' : '#3f3f46',
                                 color: recordingId === item.id ? '#18181b' : '#d4d4d8',
-                                cursor: 'pointer',
                               }}
                             >
                               {recordingId === item.id ? 'Recording...' : 'Rebind'}
-                            </button>
+                            </Button>
                           </div>
                         </div>
                       ))}
@@ -392,7 +385,7 @@ export function SettingsModal() {
             backgroundColor: '#18181b',
           }}
         >
-          <button
+          <Button
             onClick={resetKeybindings}
             style={{
               padding: '6px 12px',
@@ -401,13 +394,12 @@ export function SettingsModal() {
               border: '1px solid #3f3f46',
               borderRadius: 6,
               color: '#f87171',
-              cursor: 'pointer',
             }}
           >
             Reset All Shortcuts to Default
-          </button>
+          </Button>
 
-          <button
+          <Button
             onClick={closeSettings}
             style={{
               padding: '6px 18px',
@@ -417,11 +409,10 @@ export function SettingsModal() {
               border: 'none',
               borderRadius: 6,
               color: '#0f172a',
-              cursor: 'pointer',
             }}
           >
             Done
-          </button>
+          </Button>
         </div>
       </div>
     </div>
