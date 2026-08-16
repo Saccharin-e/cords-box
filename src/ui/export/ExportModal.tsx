@@ -7,6 +7,7 @@ import jsPDF from 'jspdf';
 import { useCanvasStore } from '@store/canvasStore';
 import { Button } from '../common/Button';
 import { Slider } from '../common/Slider';
+import { X } from 'lucide-react';
 
 export function ExportModal() {
   const [error, setError] = useState<string | null>(null);
@@ -150,7 +151,7 @@ export function ExportModal() {
             </span>
           </div>
           <Button variant="icon" aria-label="Close" onClick={toggleExportModal} style={closeBtnStyle}>
-            ✕
+            <X size={14} />
           </Button>
         </div>
 

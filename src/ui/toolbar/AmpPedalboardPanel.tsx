@@ -18,6 +18,7 @@ import {
 import { useCanvasStore } from '@store/canvasStore';
 import { Button } from '../common/Button';
 import { Slider } from '../common/Slider';
+import { X } from 'lucide-react';
 
 export function AmpPedalboardPanel() {
   const toggleAmpPanel = useCanvasStore((s) => s.toggleAmpPanel);
@@ -151,7 +152,7 @@ export function AmpPedalboardPanel() {
               borderRadius: 4,
             }}
           >
-            ✕
+            <X size={14} />
           </Button>
         </div>
 

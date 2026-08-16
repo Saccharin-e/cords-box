@@ -4,6 +4,7 @@ import { useCircuitStore } from '@store/circuitStore';
 import { getShape } from '../canvas/shapes';
 import { HardwareIcon } from './HardwareIcon';
 import { generateComponentId, type ComponentType } from '@graph/types';
+import { X } from 'lucide-react';
 
 interface ComponentItem {
   id: string;
@@ -288,7 +289,7 @@ export function ComponentLibrary() {
           style={closeButtonStyle}
           title="Close Component Library Panel"
         >
-          ✕
+          <X size={14} />
         </button>
       </div>
 

@@ -421,8 +421,9 @@ export function DualCanvas() {
                   }}
                   style={{
                     position: 'absolute',
-                    top: 460,
-                    left: 40,
+                    bottom: 40,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
                     zIndex: activeFloatingPanel === 'tab' ? 100 : 97,
                   }}
                 >

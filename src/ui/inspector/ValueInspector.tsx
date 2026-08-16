@@ -21,6 +21,7 @@ import { getShape } from '../canvas/shapes';
 import { Button } from '../common/Button';
 import { Slider } from '../common/Slider';
 import type { PotentiometerValue, CapacitorValue, ResistorValue, CircuitEdge } from '@graph/types';
+import { ArrowRight, Lock, Unlock, X } from 'lucide-react';
 
 export function ValueInspector() {
   const selectedId = useCanvasStore((s) => s.selectedId);
@@ -154,7 +155,7 @@ export function ValueInspector() {
               fontSize: 14,
             }}
           >
-            ✕
+            <X size={14} />
           </Button>
         </div>
       </div>
@@ -323,7 +324,15 @@ export function ValueInspector() {
                     style={{ padding: '2px 4px', fontSize: 10 }}
                     title={isLocked ? 'Unlock component' : 'Lock component'}
                   >
-                    {isLocked ? '🔒 Locked' : '🔓 Unlocked'}
+                    {isLocked ? (
+                      <span style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <Lock size={14} /> Locked
+                      </span>
+                    ) : (
+                      <span style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <Unlock size={14} /> Unlocked
+                      </span>
+                    )}
                   </Button>
                   <Button
                     variant="secondary"
@@ -884,7 +893,7 @@ function WireInspector({
 
       <InspectorRow label="Terminals">
         <span className="inspector-mono" style={{ fontSize: 10 }}>
-          {edge.source} ➔ {edge.target}
+          {edge.source} <ArrowRight size={14} /> {edge.target}
         </span>
       </InspectorRow>
 

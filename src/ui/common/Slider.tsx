@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 
 export type SliderProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
-  label: string;
+  label: React.ReactNode;
   value: number;
   min: number;
   max: number;

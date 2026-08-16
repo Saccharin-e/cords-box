@@ -16,6 +16,7 @@ import { useTuningStore, TUNING_PRESETS } from '@store/tuningStore';
 import { audioEngine, audioPipeline } from '@audio/index';
 import { Button } from '../common/Button';
 import { Slider } from '../common/Slider';
+import { X } from 'lucide-react';
 
 export interface GuitarStringDef {
   index: number;
@@ -349,7 +350,7 @@ export function PlayableFretboardPanel() {
 
       await audioPipeline.triggerPluck(freq, 0.65, stringIdx);
     },
-    []
+    [activeStrings]
   );
 
   // Strum a chord across all active fretted strings
@@ -503,7 +504,7 @@ export function PlayableFretboardPanel() {
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#fef3c7' }}>
-              Playable Guitar Fretboard
+              Fretboard
             </h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
               <select
@@ -543,9 +544,6 @@ export function PlayableFretboardPanel() {
                   </option>
                 ))}
               </select>
-              <span style={{ fontSize: 11, color: '#a1a1aa' }}>
-                &bull; Drag header to move &bull; Click frets or press 1-6 / Space
-              </span>
             </div>
           </div>
         </div>
@@ -597,7 +595,7 @@ export function PlayableFretboardPanel() {
               borderRadius: 4,
             }}
           >
-            ✕
+            <X size={14} />
           </Button>
         </div>
       </div>
@@ -892,7 +890,7 @@ export function PlayableFretboardPanel() {
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          justifyContent: 'center',
           padding: '8px 18px',
           backgroundColor: '#18181b',
           borderTop: '1px solid #27272a',
@@ -906,9 +904,8 @@ export function PlayableFretboardPanel() {
             <path d="M9 18h6" />
             <path d="M10 22h4" />
           </svg>
-          <span><strong>Tip:</strong> Click any string fret to play. Press <code>1-6</code> for open strings, or <code>Space</code> to strum the current chord!</span>
+          <span>Click any fret to play. Press <code>1-6</code> for open strings, or <code>Space</code> to strum!</span>
         </div>
-        <div style={{ color: '#71717a' }}>Cords Box Audio DSP Engine Live</div>
       </div>
     </div>
   );

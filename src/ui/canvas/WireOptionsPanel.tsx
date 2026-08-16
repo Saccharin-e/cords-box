@@ -9,6 +9,7 @@
 
 import { useCanvasStore, WIRE_COLOR_PRESETS } from '@store/canvasStore';
 import type { WireDrawType } from '@store/canvasStore';
+import { X } from 'lucide-react';
 
 const WIRE_TYPES: { id: WireDrawType; label: string; desc: string }[] = [
   { id: 'vintage_cloth_pushback', label: 'Cloth', desc: 'Vintage pushback' },
@@ -52,7 +53,7 @@ export function WireOptionsPanel() {
           <span>WIRE TOOL</span>
         </div>
         <button onClick={cancelWiring} style={closeBtnStyle} title="Exit Wiring Mode (Esc)">
-          ✕
+          <X size={14} />
         </button>
       </div>
 

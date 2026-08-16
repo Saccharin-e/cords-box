@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { useSlotStore } from '@store/slotStore';
 import { useCanvasStore } from '@store/canvasStore';
 import { Button } from '../common/Button';
+import { Edit2, Package, X, Zap } from 'lucide-react';
 
 export function LayoutSlotsModal() {
   const toggleSlotModal = useCanvasStore((s) => s.toggleSlotModal);
@@ -104,11 +105,8 @@ export function LayoutSlotsModal() {
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#f0f9ff' }}>
-                Saveable Layout Slots & Circuit Templates
+                Layout Slots
               </h3>
-              <span style={{ fontSize: 11, color: '#a1a1aa' }}>
-                Save your canvas layout to persistent slots or load built-in wiring harness templates
-              </span>
             </div>
           </div>
 
@@ -124,7 +122,7 @@ export function LayoutSlotsModal() {
             }}
             title="Close"
           >
-            ✕
+            <X size={14} />
           </Button>
         </div>
 
@@ -217,7 +215,7 @@ export function LayoutSlotsModal() {
                         }}
                         title="Rename Slot"
                       >
-                        ✏️
+                        <Edit2 size={14} />
                       </Button>
                     </div>
                   )}
@@ -272,10 +270,10 @@ export function LayoutSlotsModal() {
                 {/* Slot Details */}
                 <div style={{ fontSize: 11, color: '#a1a1aa', display: 'flex', gap: 12 }}>
                   <span>
-                    📦 <strong>{compCount}</strong> {compCount === 1 ? 'Component' : 'Components'}
+                    <Package size={14} /> <strong>{compCount}</strong> {compCount === 1 ? 'Component' : 'Components'}
                   </span>
                   <span>
-                    ⚡ <strong>{edgeCount}</strong> {edgeCount === 1 ? 'Wire' : 'Wires'}
+                    <Zap size={14} /> <strong>{edgeCount}</strong> {edgeCount === 1 ? 'Wire' : 'Wires'}
                   </span>
                   <span style={{ color: '#71717a' }}>{formattedTime}</span>
                 </div>
@@ -344,7 +342,7 @@ export function LayoutSlotsModal() {
                     >
                       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                     </svg>
-                    <span>Save Current Here</span>
+                    <span>Save Here</span>
                   </Button>
 
                   {slot.isCustom && (
@@ -371,37 +369,7 @@ export function LayoutSlotsModal() {
           })}
         </div>
 
-        {/* Footer */}
-        <div
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#18181b',
-            borderTop: '1px solid #27272a',
-            fontSize: 11,
-            color: '#a1a1aa',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <span>
-            💡 Saved layout slots persist automatically in your browser's local storage.
-          </span>
-          <Button
-            onClick={toggleSlotModal}
-            style={{
-              padding: '4px 12px',
-              backgroundColor: '#27272a',
-              color: '#f4f4f5',
-              border: '1px solid #3f3f46',
-              borderRadius: 4,
-              fontSize: 11,
-              fontWeight: 600,
-            }}
-          >
-            Close
-          </Button>
-        </div>
+
       </div>
     </div>
   );

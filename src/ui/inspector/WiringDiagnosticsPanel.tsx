@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { useCircuitStore } from '@store/circuitStore';
 import { useCanvasStore } from '@store/canvasStore';
 import type { LintDiagnostic } from '@lint/linter';
+import { Check } from 'lucide-react';
 
 export function WiringDiagnosticsPanel() {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -151,7 +152,7 @@ export function WiringDiagnosticsPanel() {
                 border: '1px dashed rgba(34, 197, 94, 0.2)',
               }}
             >
-              ✓ No circuit defects or wiring short-circuits detected.
+              <Check size={14} /> No circuit defects or wiring short-circuits detected.
             </div>
           ) : (
             <div
