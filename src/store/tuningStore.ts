@@ -83,7 +83,25 @@ export const TUNING_PRESETS: TuningPreset[] = [
       { name: 'D2', openFreq: 73.42, openMidi: 38 },
     ],
   },
+  {
+    id: 'd_standard',
+    label: 'D Standard',
+    description: 'D2 G2 C3 F3 A3 D4',
+    strings: [
+      { name: 'D4', openFreq: 293.66, openMidi: 62 },
+      { name: 'A3', openFreq: 220.0, openMidi: 57 },
+      { name: 'F3', openFreq: 174.61, openMidi: 53 },
+      { name: 'C3', openFreq: 130.81, openMidi: 48 },
+      { name: 'G2', openFreq: 98.0, openMidi: 43 },
+      { name: 'D2', openFreq: 73.42, openMidi: 38 },
+    ],
+  },
 ];
+
+export function getTuningFrequencies(tuningId: string): number[] {
+  const preset = TUNING_PRESETS.find((p) => p.id === tuningId) || TUNING_PRESETS[0];
+  return preset.strings.map((s) => s.openFreq);
+}
 
 interface TuningState {
   activeTuningId: string;

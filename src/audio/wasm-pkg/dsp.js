@@ -21,6 +21,15 @@ export class DspEngine {
         wasm.dspengine_bend(this.__wbg_ptr, string_idx, target_freq, duration_ms);
     }
     /**
+     * Damp a ringing string early with a smooth exponential fade.
+     * amount in 0.0..=1.0: 0.0 (gentle release) to 1.0 (hard dead-note mute).
+     * @param {number} string_idx
+     * @param {number} amount
+     */
+    damp(string_idx, amount) {
+        wasm.dspengine_damp(this.__wbg_ptr, string_idx, amount);
+    }
+    /**
      * @param {number} sample_rate
      * @param {number} seed
      */

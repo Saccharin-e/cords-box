@@ -1,9 +1,30 @@
 /**
  * tabScheduler.ts — Web Audio Timeline Tab Playback Scheduler
+ *
+ * Schedules parsed tab notes for playback using Web Audio's precise timing.
+ * Key design:
+ *   - Pre-flattens all events at setScore() time into a sorted timeline
+ *   - Schedules from actual beat offsets (no fixed-grid quantization)
+ *   - Tracks ringing notes per string for damping / legato transitions
+ *   - Passes targetFreq through to the pipeline's bend/glide engine
+ *   - Uses durationBeats to schedule note-off damping
  */
 
 import type { TabScore, TabNote } from './tabTypes';
 import { audioEngine, audioPipeline } from '@audio/index';
+import { getTuningFrequencies, useTuningStore } from '@store/tuningStore';
+
+/** A pre-computed event with absolute beat position for direct scheduling. */
+interface FlatEvent {
+  absoluteBeat: number;
+  notes: TabNote[];
+}
+
+/** Info about a currently ringing note on a specific string. */
+interface RingingNote {
+  endBeat: number;
+  fret: number;
+}
 
 export class TabScheduler {
   private score: TabScore | null = null;
@@ -16,7 +37,17 @@ export class TabScheduler {
 
   private startAudioTime = 0;
   private startBeatOffset = 0;
-  private scheduledBeatIndex = 0;
+
+  /** Pre-flattened, sorted timeline of all events with absolute beat positions. */
+  private flatEvents: FlatEvent[] = [];
+  /** Index into flatEvents for the next event to schedule. */
+  private nextEventIndex = 0;
+
+  /** Track what's currently ringing per string (0-5) for damping/legato. */
+  private ringingNotes = new Map<number, RingingNote>();
+
+  /** Dynamic open string frequencies for the active score's tuning */
+  private openFreqs: number[] = [329.63, 246.94, 196.0, 146.83, 110.0, 82.41];
 
   private onNotePlayCallbacks = new Set<(note: TabNote) => void>();
   private onStateChangeCallbacks = new Set<(isPlaying: boolean) => void>();
@@ -26,7 +57,14 @@ export class TabScheduler {
     this.score = score;
     this.bpm = score.tempoBpm || 120;
     this.currentBeat = 0;
-    this.scheduledBeatIndex = 0;
+    this.nextEventIndex = 0;
+    this.ringingNotes.clear();
+    this.openFreqs = getTuningFrequencies(score.tuningId || 'standard_e');
+    if (score.tuningId) {
+      useTuningStore.getState().setTuning(score.tuningId);
+    }
+    this.flattenEvents();
+
     if (this.isPlaying) {
       const ctx = audioEngine.getContext();
       if (ctx) {
@@ -34,6 +72,29 @@ export class TabScheduler {
         this.startBeatOffset = 0;
       }
     }
+  }
+
+  /**
+   * Pre-flatten all measure beats into a single sorted array of events
+   * with absolute beat positions. This avoids per-tick measure lookups
+   * and eliminates the grid-quantization problem entirely.
+   */
+  private flattenEvents(): void {
+    this.flatEvents = [];
+    if (!this.score) return;
+
+    for (const measure of this.score.measures) {
+      const measureStartBeat = measure.index * 4.0;
+      for (const beat of measure.beats) {
+        this.flatEvents.push({
+          absoluteBeat: measureStartBeat + beat.offsetBeats,
+          notes: beat.notes,
+        });
+      }
+    }
+
+    // Sort by absolute beat position for sequential scheduling
+    this.flatEvents.sort((a, b) => a.absoluteBeat - b.absoluteBeat);
   }
 
   public setBpm(bpm: number): void {
@@ -44,7 +105,12 @@ export class TabScheduler {
     const maxBeats = this.getTotalBeats();
     const targetBeat = Math.max(0, Math.min(maxBeats, beat));
     this.currentBeat = targetBeat;
-    this.scheduledBeatIndex = Math.floor(targetBeat / 0.25);
+
+    // Find the first event at or after the target beat
+    this.nextEventIndex = this.flatEvents.findIndex((e) => e.absoluteBeat >= targetBeat);
+    if (this.nextEventIndex < 0) this.nextEventIndex = this.flatEvents.length;
+
+    this.ringingNotes.clear();
 
     if (this.isPlaying) {
       const ctx = audioEngine.getContext();
@@ -84,7 +150,11 @@ export class TabScheduler {
     this.isPlaying = true;
     this.startAudioTime = ctx.currentTime + 0.05;
     this.startBeatOffset = this.currentBeat;
-    this.scheduledBeatIndex = Math.floor(this.currentBeat / 0.25);
+    this.ringingNotes.clear();
+
+    // Find the first event at or after the current beat
+    this.nextEventIndex = this.flatEvents.findIndex((e) => e.absoluteBeat >= this.currentBeat);
+    if (this.nextEventIndex < 0) this.nextEventIndex = this.flatEvents.length;
 
     // Lookahead Audio Scheduler Loop
     this.timerId = window.setInterval(() => this.schedulerLoop(), 25);
@@ -102,7 +172,8 @@ export class TabScheduler {
         if (this.isLooping) {
           this.startAudioTime = ctxNow;
           this.startBeatOffset = 0;
-          this.scheduledBeatIndex = 0;
+          this.nextEventIndex = 0;
+          this.ringingNotes.clear();
           liveBeat = 0;
         } else {
           this.stop();
@@ -129,7 +200,8 @@ export class TabScheduler {
     this.stopTimers();
     this.isPlaying = false;
     this.currentBeat = 0;
-    this.scheduledBeatIndex = 0;
+    this.nextEventIndex = 0;
+    this.ringingNotes.clear();
     this.onBeatCallbacks.forEach((cb) => cb(0));
     this.notifyState();
   }
@@ -145,74 +217,128 @@ export class TabScheduler {
     }
   }
 
+  /**
+   * Core scheduling loop — runs every 25ms.
+   * Walks the pre-flattened event array, scheduling any events whose
+   * audio time falls within the 150ms lookahead window.
+   * No grid quantization — events are scheduled at their exact beat positions.
+   */
   private schedulerLoop(): void {
     const ctx = audioEngine.getContext();
     if (!ctx || !this.score) return;
 
     const secondsPerBeat = 60.0 / this.bpm;
     const lookaheadSec = 0.15; // Schedule 150ms ahead
+    const totalBeats = this.getTotalBeats();
 
-    const maxBeats = this.getTotalBeats();
-    if (maxBeats <= 0) return;
+    if (totalBeats <= 0) return;
 
-    // Lookahead until target AudioTime exceeds context.currentTime + lookaheadSec
-    while (true) {
-      const beatOffset = this.scheduledBeatIndex * 0.25; // 16th-note steps
-      if (beatOffset >= maxBeats) break;
+    while (this.nextEventIndex < this.flatEvents.length) {
+      const event = this.flatEvents[this.nextEventIndex];
 
-      const beatAudioTime = this.startAudioTime + (beatOffset - this.startBeatOffset) * secondsPerBeat;
+      // Compute exact audio time for this event
+      const eventAudioTime = this.startAudioTime +
+        (event.absoluteBeat - this.startBeatOffset) * secondsPerBeat;
 
-      if (beatAudioTime > ctx.currentTime + lookaheadSec) {
+      // If this event is beyond our lookahead window, stop scheduling
+      if (eventAudioTime > ctx.currentTime + lookaheadSec) {
         break;
       }
 
-      // Schedule notes at exact beatAudioTime
-      this.scheduleNotesAtBeat(beatOffset, beatAudioTime);
-      this.scheduledBeatIndex++;
+      // Skip events that are already in the past (can happen after seek)
+      if (eventAudioTime >= ctx.currentTime - 0.05) {
+        this.scheduleEvent(event, eventAudioTime, secondsPerBeat);
+      }
+
+      this.nextEventIndex++;
     }
   }
 
-  private getTotalBeats(): number {
-    if (!this.score || this.score.measures.length === 0) return 0;
-    return this.score.measures.length * 4.0;
-  }
+  /**
+   * Schedule a single event's notes for playback.
+   * Handles damping previous notes, legato transitions, and target freq passthrough.
+   */
+  private scheduleEvent(
+    event: FlatEvent,
+    targetAudioTime: number,
+    secondsPerBeat: number,
+  ): void {
+    // Legato articulations: don't damp the previous note, glide pitch instead
+    const LEGATO_ARTS = new Set(['hammer', 'pull', 'slide_up', 'slide_down', 'release']);
 
-  private scheduleNotesAtBeat(beatOffset: number, targetAudioTime: number): void {
-    if (!this.score) return;
-
-    const measureIdx = Math.floor(beatOffset / 4.0);
-    const inMeasureOffset = beatOffset % 4.0;
-
-    const measure = this.score.measures.find((m) => m.index === measureIdx);
-    if (!measure) return;
-
-    // Match notes within 16th note tolerance (0.125 beat)
-    const beat = measure.beats.find((b) => Math.abs(b.offsetBeats - inMeasureOffset) < 0.125);
-    if (!beat) return;
-
-    const openFreqs = [329.63, 246.94, 196.0, 146.83, 110.0, 82.41]; // E4..E2 standard guitar
-
-    // Sort notes by string index descending (Low E to High E) for a natural downstroke strum
-    const sortedNotes = [...beat.notes].sort((a, b) => b.stringIdx - a.stringIdx);
+    // Sort notes by string index descending (Low E to High E) for natural downstroke strum
+    const sortedNotes = [...event.notes].sort((a, b) => b.stringIdx - a.stringIdx);
 
     sortedNotes.forEach((note, idx) => {
-      const openFreq = openFreqs[note.stringIdx] ?? 110.0;
+      const openFreq = this.openFreqs[note.stringIdx] ?? 110.0;
       const freq = openFreq * Math.pow(2, note.fret / 12);
+
+      // Compute target frequency if targetFret is present
+      let targetFreq: number | undefined;
+      if (note.targetFret !== undefined) {
+        targetFreq = openFreq * Math.pow(2, note.targetFret / 12);
+      }
+
+      // Compute note duration in seconds for damping scheduling
+      const noteDurationSec = note.durationBeats * secondsPerBeat;
 
       // Natural strum stagger: ~6ms per string crossing
       const strumDelay = idx * 0.006;
+      const noteStartTime = targetAudioTime + strumDelay;
+
+      // --- Per-string damping/legato logic ---
+      const isLegato = LEGATO_ARTS.has(note.articulation);
+      const ringing = this.ringingNotes.get(note.stringIdx);
+
+      if (ringing && !isLegato) {
+        // Damp the previous note on this string before the new attack
+        // Schedule a fast gain ramp-down ~8ms before the new note
+        const dampTime = Math.max(noteStartTime - 0.008, targetAudioTime - 0.001);
+        audioPipeline.dampString(note.stringIdx, dampTime);
+      }
+
+      // For legato articulations (hammer/pull/slide), the pipeline's bend/glide
+      // engine handles the pitch transition — we still call triggerPluck but the
+      // articulation + targetFreq tell the engine to glide rather than re-attack.
+      // The engine already has this logic in triggerSynthesizedGuitar/triggerRecordedGuitar.
 
       // Web Audio microsecond-accurate scheduling with articulation engine
       void audioPipeline.triggerPluck(
         freq,
         note.velocity,
         note.stringIdx,
-        beat.notes.length,
-        targetAudioTime + strumDelay,
+        event.notes.length,
+        noteStartTime,
         note.articulation,
+        targetFreq,
       );
+
+      // Track this note as ringing on its string
+      this.ringingNotes.set(note.stringIdx, {
+        endBeat: event.absoluteBeat + note.durationBeats,
+        fret: note.fret,
+      });
+
+      // Schedule automatic damping at the end of this note's duration,
+      // unless a subsequent note will supersede it
+      const dampEndTime = noteStartTime + noteDurationSec;
+      setTimeout(() => {
+        const stillRinging = this.ringingNotes.get(note.stringIdx);
+        // Only damp if this note is still the one ringing (not superseded)
+        if (stillRinging && stillRinging.fret === note.fret &&
+            stillRinging.endBeat === event.absoluteBeat + note.durationBeats) {
+          audioPipeline.dampString(note.stringIdx, undefined);
+          this.ringingNotes.delete(note.stringIdx);
+        }
+      }, Math.max(0, (dampEndTime - (audioEngine.getContext()?.currentTime ?? 0)) * 1000));
+
       this.onNotePlayCallbacks.forEach((cb) => cb(note));
     });
+  }
+
+  private getTotalBeats(): number {
+    if (!this.score || this.score.measures.length === 0) return 0;
+    return this.score.measures.length * 4.0;
   }
 
   private notifyState(): void {

@@ -452,6 +452,11 @@ class GuitarProcessor extends AudioWorkletProcessor {
         if (msg.string_idx >= 0 && msg.string_idx < 6) {
           this.stringFreqs[msg.string_idx] = msg.targetFreq;
         }
+      } else if (msg.type === 'damp') {
+        if (this.engine && typeof msg.string_idx === 'number') {
+          const amount = typeof msg.amount === 'number' ? msg.amount : 1.0;
+          this.engine.damp(msg.string_idx, amount);
+        }
       } else if (msg.type === 'pickup-position' && this.engine) {
         this.engine.set_all_pickup_positions(msg.position);
       } else if (msg.type === 'sag-update') {

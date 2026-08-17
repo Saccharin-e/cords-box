@@ -9,8 +9,11 @@ export type ArticulationType =
   | 'slide_up'
   | 'slide_down'
   | 'bend'
+  | 'release'
   | 'vibrato'
-  | 'palmmute'
+  | 'tap'
+  | 'harmonic'
+  | 'palm_mute'
   | 'mute';
 
 export interface TabNote {

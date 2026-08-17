@@ -116,6 +116,8 @@ struct GuitarString {
     pending_amplitude_env: f32,
     amplitude_decay: f32,
     pending_amplitude_decay: f32,
+    release_decay: f32,
+    pending_release_decay: f32,
 
     crossfade_position: usize,
     crossfade_length: usize,
@@ -173,6 +175,8 @@ impl GuitarString {
             pending_amplitude_env: 0.0,
             amplitude_decay: 0.99994,
             pending_amplitude_decay: 0.99994,
+            release_decay: 1.0,
+            pending_release_decay: 1.0,
 
             crossfade_position: 0,
             crossfade_length: 128,
@@ -257,7 +261,7 @@ impl GuitarString {
 
         self.string_idx = string_idx;
 
-        if self.is_active {
+        if self.is_active && self.amplitude_env > 0.001 {
             // fill_excitation needs &mut self for PRNG, but also writes to
             // pending delay lines.  We borrow the pending lines through raw
             // pointers to satisfy the borrow checker while keeping the PRNG
@@ -286,6 +290,7 @@ impl GuitarString {
             self.pending_dispersion_v.reset();
             self.pending_amplitude_env = 1.0;
             self.pending_amplitude_decay = new_amplitude_decay;
+            self.pending_release_decay = 1.0;
             self.crossfade_position = 0;
         } else {
             let main_h = &mut self.delay_line_h as *mut [f32; BUFFER_SIZE];
@@ -312,6 +317,7 @@ impl GuitarString {
             self.dispersion_v.reset();
             self.amplitude_env = 1.0;
             self.amplitude_decay = new_amplitude_decay;
+            self.release_decay = 1.0;
             self.crossfade_position = self.crossfade_length;
         }
 
@@ -320,6 +326,22 @@ impl GuitarString {
         self.target_delay_samples = new_delay_samples;
 
         self.is_active = true;
+    }
+
+    /// Damp the string with an exponential decay envelope.
+    /// amount in 0.0..=1.0:
+    ///   0.0 -> gentle release (~180ms T60)
+    ///   0.5 -> palm mute (~60ms T60)
+    ///   1.0 -> hard dead-note stop (~15ms T60)
+    fn damp(&mut self, amount: f32, sample_rate: f32) {
+        if !self.is_active {
+            return;
+        }
+        let clamped = amount.clamp(0.0, 1.0);
+        let t60 = 0.015 + 0.165 * (1.0 - clamped).powf(1.2);
+        let decay = (-6.907755 / (t60 * sample_rate)).exp();
+        self.release_decay = decay;
+        self.pending_release_decay = decay;
     }
 
     /// Start a pitch glide toward target_freq over duration_ms
@@ -473,7 +495,12 @@ impl GuitarString {
         let delayed_out = self.read_output_ring(comb_delay_clamped);
         let output = 0.5 * (raw_mix - 0.4 * delayed_out);
         
-        self.amplitude_env *= self.amplitude_decay;
+        self.amplitude_env *= self.amplitude_decay * self.release_decay;
+        if self.amplitude_env < 0.00005 && self.crossfade_position >= self.crossfade_length {
+            self.is_active = false;
+            self.amplitude_env = 0.0;
+            self.release_decay = 1.0;
+        }
 
         // Crossfade logic for legato / rapid re-triggering without popping
         if self.crossfade_position < self.crossfade_length {
@@ -499,7 +526,11 @@ impl GuitarString {
             let pending_h_blend = 0.7 + self.pickup_position * 0.5;
             let pending_output = (pending_out_h * pending_h_blend + pending_out_v * (1.0 - pending_h_blend)) * self.pending_amplitude_env;
             
-            self.pending_amplitude_env *= self.pending_amplitude_decay;
+            self.pending_amplitude_env *= self.pending_amplitude_decay * self.pending_release_decay;
+            if self.pending_amplitude_env < 0.00005 {
+                self.pending_amplitude_env = 0.0;
+                self.pending_release_decay = 1.0;
+            }
 
             let blend = (self.crossfade_position as f32 + 1.0) / self.crossfade_length as f32;
             self.crossfade_position += 1;
@@ -524,6 +555,7 @@ impl GuitarString {
                 
                 self.amplitude_env = self.pending_amplitude_env;
                 self.amplitude_decay = self.pending_amplitude_decay;
+                self.release_decay = self.pending_release_decay;
             }
 
             return output * (1.0 - blend) + pending_output * blend;
@@ -572,6 +604,14 @@ impl DspEngine {
         }
     }
 
+    /// Damp a ringing string early with a smooth exponential fade.
+    /// amount in 0.0..=1.0: 0.0 (gentle release) to 1.0 (hard dead-note mute).
+    pub fn damp(&mut self, string_idx: usize, amount: f32) {
+        if string_idx < self.strings.len() {
+            self.strings[string_idx].damp(amount, self.sample_rate);
+        }
+    }
+
     /// Start a pitch glide on a string toward target_freq over duration_ms
     pub fn bend(&mut self, string_idx: usize, target_freq: f32, duration_ms: f32) {
         if string_idx < self.strings.len() {
@@ -602,7 +642,7 @@ impl DspEngine {
         // Fast paths for silence
         let mut any_active = false;
         for s in &self.strings {
-            if s.is_active && s.amplitude_env > 0.0001 {
+            if s.is_active && (s.amplitude_env > 0.0001 || (s.crossfade_position < s.crossfade_length && s.pending_amplitude_env > 0.0001)) {
                 any_active = true;
                 break;
             }
@@ -648,5 +688,137 @@ impl DspEngine {
 
     pub fn output_ptr(&self) -> *const f32 {
         self.output_buffer.as_ptr()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn calc_rms(engine: &mut DspEngine, chunks: usize) -> f32 {
+        let mut sum_sq = 0.0;
+        let mut total_samples = 0;
+        for _ in 0..chunks {
+            engine.process_chunk();
+            let ptr = engine.output_ptr();
+            unsafe {
+                let slice = std::slice::from_raw_parts(ptr, 128);
+                for &s in slice {
+                    sum_sq += s * s;
+                }
+            }
+            total_samples += 128;
+        }
+        (sum_sq / total_samples as f32).sqrt()
+    }
+
+    #[test]
+    fn test_damp_attenuates_faster_than_natural_decay() {
+        let sample_rate = 48000.0;
+        let mut engine_natural = DspEngine::new(sample_rate, 42);
+        let mut engine_damped = DspEngine::new(sample_rate, 42);
+
+        // Pluck both at 330 Hz
+        engine_natural.pluck(0, 330.0, 0.8);
+        engine_damped.pluck(0, 330.0, 0.8);
+
+        // Let both ring for 200ms (75 chunks of 128 samples = 9600 samples)
+        calc_rms(&mut engine_natural, 75);
+        calc_rms(&mut engine_damped, 75);
+
+        // Damp engine_damped with full amount
+        engine_damped.damp(0, 1.0);
+
+        // Allow 50ms (20 chunks) for damping ramp
+        calc_rms(&mut engine_natural, 20);
+        calc_rms(&mut engine_damped, 20);
+
+        // Process another 150ms (55 chunks) and compare
+        let rms_natural = calc_rms(&mut engine_natural, 55);
+        let rms_damped = calc_rms(&mut engine_damped, 55);
+
+        // Damped RMS should be essentially silent (< 1% of natural decay RMS)
+        assert!(
+            rms_damped < rms_natural * 0.01,
+            "Damped RMS ({}) should be < 1% of natural decay RMS ({})",
+            rms_damped,
+            rms_natural
+        );
+    }
+
+    #[test]
+    fn test_damp_inactive_string_is_noop() {
+        let sample_rate = 48000.0;
+        let mut engine = DspEngine::new(sample_rate, 123);
+
+        // Damp string that was never plucked
+        engine.damp(0, 1.0);
+        engine.damp(5, 0.5);
+
+        let rms = calc_rms(&mut engine, 20);
+        assert_eq!(rms, 0.0, "Inactive damped string should produce silence");
+    }
+
+    #[test]
+    fn test_repluck_clears_damping() {
+        let sample_rate = 48000.0;
+        let mut engine = DspEngine::new(sample_rate, 999);
+
+        // Pluck and damp
+        engine.pluck(0, 220.0, 0.8);
+        calc_rms(&mut engine, 30); // 80ms
+        engine.damp(0, 1.0);
+        calc_rms(&mut engine, 20); // mid-damp
+
+        // Repluck same string at full velocity
+        engine.pluck(0, 220.0, 0.8);
+        let rms_after_repluck = calc_rms(&mut engine, 20);
+
+        assert!(
+            rms_after_repluck > 0.05,
+            "Replucked string should ring with high amplitude, got RMS: {}",
+            rms_after_repluck
+        );
+    }
+
+    #[test]
+    fn test_damp_amount_sweep_controls_rate() {
+        let sample_rate = 48000.0;
+
+        let mut engine_soft = DspEngine::new(sample_rate, 555);
+        let mut engine_med = DspEngine::new(sample_rate, 555);
+        let mut engine_hard = DspEngine::new(sample_rate, 555);
+
+        engine_soft.pluck(0, 220.0, 0.8);
+        engine_med.pluck(0, 220.0, 0.8);
+        engine_hard.pluck(0, 220.0, 0.8);
+
+        // Ring for 50ms
+        calc_rms(&mut engine_soft, 20);
+        calc_rms(&mut engine_med, 20);
+        calc_rms(&mut engine_hard, 20);
+
+        // Apply different damping amounts
+        engine_soft.damp(0, 0.0);
+        engine_med.damp(0, 0.5);
+        engine_hard.damp(0, 1.0);
+
+        // Measure RMS in the next 60ms (25 chunks)
+        let rms_soft = calc_rms(&mut engine_soft, 25);
+        let rms_med = calc_rms(&mut engine_med, 25);
+        let rms_hard = calc_rms(&mut engine_hard, 25);
+
+        assert!(
+            rms_hard < rms_med,
+            "Hard damping RMS ({}) should be < medium damping RMS ({})",
+            rms_hard,
+            rms_med
+        );
+        assert!(
+            rms_med < rms_soft,
+            "Medium damping RMS ({}) should be < soft damping RMS ({})",
+            rms_med,
+            rms_soft
+        );
     }
 }

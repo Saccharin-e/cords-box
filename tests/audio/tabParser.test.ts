@@ -30,9 +30,78 @@ E|-----------3---|
     expect(allNotes.some((n) => n.stringIdx === 1 && n.fret === 1)).toBe(true);
   });
 
-  it('should extract techniques and articulations (hammer-ons, slides, muting)', () => {
+  it('should consume technique target frets properly for bends, slides, and hammer-ons', () => {
     const rawTab = `
-e|---5h7---7/9---x---|
+e|---7b9---10/12---5h7---7p5---|
+B|-----------------------------|
+G|-----------------------------|
+D|-----------------------------|
+A|-----------------------------|
+E|-----------------------------|
+`;
+
+    const score = parseAsciiTab(rawTab);
+    const notes = score.measures[0].beats.flatMap((b) => b.notes);
+
+    // 7b9 should produce ONE note on string 0 with fret 7, articulation 'bend', and targetFret 9 (NOT a separate note for 9)
+    const bendNotes = notes.filter((n) => n.stringIdx === 0 && n.articulation === 'bend');
+    expect(bendNotes.length).toBe(1);
+    expect(bendNotes[0].fret).toBe(7);
+    expect(bendNotes[0].targetFret).toBe(9);
+
+    // 10/12 should produce ONE note with fret 10, articulation 'slide_up', targetFret 12
+    const slideNotes = notes.filter((n) => n.stringIdx === 0 && n.articulation === 'slide_up');
+    expect(slideNotes.length).toBe(1);
+    expect(slideNotes[0].fret).toBe(10);
+    expect(slideNotes[0].targetFret).toBe(12);
+
+    // 5h7 should produce ONE hammer note with fret 5, targetFret 7
+    const hammerNotes = notes.filter((n) => n.stringIdx === 0 && n.articulation === 'hammer');
+    expect(hammerNotes.length).toBe(1);
+    expect(hammerNotes[0].fret).toBe(5);
+    expect(hammerNotes[0].targetFret).toBe(7);
+
+    // 7p5 should produce ONE pull note with fret 7, targetFret 5
+    const pullNotes = notes.filter((n) => n.stringIdx === 0 && n.articulation === 'pull');
+    expect(pullNotes.length).toBe(1);
+    expect(pullNotes[0].fret).toBe(7);
+    expect(pullNotes[0].targetFret).toBe(5);
+
+    // Total notes in this measure should be exactly 4, NOT 8!
+    expect(notes.length).toBe(4);
+  });
+
+  it('should extract vibrato, dead notes (x), and natural harmonics (<12>)', () => {
+    const rawTab = `
+e|---7v---7~---x---<12>---|
+B|------------------------|
+G|------------------------|
+D|------------------------|
+A|------------------------|
+E|------------------------|
+`;
+
+    const score = parseAsciiTab(rawTab);
+    const notes = score.measures[0].beats.flatMap((b) => b.notes);
+
+    expect(notes.length).toBe(4);
+
+    expect(notes[0].fret).toBe(7);
+    expect(notes[0].articulation).toBe('vibrato');
+
+    expect(notes[1].fret).toBe(7);
+    expect(notes[1].articulation).toBe('vibrato');
+
+    expect(notes[2].fret).toBe(0);
+    expect(notes[2].articulation).toBe('mute');
+
+    expect(notes[3].fret).toBe(12);
+    expect(notes[3].articulation).toBe('harmonic');
+  });
+
+  it('should derive relative durations from dash spacing', () => {
+    const rawTab = `
+e|---0-------2---3---|
 B|-------------------|
 G|-------------------|
 D|-------------------|
@@ -43,15 +112,64 @@ E|-------------------|
     const score = parseAsciiTab(rawTab);
     const notes = score.measures[0].beats.flatMap((b) => b.notes);
 
-    const hammerNote = notes.find((n) => n.fret === 5);
-    expect(hammerNote).toBeDefined();
-    expect(hammerNote?.articulation).toBe('hammer');
+    expect(notes.length).toBe(3);
+    const note0 = notes.find((n) => n.fret === 0);
+    const note2 = notes.find((n) => n.fret === 2);
 
-    const slideNote = notes.find((n) => n.articulation === 'slide_up');
-    expect(slideNote).toBeDefined();
-    expect(slideNote?.fret).toBe(7);
+    expect(note0).toBeDefined();
+    expect(note2).toBeDefined();
+    // note 0 has more dashes after it than note 2, so its durationBeats should be strictly greater
+    expect(note0!.durationBeats).toBeGreaterThan(note2!.durationBeats);
+  });
 
-    const muteNote = notes.find((n) => n.articulation === 'mute');
-    expect(muteNote).toBeDefined();
+  it('should parse bend release (r) correctly', () => {
+    const rawTab = `
+e|---7b9---9r7---|
+B|---------------|
+G|---------------|
+D|---------------|
+A|---------------|
+E|---------------|
+`;
+
+    const score = parseAsciiTab(rawTab);
+    const notes = score.measures[0].beats.flatMap((b) => b.notes);
+
+    expect(notes.length).toBe(2);
+    expect(notes[0].fret).toBe(7);
+    expect(notes[0].articulation).toBe('bend');
+    expect(notes[0].targetFret).toBe(9);
+
+    expect(notes[1].fret).toBe(9);
+    expect(notes[1].articulation).toBe('release');
+    expect(notes[1].targetFret).toBe(7);
+  });
+
+  it('should support alternate tunings and recognize Eb/D headers', () => {
+    const ebTab = `
+eb|---0-----------|
+Bb|-------0-------|
+Gb|-----------0---|
+Db|---------------|
+Ab|---------------|
+Eb|---------------|
+`;
+    const ebScore = parseAsciiTab(ebTab);
+    expect(ebScore.tuningId).toBe('eb_standard');
+
+    const dTab = `
+d|---0-----------|
+A|-------0-------|
+F|-----------0---|
+C|---------------|
+G|---------------|
+D|---------------|
+`;
+    const dScore = parseAsciiTab(dTab);
+    expect(dScore.tuningId).toBe('d_standard');
+
+    // Explicit tuningId override
+    const customScore = parseAsciiTab(ebTab, 140, 'drop_d');
+    expect(customScore.tuningId).toBe('drop_d');
   });
 });

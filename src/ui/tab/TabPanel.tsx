@@ -16,84 +16,98 @@ import { parseAsciiTab } from '@audio/tab/tabParser';
 import { tabScheduler } from '@audio/tab/tabScheduler';
 import type { TabScore } from '@audio/tab/tabTypes';
 import { useCanvasStore } from '@store/canvasStore';
+import { useTuningStore } from '@store/tuningStore';
 import { Button } from '../common/Button';
 import { Slider } from '../common/Slider';
 import { Download, Edit2, Music, Timer, Upload, X } from 'lucide-react';
 
-export const TAB_PRESETS: { id: string; label: string; tab: string; bpm: number; durationDesc: string }[] = [
+export const TAB_PRESETS: { id: string; label: string; tab: string; bpm: number; durationDesc: string; tuningId: string }[] = [
   {
     id: 'back_in_black',
     label: 'AC/DC - Back in Black (Main Riff)',
     bpm: 94,
+    tuningId: 'standard_e',
     durationDesc: '~15s (4 Measures)',
-    tab: `e|-------------------|-------------------|-------------------|-------------------|
-B|-------3-0---------|-------------------|-------3-0---------|-------------------|
-G|-------2-0---2-2-2-|-------------------|-------2-0---2-2-2-|-------------------|
-D|---2---------2-2-2-|-------------------|---2---------2-2-2-|-------------------|
-A|---2---------0-0-0-|-------2-------2---|---2---------0-0-0-|---2-------2-------|
-E|---0---------------|---3-0---3-0-3---3-|---0---------------|-----4-0-5---6-7---|`
+    tab: `e|-----------------------|---3p0-----------------|-----------------------|-----------------------|
+B|-----------3---3-------|-------3p0-------------|-----------3---3-------|-----------------------|
+G|-----------2---2---2-2-|-----------2b4r2-0v----|-----------2---2---2-2-|-----------------------|
+D|---2-------0---0---2-2-|-----------------------|---2-------0---0---2-2-|-------2-------2-------|
+A|---2---------------0-0-|-----------------------|---2---------------0-0-|---2-4---2-4-5---2-4-6-|
+E|---0-------------------|-----------------------|---0-------------------|-----------------------|`,
   },
   {
     id: 'little_wing',
     label: 'Jimi Hendrix - Little Wing (Intro Snippet)',
     bpm: 70,
+    tuningId: 'eb_standard',
     durationDesc: '~15s (4 Measures)',
-    tab: `e|-------------------|-------0-----------|-------------------|-------0-----------|
-B|-------8-----------|-------0h1-0-------|---7/8\\7---5-------|-------1-----------|
-G|-------7h9---------|-------0-----0-----|---7---7---5-------|-------0h2---------|
-D|-------7h9---------|-------0h2---------|---7/9\\7---5-------|-------0h2---------|
-A|---0---------------|-------------------|-----------0-------|---3---------------|
-E|-------------------|---0---------------|-------------------|-------------------|`
+    tab: `eb|-----------------------|-------0---------------|-----------------------|-----------------------|
+Bb|-------8---8-----------|-------0h1-0v----------|---7/8-8\\7---5v--------|-------1---1h3-1v------|
+Gb|-------7h9-9---9v------|-------0-------0-------|---7/9-9\\7---5v--------|-------0h2-2---0-------|
+Db|-------7h9-9---9v------|-------0h2---------2---|---7/9-9\\7---5v--------|-------0h2-2-------2---|
+Ab|---0-------------------|-----------------------|-------------0---------|---3-------------------|
+Eb|-----------------------|---0-------------------|-----------------------|-----------------------|`,
   },
   {
     id: 'master_of_puppets',
     label: 'Metallica - Master of Puppets (Main Riff)',
     bpm: 212,
+    tuningId: 'standard_e',
     durationDesc: '~10s (4 Measures)',
-    tab: `e|-------------------|-------------------|-------------------|-------------------|
-B|-------------------|-------------------|-------------------|-------------------|
-G|-------------------|-------------------|-------------------|-------------------|
-D|-------------------|-------------------|-------------------|-------------------|
-A|-------2-----3-----|---4-----3-----2---|-------2-----3-----|---4-----3-----2---|
-E|---0-0---0-0---0-0-|-----0-0---0-0-----|---0-0---0-0---0-0-|-----0-0---0-0-----|`
+    tab: `e|-----------------------|-------------------|-----------------------|-------------------|
+B|-----------------------|-------------------|-----------------------|-------------------|
+G|-----------------------|-------------------|-----------------------|-------------------|
+D|-----------------------|-------------------|-----------------------|-------------------|
+A|---------2---------3---|---------4---3---2-|---------2---------3---|---------4---3---2-|
+E|---0-1-2---0-1-2-3-----|---0-1-2---0---0---|---0-1-2---0-1-2-3-----|---0-1-2---0---0---|`,
   },
   {
     id: 'come_as_you_are',
     label: 'Nirvana - Come As You Are (Intro Riff)',
     bpm: 120,
+    tuningId: 'd_standard',
     durationDesc: '~12s (4 Measures)',
-    tab: `e|-------------------|-------------------|-------------------|-------------------|
-B|-------------------|-------------------|-------------------|-------------------|
-G|-------------------|-------------------|-------------------|-------------------|
-D|-------------------|-------------------|-------------------|-------------------|
-A|---------0---0-----|---2-------2-------|---------0---0-----|---2-------2-------|
-E|---0-0-1---2---2-2-|-----2-1-0---0-----|---0-0-1---2---2-2-|-----2-1-0---0-----|`
+    tab: `d|-----------------------|-----------------------|-----------------------|-----------------------|
+A|-----------------------|-----------------------|-----------------------|-----------------------|
+F|-----------------------|-----------------------|-----------------------|-----------------------|
+C|-----------------------|-----------------------|-----------------------|-----------------------|
+G|-----------0---0-------|---2-------2-----------|-----------0---0-------|---2-------2-----------|
+D|---0-0-1-2---2---2-2---|-----2-1-0---0-0-0-----|---0-0-1-2---2---2-2---|-----2-1-0---0-0-0-----|`,
   },
   {
     id: 'cant_stop',
     label: 'RHCP - Can\'t Stop (Main Riff)',
-    bpm: 90,
+    bpm: 94,
+    tuningId: 'standard_e',
     durationDesc: '~15s (4 Measures)',
-    tab: `e|-------------------|-------------------|-------------------|-------------------|
-B|-------------------|-------------------|-------------------|-------------------|
-G|-------7-9-----7-9-|-------7-9-----7-9-|-------7-9-----7-9-|-------7-9-----7-9-|
-D|-------------------|-------------------|-------------------|-------------------|
-A|---7-7-------------|---5-5-------------|-------------------|-------------------|
-E|-----------0-0-----|-----------0-0-----|---8-8-----0-0-----|---7-7-----0-0-----|`
+    tab: `e|-----------------------|-----------------------|-----------------------|-----------------------|
+B|-----------------------|-----------------------|-----------------------|-----------------------|
+G|-------7h9-9---7h9-9---|-------7h9-9---7h9-9---|-------7h9-9---7h9-9---|-------7h9-9---7h9-9---|
+D|---x-x-x---x-x-x---x---|---x-x-x---x-x-x---x---|---x-x-x---x-x-x---x---|---x-x-x---x-x-x---x---|
+A|---7-7-----------------|---5-5-----------------|-----------------------|-----------------------|
+E|-----------0-0---------|-----------0-0---------|---8-8-----0-0---------|---7-7-----0-0---------|`,
+  },
+  {
+    id: 'comfortably_numb',
+    label: 'Pink Floyd - Comfortably Numb (Solo & Harmonics)',
+    bpm: 68,
+    tuningId: 'standard_e',
+    durationDesc: '~18s (4 Measures)',
+    tab: `e|---<12>----------------|-----------------------|---14b16---14v---------|---12h14p12-10/12-12v--|
+B|-------<12>------------|---10/12---12v---------|-----------------------|-----------------------|
+G|-----------<12>--------|-----------------------|-----------------------|-----------------------|
+D|---------------<12>----|-----------------------|-----------------------|-----------------------|
+A|-----------------------|-----------------------|-----------------------|-----------------------|
+E|-----------------------|-----------------------|-----------------------|-----------------------|`,
   },
 ];
 
-const STRING_CONFIG = [
-  { name: 'e', pitch: 'E4', color: '#ec4899' }, // Neon Pink
-  { name: 'B', pitch: 'B3', color: '#38bdf8' }, // Cyan
-  { name: 'G', pitch: 'G3', color: '#34d399' }, // Emerald
-  { name: 'D', pitch: 'D3', color: '#fbbf24' }, // Amber
-  { name: 'A', pitch: 'A2', color: '#f97316' }, // Orange
-  { name: 'E', pitch: 'E2', color: '#ef4444' }, // Red
-];
+const STRING_COLORS = ['#ec4899', '#38bdf8', '#34d399', '#fbbf24', '#f97316', '#ef4444'];
 
 export function TabPanel() {
   const toggleTabPanel = useCanvasStore((s) => s.toggleTabPanel);
+  const currentTuning = useTuningStore((s) => s.currentPreset);
+  const setTuning = useTuningStore((s) => s.setTuning);
   const [selectedPresetId, setSelectedPresetId] = useState('back_in_black');
   const [tabText, setTabText] = useState(TAB_PRESETS[0].tab);
   const [bpm, setBpm] = useState(TAB_PRESETS[0].bpm);
@@ -181,8 +195,12 @@ export function TabPanel() {
     };
   }, []);
 
-  const handleParse = (textToParse = tabText, targetBpm = bpm) => {
-    const score = parseAsciiTab(textToParse, targetBpm);
+  const handleParse = (
+    textToParse = tabText,
+    targetBpm = bpm,
+    targetTuningId = TAB_PRESETS.find((p) => p.id === selectedPresetId)?.tuningId || 'standard_e',
+  ) => {
+    const score = parseAsciiTab(textToParse, targetBpm, targetTuningId);
     setParsedScore(score);
     tabScheduler.setScore(score);
   };
@@ -197,6 +215,8 @@ export function TabPanel() {
     setSelectedPresetId(presetId);
     setTabText(preset.tab);
     setBpm(preset.bpm);
+    setTuning(preset.tuningId);
+    handleParse(preset.tab, preset.bpm, preset.tuningId);
   };
 
   const handlePlayToggle = () => {
@@ -302,8 +322,23 @@ export function TabPanel() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>Preset:</span>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <span style={{ color: '#f59e0b' }}>{TAB_PRESETS.find(p => p.id === selectedPresetId)?.durationDesc}</span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span
+                style={{
+                  color: '#38bdf8',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                }}
+              >
+                {currentTuning.label} ({currentTuning.description})
+              </span>
+              <span style={{ color: '#f59e0b', fontSize: '11px' }}>
+                {TAB_PRESETS.find((p) => p.id === selectedPresetId)?.durationDesc}
+              </span>
               <Button
                 onClick={() => setIsTextEditorOpen(!isTextEditorOpen)}
                 style={{
@@ -435,31 +470,35 @@ export function TabPanel() {
                 boxSizing: 'border-box',
               }}
             >
-              {STRING_CONFIG.map((cfg, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '2px',
-                  }}
-                >
-                  <span
+              {currentTuning.strings.map((str, idx) => {
+                const color = STRING_COLORS[idx] || '#a1a1aa';
+                const shortName = str.name.split(' ')[0] || str.name;
+                return (
+                  <div
+                    key={idx}
                     style={{
-                      fontSize: '10px',
-                      fontWeight: 800,
-                      color: cfg.color,
-                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                      padding: '1px 6px',
-                      borderRadius: '3px',
-                      border: `1px solid ${cfg.color}40`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '2px',
                     }}
                   >
-                    {cfg.name}
-                  </span>
-                </div>
-              ))}
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        color: color,
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                        padding: '1px 4px',
+                        borderRadius: '3px',
+                        border: `1px solid ${color}40`,
+                      }}
+                    >
+                      {shortName}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Top Measure & Time Ruler Bar */}
@@ -511,19 +550,24 @@ export function TabPanel() {
             })}
 
             {/* 6 Horizontal Metallic Staff Lines */}
-            {STRING_CONFIG.map((cfg, sIdx) => (
-              <div
-                key={sIdx}
-                style={{
-                  position: 'absolute',
-                  left: '50px',
-                  top: `${30 + sIdx * 22}px`,
-                  width: `${totalBeats * BEAT_PX}px`,
-                  height: '1px',
-                  backgroundColor: `${cfg.color}35`,
-                }}
-              />
-            ))}
+            {currentTuning.strings.map((_, sIdx) => {
+              const color = STRING_COLORS[sIdx] || '#a1a1aa';
+              return (
+                <div
+                  key={sIdx}
+                  style={{
+                    position: 'absolute',
+                    left: '50px',
+                    top: `${30 + sIdx * 22}px`,
+                    width: `${totalBeats * BEAT_PX}px`,
+                    height: '1px',
+                    backgroundColor: `${color}35`,
+                    borderBottom: '1px solid #18181b',
+                    pointerEvents: 'none',
+                  }}
+                />
+              );
+            })}
 
             {/* Interactive Note Badges & Technique Badges */}
             {parsedScore?.measures.flatMap((m) =>

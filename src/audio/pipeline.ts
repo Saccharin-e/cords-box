@@ -469,7 +469,7 @@ export class AudioPipeline {
   private topologyRouted = false;
   private sampleBank = new SampleBank();
   private wdfSolver = new WdfGuitarCircuitSolver(48000);
-  private activeSampleSources = new Set<AudioBufferSourceNode>();
+  private activeSampleSources = new Map<number, { source: AudioBufferSourceNode; gain: GainNode }>();
 
   constructor() {
     audioEngine.subscribe(() => {
@@ -1034,6 +1034,7 @@ export class AudioPipeline {
     startTime?: number,
     articulation: string = 'none',
     targetFreq?: number,
+    stringIndex: number = 0,
   ): boolean {
     const targetMidi = Math.round(69 + 12 * Math.log2(freq / 440));
     const sample = this.findGuitarSampleBuffer(targetMidi, velocity);
@@ -1047,7 +1048,7 @@ export class AudioPipeline {
     const exactTargetMidi = 69 + 12 * Math.log2(freq / 440);
     const pitchShift = 2 ** ((exactTargetMidi - sample.rootMidi) / 12);
 
-    // Apply Articulation Pitch Automations (slides, bends, vibrato)
+    // Apply Articulation Pitch Automations (slides, bends, hammer/pull, vibrato)
     if (articulation === 'slide_up' || articulation === 'slide_down') {
       const endFreq = targetFreq || (articulation === 'slide_up' ? freq * 1.122 : freq * 0.89);
       const endTargetMidi = 69 + 12 * Math.log2(endFreq / 440);
@@ -1055,8 +1056,27 @@ export class AudioPipeline {
       source.playbackRate.setValueAtTime(pitchShift, now);
       source.playbackRate.linearRampToValueAtTime(endPitchShift, now + 0.15);
     } else if (articulation === 'bend') {
+      const endFreq = targetFreq || freq * 1.122;
+      const endTargetMidi = 69 + 12 * Math.log2(endFreq / 440);
+      const endPitchShift = 2 ** ((endTargetMidi - sample.rootMidi) / 12);
       source.playbackRate.setValueAtTime(pitchShift, now);
-      source.playbackRate.linearRampToValueAtTime(pitchShift * 1.122, now + 0.18);
+      source.playbackRate.linearRampToValueAtTime(endPitchShift, now + 0.18);
+    } else if (articulation === 'release') {
+      const endFreq = targetFreq || freq * 0.89;
+      const endTargetMidi = 69 + 12 * Math.log2(endFreq / 440);
+      const endPitchShift = 2 ** ((endTargetMidi - sample.rootMidi) / 12);
+      source.playbackRate.setValueAtTime(pitchShift, now);
+      source.playbackRate.linearRampToValueAtTime(endPitchShift, now + 0.15);
+    } else if (articulation === 'hammer' || articulation === 'pull') {
+      // Legato: glide to target pitch with no new pick transient
+      if (targetFreq) {
+        const endTargetMidi = 69 + 12 * Math.log2(targetFreq / 440);
+        const endPitchShift = 2 ** ((endTargetMidi - sample.rootMidi) / 12);
+        source.playbackRate.setValueAtTime(pitchShift, now);
+        source.playbackRate.linearRampToValueAtTime(endPitchShift, now + 0.06);
+      } else {
+        source.playbackRate.setValueAtTime(pitchShift, now);
+      }
     } else if (articulation === 'vibrato') {
       source.playbackRate.setValueAtTime(pitchShift, now);
       source.playbackRate.linearRampToValueAtTime(pitchShift * 1.015, now + 0.08);
@@ -1107,11 +1127,15 @@ export class AudioPipeline {
       source.connect(sampleGain);
     }
     sampleGain.connect(this.sampleInputNode);
-    this.activeSampleSources.add(source);
+    this.activeSampleSources.set(stringIndex, { source, gain: sampleGain });
     this.updateSampleBusGain(ctx);
 
     source.onended = () => {
-      this.activeSampleSources.delete(source);
+      // Only remove if this source is still the active one for this string
+      const current = this.activeSampleSources.get(stringIndex);
+      if (current && current.source === source) {
+        this.activeSampleSources.delete(stringIndex);
+      }
       this.updateSampleBusGain(ctx);
       try {
         source.disconnect();
@@ -1135,6 +1159,54 @@ export class AudioPipeline {
     const count = Math.max(1, this.activeSampleSources.size);
     const comp = 1 / Math.sqrt(count);
     this.sampleInputNode.gain.setTargetAtTime(comp, ctx.currentTime, 0.012);
+  }
+
+  /**
+   * Damp (silence/mute) the currently ringing note on a specific string.
+   * amount: 0.0 (soft fretting-hand release) to 1.0 (hard palm/dead-note mute).
+   */
+  dampString(stringIndex: number, amount: number = 1.0, time?: number): void {
+    const ctx = audioEngine.getContext();
+    if (!ctx) return;
+    const dampTime = time && time > ctx.currentTime ? time : ctx.currentTime;
+    const clampedAmount = Math.max(0.0, Math.min(1.0, amount));
+
+    // Damp sample-based source on this string
+    const entry = this.activeSampleSources.get(stringIndex);
+    if (entry) {
+      try {
+        const tau = 0.008 + 0.04 * (1.0 - clampedAmount);
+        entry.gain.gain.setTargetAtTime(0.0001, dampTime, tau);
+        // Schedule stop slightly after the ramp finishes
+        setTimeout(() => {
+          try {
+            entry.source.stop();
+            entry.source.disconnect();
+            entry.gain.disconnect();
+          } catch {
+            // Ignored: source may already have ended
+          }
+          // Only remove if still the current entry for this string
+          const current = this.activeSampleSources.get(stringIndex);
+          if (current && current.source === entry.source) {
+            this.activeSampleSources.delete(stringIndex);
+            this.updateSampleBusGain(ctx);
+          }
+        }, Math.max(0, (dampTime - ctx.currentTime) * 1000) + 60);
+      } catch {
+        // Ignored
+      }
+    }
+
+    // Damp WDF / physical string worklet node
+    if (this.wdfWorkletNode) {
+      this.wdfWorkletNode.port.postMessage({
+        type: 'damp',
+        string_idx: stringIndex,
+        amount: clampedAmount,
+        time: dampTime,
+      });
+    }
   }
 
   /**
@@ -1172,13 +1244,31 @@ export class AudioPipeline {
           durationMs: 150,
         });
       } else if (articulation === 'bend') {
-        const endFreq = targetFreq || freq * 1.122; // whole step up
+        const endFreq = targetFreq || freq * 1.122;
         this.wdfWorkletNode.port.postMessage({
           type: 'bend',
           string_idx: stringIndex,
           targetFreq: endFreq,
           durationMs: 180,
         });
+      } else if (articulation === 'release') {
+        const endFreq = targetFreq || freq * 0.89;
+        this.wdfWorkletNode.port.postMessage({
+          type: 'bend',
+          string_idx: stringIndex,
+          targetFreq: endFreq,
+          durationMs: 150,
+        });
+      } else if (articulation === 'hammer' || articulation === 'pull') {
+        // Legato: glide to target with no new pick transient
+        if (targetFreq) {
+          this.wdfWorkletNode.port.postMessage({
+            type: 'bend',
+            string_idx: stringIndex,
+            targetFreq: targetFreq,
+            durationMs: 60,
+          });
+        }
       } else if (articulation === 'vibrato') {
         // Vibrato: schedule multiple small bends
         const vibratoDepth = 1.015; // ~25 cents
@@ -1258,15 +1348,30 @@ export class AudioPipeline {
     const releaseTau = Math.max(0.3, sustain * 0.3);
     env.gain.setTargetAtTime(0.0001, releaseStart, releaseTau);
 
-    // Apply Articulation Pitch Automations (slides, bends, vibrato)
+    // Apply Articulation Pitch Automations (slides, bends, hammer/pull, vibrato)
     if (articulation === 'slide_up' || articulation === 'slide_down') {
       const endFreq = targetFreq || (articulation === 'slide_up' ? freq * 1.122 : freq * 0.89);
       const shift = endFreq / freq;
       stringSource.playbackRate.setValueAtTime(1.0, now);
       stringSource.playbackRate.linearRampToValueAtTime(shift, now + 0.15);
     } else if (articulation === 'bend') {
+      const endFreq = targetFreq || freq * 1.122;
+      const shift = endFreq / freq;
       stringSource.playbackRate.setValueAtTime(1.0, now);
-      stringSource.playbackRate.linearRampToValueAtTime(1.122, now + 0.18);
+      stringSource.playbackRate.linearRampToValueAtTime(shift, now + 0.18);
+    } else if (articulation === 'release') {
+      const endFreq = targetFreq || freq * 0.89;
+      const shift = endFreq / freq;
+      stringSource.playbackRate.setValueAtTime(1.0, now);
+      stringSource.playbackRate.linearRampToValueAtTime(shift, now + 0.15);
+    } else if (articulation === 'hammer' || articulation === 'pull') {
+      if (targetFreq) {
+        const shift = targetFreq / freq;
+        stringSource.playbackRate.setValueAtTime(1.0, now);
+        stringSource.playbackRate.linearRampToValueAtTime(shift, now + 0.06);
+      } else {
+        stringSource.playbackRate.setValueAtTime(1.0, now);
+      }
     } else if (articulation === 'vibrato') {
       stringSource.playbackRate.setValueAtTime(1.0, now);
       stringSource.playbackRate.linearRampToValueAtTime(1.015, now + 0.08);
@@ -1547,6 +1652,7 @@ export class AudioPipeline {
           startTime,
           articulation,
           targetFreq,
+          _stringIndex,
         )
       ) {
         await bankPromise;
@@ -1560,6 +1666,7 @@ export class AudioPipeline {
               startTime,
               articulation,
               targetFreq,
+              _stringIndex,
             )
           ) {
             this.triggerSynthesizedGuitar(ctx, freq, velocity, startTime, articulation, targetFreq, _stringIndex);
@@ -2207,10 +2314,11 @@ export class AudioPipeline {
       }
     }
 
-    for (const source of this.activeSampleSources) {
+    for (const [, entry] of this.activeSampleSources) {
       try {
-        source.stop();
-        source.disconnect();
+        entry.source.stop();
+        entry.source.disconnect();
+        entry.gain.disconnect();
       } catch {
         // Ignored: a source may already have ended.
       }

@@ -8,6 +8,11 @@ export class DspEngine {
      * Start a pitch glide on a string toward target_freq over duration_ms
      */
     bend(string_idx: number, target_freq: number, duration_ms: number): void;
+    /**
+     * Damp a ringing string early with a smooth exponential fade.
+     * amount in 0.0..=1.0: 0.0 (gentle release) to 1.0 (hard dead-note mute).
+     */
+    damp(string_idx: number, amount: number): void;
     constructor(sample_rate: number, seed: number);
     output_ptr(): number;
     pluck(string_idx: number, freq: number, velocity: number): void;
@@ -29,6 +34,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_dspengine_free: (a: number, b: number) => void;
     readonly dspengine_bend: (a: number, b: number, c: number, d: number) => void;
+    readonly dspengine_damp: (a: number, b: number, c: number) => void;
     readonly dspengine_new: (a: number, b: number) => number;
     readonly dspengine_output_ptr: (a: number) => number;
     readonly dspengine_pluck: (a: number, b: number, c: number, d: number) => void;

@@ -8,7 +8,7 @@ describe('PlayableFretboardPanel Moveable Behavior', () => {
 
     const panel = container.querySelector('.playable-fretboard-panel');
     expect(panel).toBeTruthy();
-    expect(getByText('Playable Guitar Fretboard')).toBeInTheDocument();
+    expect(getByText('Fretboard')).toBeInTheDocument();
 
     const header = getByTitle('Click and drag header to move fretboard panel');
     expect(header).toBeInTheDocument();
