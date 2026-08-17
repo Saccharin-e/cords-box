@@ -76,7 +76,7 @@ export interface CircuitTopologyState {
 
 export type AmpModelType = 'clean_twin' | 'crunch_800' | 'high_gain' | 'vox_chime';
 export type CabinetModelType = '1x12_open' | '2x12_tweed' | '4x12_stack' | '4x12_metal';
-export type DriveType = 'overdrive' | 'tube_screamer' | 'distortion';
+export type DriveType = 'overdrive' | 'tube_screamer' | 'distortion' | 'fuzz_muff';
 
 export interface AmpPedalboardState {
   // Stompbox Pedals
@@ -164,8 +164,156 @@ export const DEFAULT_AMP_PEDALBOARD_STATE: AmpPedalboardState = {
   ampInputImpedanceOhms: 1000000,
 };
 
+export interface RigPreset {
+  id: string;
+  name: string;
+  description: string;
+  state: Partial<AmpPedalboardState>;
+}
+
+export const RIG_PRESETS: Record<string, RigPreset> = {
+  gilmour_lead: {
+    id: 'gilmour_lead',
+    name: 'David Gilmour Lead Rig (Big Muff + 480ms Echo + Hiwatt)',
+    description: 'Electro-Harmonix Big Muff Pi fuzz saturation, singing sustain, 4x12 stack cab, liquid chorus, and 480ms tape echo.',
+    state: {
+      compressorEnabled: true,
+      compressorSustain: 0.65,
+      compressorLevel: 0.9,
+
+      overdriveEnabled: true,
+      overdriveType: 'fuzz_muff',
+      overdriveDrive: 0.88,
+      overdriveTone: 0.72,
+      overdriveLevel: 0.85,
+
+      chorusEnabled: true,
+      chorusRate: 0.25,
+      chorusDepth: 0.35,
+      chorusMix: 0.26,
+
+      delayEnabled: true,
+      delayTimeMs: 480,
+      delayFeedback: 0.42,
+      delayMix: 0.38,
+
+      ampModel: 'crunch_800',
+      ampGain: 0.85,
+      ampBass: 0.55,
+      ampMid: 0.75,
+      ampTreble: 0.65,
+      ampPresence: 0.75,
+      ampMaster: 0.9,
+
+      cabModel: '4x12_stack',
+      micDistance: 0.15,
+
+      reverbEnabled: true,
+      reverbMix: 0.32,
+      reverbSize: 0.6,
+      reverbDecay: 0.5,
+    },
+  },
+  classic_rock_crunch: {
+    id: 'classic_rock_crunch',
+    name: 'Marshall JCM800 Crunch (Plexi Drive)',
+    description: 'Classic British tube crunch with 4x12 stack cab and subtle room reverb for AC/DC and Guns N Roses.',
+    state: {
+      compressorEnabled: false,
+      overdriveEnabled: true,
+      overdriveType: 'tube_screamer',
+      overdriveDrive: 0.65,
+      overdriveTone: 0.6,
+      overdriveLevel: 0.75,
+      chorusEnabled: false,
+      delayEnabled: false,
+      ampModel: 'crunch_800',
+      ampGain: 0.75,
+      ampBass: 0.6,
+      ampMid: 0.65,
+      ampTreble: 0.7,
+      ampPresence: 0.65,
+      ampMaster: 0.85,
+      cabModel: '4x12_stack',
+      reverbEnabled: true,
+      reverbMix: 0.18,
+    },
+  },
+  clean_chime: {
+    id: 'clean_chime',
+    name: 'Fender Twin Reverb Clean (Lush Chorus & Space)',
+    description: 'Sparkling clean Blackface tube amp with 2x12 Tweed cab, optical compressor, and stereo chorus.',
+    state: {
+      compressorEnabled: true,
+      compressorSustain: 0.45,
+      compressorLevel: 0.8,
+      overdriveEnabled: false,
+      chorusEnabled: true,
+      chorusRate: 0.8,
+      chorusDepth: 0.4,
+      chorusMix: 0.3,
+      delayEnabled: true,
+      delayTimeMs: 320,
+      delayFeedback: 0.25,
+      delayMix: 0.2,
+      ampModel: 'clean_twin',
+      ampGain: 0.45,
+      ampBass: 0.5,
+      ampMid: 0.55,
+      ampTreble: 0.65,
+      ampPresence: 0.5,
+      ampMaster: 0.85,
+      cabModel: '2x12_tweed',
+      reverbEnabled: true,
+      reverbMix: 0.25,
+    },
+  },
+  metal_high_gain: {
+    id: 'metal_high_gain',
+    name: 'High Gain Modern Lead (Tight Rectifier)',
+    description: 'Cascaded high gain tube preamp with scooped mids and aggressive 4x12 V30 cabinet punch.',
+    state: {
+      compressorEnabled: true,
+      compressorSustain: 0.5,
+      compressorLevel: 0.85,
+      overdriveEnabled: true,
+      overdriveType: 'distortion',
+      overdriveDrive: 0.8,
+      overdriveTone: 0.7,
+      overdriveLevel: 0.8,
+      chorusEnabled: false,
+      delayEnabled: false,
+      ampModel: 'high_gain',
+      ampGain: 0.9,
+      ampBass: 0.65,
+      ampMid: 0.45,
+      ampTreble: 0.75,
+      ampPresence: 0.8,
+      ampMaster: 0.85,
+      cabModel: '4x12_metal',
+      reverbEnabled: true,
+      reverbMix: 0.15,
+    },
+  },
+  bypass_clean: {
+    id: 'bypass_clean',
+    name: 'Direct Input (Clean Studio Bypass)',
+    description: 'Pure clean direct input for testing uncolored passive pickup circuits and wiring harnesses.',
+    state: {
+      compressorEnabled: false,
+      overdriveEnabled: false,
+      chorusEnabled: false,
+      delayEnabled: false,
+      ampModel: 'clean_twin',
+      ampGain: 0.3,
+      cabModel: '1x12_open',
+      reverbEnabled: false,
+      reverbMix: 0.0,
+    },
+  },
+};
+
 const tubeCurveCache = new Map<string, Float32Array<ArrayBuffer>>();
-let overdriveCurveCache: Float32Array<ArrayBuffer> | null = null;
 const cabinetIrCache = new Map<string, AudioBuffer>();
 const roomIrCache = new Map<number, AudioBuffer>();
 
@@ -287,21 +435,50 @@ function createTubeCurve(model: AmpModelType = 'clean_twin'): Float32Array<Array
   return curve;
 }
 
-function createOverdriveCurve(): Float32Array<ArrayBuffer> {
-  if (overdriveCurveCache) return overdriveCurveCache;
+const driveCurveCache = new Map<DriveType, Float32Array<ArrayBuffer>>();
 
-  const curve = new Float32Array(new ArrayBuffer(2048 * Float32Array.BYTES_PER_ELEMENT));
+function createOverdriveCurve(type: DriveType = 'overdrive'): Float32Array<ArrayBuffer> {
+  const cached = driveCurveCache.get(type);
+  if (cached) return cached;
 
-  for (let i = 0; i < curve.length; i += 1) {
-    const input = (i * 2) / (curve.length - 1) - 1;
-    const sign = input < 0 ? -1 : 1;
-    const magnitude = Math.abs(input);
-    const softKnee =
-      magnitude < 0.24 ? magnitude * 1.12 : 0.24 + (1 - Math.exp(-(magnitude - 0.24) * 2.2)) * 0.76;
-    curve[i] = sign * softKnee;
+  const N = 4096;
+  const curve = new Float32Array(new ArrayBuffer(N * Float32Array.BYTES_PER_ELEMENT));
+
+  if (type === 'fuzz_muff') {
+    // Big Muff Pi / Ram's Head: aggressive dual-diode clipping with sustained saturation
+    for (let i = 0; i < N; i += 1) {
+      const x = (i * 2) / (N - 1) - 1;
+      const driven = x * 7.5;
+      curve[i] = (2 / Math.PI) * Math.atan(driven * 1.8) * 0.92;
+    }
+  } else if (type === 'distortion') {
+    // Hard clipping distortion (DS-1 style)
+    for (let i = 0; i < N; i += 1) {
+      const x = (i * 2) / (N - 1) - 1;
+      const driven = x * 4.0;
+      curve[i] = Math.max(-0.85, Math.min(0.85, driven));
+    }
+  } else if (type === 'tube_screamer') {
+    // Symmetrical soft-knee overdrive with mid-forward saturation
+    for (let i = 0; i < N; i += 1) {
+      const x = (i * 2) / (N - 1) - 1;
+      const sign = x < 0 ? -1 : 1;
+      const mag = Math.abs(x);
+      curve[i] = sign * (1 - Math.exp(-mag * 2.8)) * 0.88;
+    }
+  } else {
+    // Transparent mild overdrive
+    for (let i = 0; i < N; i += 1) {
+      const input = (i * 2) / (N - 1) - 1;
+      const sign = input < 0 ? -1 : 1;
+      const magnitude = Math.abs(input);
+      const softKnee =
+        magnitude < 0.24 ? magnitude * 1.12 : 0.24 + (1 - Math.exp(-(magnitude - 0.24) * 2.2)) * 0.76;
+      curve[i] = sign * softKnee;
+    }
   }
 
-  overdriveCurveCache = curve;
+  driveCurveCache.set(type, curve);
   return curve;
 }
 
@@ -675,7 +852,15 @@ export class AudioPipeline {
     const pedalCompressor = this.activeNodes.get('pedal-compressor') as
       DynamicsCompressorNode | undefined;
     const pedalDry = this.activeNodes.get('pedal-dry') as GainNode | undefined;
+    const pedalDrive = this.activeNodes.get('pedal-drive') as GainNode | undefined;
+    const overdriveShaper = this.activeNodes.get('overdrive-shaper') as WaveShaperNode | undefined;
+    const overdriveTone = this.activeNodes.get('overdrive-tone') as BiquadFilterNode | undefined;
     const overdriveWet = this.activeNodes.get('pedal-wet') as GainNode | undefined;
+    const cabinetNode = this.activeNodes.get('cabinet-convolver') as ConvolverNode | undefined;
+    const delayNode = this.activeNodes.get('delay-node') as DelayNode | undefined;
+    const delayFeedback = this.activeNodes.get('delay-feedback') as GainNode | undefined;
+    const delayWet = this.activeNodes.get('delay-wet') as GainNode | undefined;
+    const chorusWet = this.activeNodes.get('chorus-wet') as GainNode | undefined;
     const roomSend = this.activeNodes.get('room-send') as GainNode | undefined;
     const roomReturn = this.activeNodes.get('room-return') as GainNode | undefined;
 
@@ -710,14 +895,47 @@ export class AudioPipeline {
       }
     }
 
+    if (overdriveShaper) {
+      overdriveShaper.curve = createOverdriveCurve(s.overdriveType);
+    }
+
+    if (pedalDrive) {
+      const driveMul = s.overdriveType === 'fuzz_muff' ? 4.5 : (s.overdriveType === 'distortion' ? 3.0 : 1.8);
+      pedalDrive.gain.setValueAtTime(1.0 + s.overdriveDrive * driveMul, now);
+    }
+
+    if (overdriveTone) {
+      overdriveTone.frequency.setValueAtTime(1800 + s.overdriveTone * 3500, now);
+    }
+
     if (pedalDry && overdriveWet) {
       if (s.overdriveEnabled) {
-        pedalDry.gain.setValueAtTime(0.3, now);
-        overdriveWet.gain.setValueAtTime(s.overdriveLevel * 0.7, now);
+        pedalDry.gain.setValueAtTime(s.overdriveType === 'fuzz_muff' ? 0.08 : 0.3, now);
+        overdriveWet.gain.setValueAtTime(s.overdriveLevel * (s.overdriveType === 'fuzz_muff' ? 1.1 : 0.8), now);
       } else {
         pedalDry.gain.setValueAtTime(1.0, now); // 100% clean bypass
         overdriveWet.gain.setValueAtTime(0.0, now); // 0% overdrive leakage
       }
+    }
+
+    if (cabinetNode) {
+      cabinetNode.buffer = createCabinetImpulseResponse(ctx, s.cabModel);
+    }
+
+    if (delayNode) {
+      delayNode.delayTime.setValueAtTime(Math.max(0.05, s.delayTimeMs / 1000), now);
+    }
+
+    if (delayFeedback) {
+      delayFeedback.gain.setValueAtTime(s.delayEnabled ? s.delayFeedback : 0.0, now);
+    }
+
+    if (delayWet) {
+      delayWet.gain.setValueAtTime(s.delayEnabled ? s.delayMix : 0.0, now);
+    }
+
+    if (chorusWet) {
+      chorusWet.gain.setValueAtTime(s.chorusEnabled ? s.chorusMix : 0.0, now);
     }
 
     if (roomSend && roomReturn) {
@@ -731,6 +949,13 @@ export class AudioPipeline {
     }
     if (this.finalOutputGain) {
       this.finalOutputGain.gain.setValueAtTime(s.ampMaster * 2.8 * this.masterVolumeBoost, now);
+    }
+  }
+
+  public applyRigPreset(presetId: string): void {
+    const preset = RIG_PRESETS[presetId];
+    if (preset) {
+      this.updateAmpPedalboardState(preset.state);
     }
   }
 
@@ -827,7 +1052,7 @@ export class AudioPipeline {
     const pedalDrive = ctx.createGain();
     pedalDrive.gain.value = 1.05;
     const overdrive = ctx.createWaveShaper();
-    overdrive.curve = createOverdriveCurve();
+    overdrive.curve = createOverdriveCurve(this.ampPedalState.overdriveType);
     overdrive.oversample = '4x';
     const overdriveTone = ctx.createBiquadFilter();
     overdriveTone.type = 'lowpass';
@@ -878,7 +1103,7 @@ export class AudioPipeline {
     powerAmpTube.curve = createTubeCurve(this.ampPedalState.ampModel);
     powerAmpTube.oversample = '4x';
 
-    // 6. 1x12 speaker/cabinet impulse response and speaker roll-off.
+    // 6. Speaker/cabinet impulse response and speaker roll-off.
     const cabinet = ctx.createConvolver();
     cabinet.buffer = createCabinetImpulseResponse(ctx, this.ampPedalState.cabModel);
     cabinet.normalize = true;
@@ -906,7 +1131,35 @@ export class AudioPipeline {
     cabLowpass.frequency.value = 5000;
     cabLowpass.Q.value = 0.6;
 
-    // 7. Stereo Room & 3D Haas Width Expander Stage (boosted +50%)
+    // 6b. Analog / Tape Echo Delay Stage
+    const delayNode = ctx.createDelay(2.0);
+    delayNode.delayTime.value = Math.max(0.05, this.ampPedalState.delayTimeMs / 1000);
+    const delayFilter = ctx.createBiquadFilter();
+    delayFilter.type = 'lowpass';
+    delayFilter.frequency.value = 2800; // Warm tape/analog repeats
+    delayFilter.Q.value = 0.5;
+    const delayFeedback = ctx.createGain();
+    delayFeedback.gain.value = this.ampPedalState.delayEnabled ? this.ampPedalState.delayFeedback : 0.0;
+    const delayWet = ctx.createGain();
+    delayWet.gain.value = this.ampPedalState.delayEnabled ? this.ampPedalState.delayMix : 0.0;
+
+    // 6c. Stereo Chorus / Liquid Flanger Modulation Stage
+    const chorusDelay = ctx.createDelay(0.1);
+    chorusDelay.delayTime.value = 0.024;
+    if (typeof ctx.createOscillator === 'function') {
+      const chorusLfo = ctx.createOscillator();
+      chorusLfo.type = 'sine';
+      chorusLfo.frequency.value = this.ampPedalState.chorusRate;
+      const chorusLfoGain = ctx.createGain();
+      chorusLfoGain.gain.value = this.ampPedalState.chorusDepth * 0.0035;
+      chorusLfo.connect(chorusLfoGain);
+      chorusLfoGain.connect(chorusDelay.delayTime);
+      chorusLfo.start();
+      this.activeNodes.set('chorus-lfo', chorusLfo as unknown as AudioNode);
+    }
+    const chorusWet = ctx.createGain();
+    chorusWet.gain.value = this.ampPedalState.chorusEnabled ? this.ampPedalState.chorusMix : 0.0;
+
     // 7. Stereo Room & Output Mixer
     const ampBus = ctx.createGain();
     ampBus.gain.value = 1.0;
@@ -920,34 +1173,36 @@ export class AudioPipeline {
 
     const stereoMerger = ctx.createChannelMerger(2);
 
-    // 8. Final anti-clipping dynamics limiter. Slow-ish attack and a relaxed
-    // ratio keep it as a safety limiter rather than an audible pump (the fast
-    // 5ms attack + 4:1 stack previously risked breathing on chords).
+    // 8. Final anti-clipping dynamics limiter.
     this.compressorNode = ctx.createDynamicsCompressor();
-    // Transparent safety limiter: high threshold and steep ratio so it only
-    // engages on genuine peak overshoot (> -3 dBFS) rather than constantly
-    // clamping normal signals. Fast 3ms attack catches transients; 150ms
-    // release avoids audible pumping on sustained chords.
     this.compressorNode.threshold.setValueAtTime(-3, ctx.currentTime);
     this.compressorNode.knee.setValueAtTime(6, ctx.currentTime);
     this.compressorNode.ratio.setValueAtTime(8, ctx.currentTime);
     this.compressorNode.attack.setValueAtTime(0.003, ctx.currentTime);
     this.compressorNode.release.setValueAtTime(0.15, ctx.currentTime);
 
-    // 6. Analyser Node for Visual Oscilloscope
+    // Analyser Node for Visual Oscilloscope
     this.analyserNode = ctx.createAnalyser();
     this.analyserNode.fftSize = 256;
 
     // Register active nodes for live parameter updates
     this.activeNodes.set('pedal-compressor', pedalCompressor);
     this.activeNodes.set('pedal-dry', pedalDry);
+    this.activeNodes.set('pedal-drive', pedalDrive);
+    this.activeNodes.set('overdrive-shaper', overdrive);
+    this.activeNodes.set('overdrive-tone', overdriveTone);
     this.activeNodes.set('pedal-wet', pedalWet);
     this.activeNodes.set('preamp-gain', preampGain);
     this.activeNodes.set('amp-presence', ampPresence);
+    this.activeNodes.set('cabinet-convolver', cabinet);
+    this.activeNodes.set('delay-node', delayNode);
+    this.activeNodes.set('delay-feedback', delayFeedback);
+    this.activeNodes.set('delay-wet', delayWet);
+    this.activeNodes.set('chorus-wet', chorusWet);
     this.activeNodes.set('room-send', roomSend);
     this.activeNodes.set('room-return', roomReturn);
 
-    // Connect pickup -> pedals -> tube amp -> cabinet -> stereo Haas expander & room -> output.
+    // Connect pickup -> pedals -> tube amp -> cabinet -> delay -> chorus & room -> output.
     this.masterGain.connect(headroomLimiter);
     headroomLimiter.connect(pedalCompressor);
     pedalCompressor.connect(pedalDry);
@@ -973,14 +1228,30 @@ export class AudioPipeline {
     cabBody.connect(cabConePeak);
     cabConePeak.connect(ampPresence);
     ampPresence.connect(cabLowpass);
+
+    // Delay routing (filtered feedback loop)
+    cabLowpass.connect(delayNode);
+    delayNode.connect(delayFilter);
+    delayFilter.connect(delayFeedback);
+    delayFeedback.connect(delayNode);
+    delayFilter.connect(delayWet);
+
     cabLowpass.connect(ampBus);
-    cabLowpass.connect(roomSend);
+    delayWet.connect(ampBus);
+
+    // Chorus modulation routing
+    ampBus.connect(chorusDelay);
+    chorusDelay.connect(chorusWet);
+
+    // Reverb send/return
+    ampBus.connect(roomSend);
     roomSend.connect(room);
     room.connect(roomReturn);
 
-    // Direct clean stereo routing to avoid Haas comb filtering
-    ampBus.connect(stereoMerger, 0, 0); // Left channel
-    ampBus.connect(stereoMerger, 0, 1); // Right channel
+    // Direct stereo routing
+    ampBus.connect(stereoMerger, 0, 0); // Left channel (dry + delay)
+    ampBus.connect(stereoMerger, 0, 1); // Right channel (dry + delay)
+    chorusWet.connect(stereoMerger, 0, 1); // Right channel (modulated chorus for liquid stereo width)
     roomReturn.connect(stereoMerger);
 
     this.finalOutputGain = ctx.createGain();
@@ -1026,6 +1297,77 @@ export class AudioPipeline {
     return this.sampleBank.findNote(targetMidi, velocity);
   }
 
+  /**
+   * Applies realistic non-linear physical pitch automation:
+   * 1. Sigmoidal S-curve tension build-up and release for bends and releases.
+   * 2. Automatic singing apex vibrato (~5.8 Hz, +-25 cents) during the sustain of bent notes.
+   * 3. Friction glissando for slides.
+   */
+  private applySigmoidalPitchAutomation(
+    rateParam: AudioParam,
+    startPitchShift: number,
+    endPitchShift: number,
+    now: number,
+    articulation: string,
+  ): void {
+    if (articulation === 'bend') {
+      const durationSec = 0.22;
+      rateParam.setValueAtTime(startPitchShift, now);
+      // S-curve tension phase 1 (slow initial stretch): 25% time -> 15% pitch delta
+      const t1 = now + durationSec * 0.25;
+      const r1 = startPitchShift + (endPitchShift - startPitchShift) * 0.15;
+      rateParam.linearRampToValueAtTime(r1, t1);
+
+      // S-curve tension phase 2 (rapid transit): 70% time -> 85% pitch delta
+      const t2 = now + durationSec * 0.70;
+      const r2 = startPitchShift + (endPitchShift - startPitchShift) * 0.85;
+      rateParam.linearRampToValueAtTime(r2, t2);
+
+      // S-curve apex arrival
+      const tApex = now + durationSec;
+      rateParam.linearRampToValueAtTime(endPitchShift, tApex);
+
+      // Apex singing vibrato: sinusoidal wrist modulation at ~5.8 Hz across sustain
+      const vibDepth = 0.015; // ~25 cents
+      const cycleSec = 0.086;
+      for (let i = 0; i < 8; i++) {
+        const tCycle = tApex + i * cycleSec * 2;
+        rateParam.linearRampToValueAtTime(endPitchShift * (1 + vibDepth), tCycle + cycleSec * 0.5);
+        rateParam.linearRampToValueAtTime(endPitchShift * (1 - vibDepth), tCycle + cycleSec * 1.5);
+      }
+    } else if (articulation === 'release') {
+      const durationSec = 0.18;
+      rateParam.setValueAtTime(startPitchShift, now);
+      // Fast drop from bent pitch
+      const t1 = now + durationSec * 0.4;
+      const r1 = startPitchShift + (endPitchShift - startPitchShift) * 0.65;
+      rateParam.linearRampToValueAtTime(r1, t1);
+      // Decelerate into resting fret pitch
+      rateParam.linearRampToValueAtTime(endPitchShift, now + durationSec);
+    } else if (articulation === 'slide_up' || articulation === 'slide_down') {
+      const durationSec = 0.16;
+      rateParam.setValueAtTime(startPitchShift, now);
+      const tMid = now + durationSec * 0.5;
+      const rMid = startPitchShift + (endPitchShift - startPitchShift) * 0.75;
+      rateParam.linearRampToValueAtTime(rMid, tMid);
+      rateParam.linearRampToValueAtTime(endPitchShift, now + durationSec);
+    } else if (articulation === 'hammer' || articulation === 'pull') {
+      rateParam.setValueAtTime(startPitchShift, now);
+      rateParam.linearRampToValueAtTime(endPitchShift, now + 0.06);
+    } else if (articulation === 'vibrato') {
+      rateParam.setValueAtTime(startPitchShift, now);
+      const vibDepth = 0.015;
+      const cycleSec = 0.08;
+      for (let i = 0; i < 6; i++) {
+        const t = now + i * cycleSec * 2;
+        rateParam.linearRampToValueAtTime(startPitchShift * (1 + vibDepth), t + cycleSec * 0.5);
+        rateParam.linearRampToValueAtTime(startPitchShift * (1 - vibDepth), t + cycleSec * 1.5);
+      }
+    } else {
+      rateParam.setValueAtTime(startPitchShift, now);
+    }
+  }
+
   private triggerRecordedGuitar(
     ctx: AudioContext,
     freq: number,
@@ -1048,43 +1390,23 @@ export class AudioPipeline {
     const exactTargetMidi = 69 + 12 * Math.log2(freq / 440);
     const pitchShift = 2 ** ((exactTargetMidi - sample.rootMidi) / 12);
 
-    // Apply Articulation Pitch Automations (slides, bends, hammer/pull, vibrato)
-    if (articulation === 'slide_up' || articulation === 'slide_down') {
-      const endFreq = targetFreq || (articulation === 'slide_up' ? freq * 1.122 : freq * 0.89);
-      const endTargetMidi = 69 + 12 * Math.log2(endFreq / 440);
-      const endPitchShift = 2 ** ((endTargetMidi - sample.rootMidi) / 12);
-      source.playbackRate.setValueAtTime(pitchShift, now);
-      source.playbackRate.linearRampToValueAtTime(endPitchShift, now + 0.15);
-    } else if (articulation === 'bend') {
-      const endFreq = targetFreq || freq * 1.122;
-      const endTargetMidi = 69 + 12 * Math.log2(endFreq / 440);
-      const endPitchShift = 2 ** ((endTargetMidi - sample.rootMidi) / 12);
-      source.playbackRate.setValueAtTime(pitchShift, now);
-      source.playbackRate.linearRampToValueAtTime(endPitchShift, now + 0.18);
-    } else if (articulation === 'release') {
-      const endFreq = targetFreq || freq * 0.89;
-      const endTargetMidi = 69 + 12 * Math.log2(endFreq / 440);
-      const endPitchShift = 2 ** ((endTargetMidi - sample.rootMidi) / 12);
-      source.playbackRate.setValueAtTime(pitchShift, now);
-      source.playbackRate.linearRampToValueAtTime(endPitchShift, now + 0.15);
-    } else if (articulation === 'hammer' || articulation === 'pull') {
-      // Legato: glide to target pitch with no new pick transient
-      if (targetFreq) {
-        const endTargetMidi = 69 + 12 * Math.log2(targetFreq / 440);
-        const endPitchShift = 2 ** ((endTargetMidi - sample.rootMidi) / 12);
-        source.playbackRate.setValueAtTime(pitchShift, now);
-        source.playbackRate.linearRampToValueAtTime(endPitchShift, now + 0.06);
-      } else {
-        source.playbackRate.setValueAtTime(pitchShift, now);
-      }
-    } else if (articulation === 'vibrato') {
-      source.playbackRate.setValueAtTime(pitchShift, now);
-      source.playbackRate.linearRampToValueAtTime(pitchShift * 1.015, now + 0.08);
-      source.playbackRate.linearRampToValueAtTime(pitchShift * 0.985, now + 0.16);
-      source.playbackRate.linearRampToValueAtTime(pitchShift, now + 0.24);
-    } else {
-      source.playbackRate.setValueAtTime(pitchShift, now);
-    }
+    // Apply Non-Linear Articulation Pitch Automations (Sigmoidal S-Curve Bends, Apex Vibrato, Friction Slides)
+    const endFreq = targetFreq || (
+      articulation === 'slide_up' ? freq * 1.122 :
+      articulation === 'slide_down' ? freq * 0.89 :
+      articulation === 'bend' ? freq * 1.122 :
+      articulation === 'release' ? freq * 0.89 : freq
+    );
+    const endTargetMidi = 69 + 12 * Math.log2(endFreq / 440);
+    const endPitchShift = 2 ** ((endTargetMidi - sample.rootMidi) / 12);
+
+    this.applySigmoidalPitchAutomation(
+      source.playbackRate,
+      pitchShift,
+      endPitchShift,
+      now,
+      articulation,
+    );
 
     const sampleGain = ctx.createGain();
     const pitchCompensation = Math.max(1.0, Math.sqrt(pitchShift));
@@ -1095,16 +1417,47 @@ export class AudioPipeline {
     const gainVal = Math.min(1.2, Math.max(gainFloor, (velocity * 1.25) / pitchCompensation));
     sampleGain.gain.setValueAtTime(gainVal, ctx.currentTime);
 
-    // Palm Muting (mute articulation) Filter & Fast Envelope
+    // Non-linear Touch & Pick Brightness / Bite Filter
+    // Harder digging excites 3kHz-6kHz pick transients; softer touch keeps warmth
+    const touchFilter = ctx.createBiquadFilter();
+    touchFilter.type = 'highshelf';
+    const brightnessDb = (velocity - 0.5) * 6.0;
+    touchFilter.frequency.setValueAtTime(3200, now);
+    touchFilter.gain.setValueAtTime(brightnessDb, now);
+
+    // Dedicated DSP filtering for dead notes (mute), palm muting, harmonics, and ghost notes
     if (articulation === 'mute') {
-      const muteFilter = ctx.createBiquadFilter();
-      muteFilter.type = 'lowpass';
-      muteFilter.frequency.setValueAtTime(850, now);
-      muteFilter.Q.setValueAtTime(1.0, now);
-      sampleGain.gain.setValueAtTime(gainVal * 0.6, now);
-      sampleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
-      source.connect(muteFilter);
-      muteFilter.connect(sampleGain);
+      const deadBand = ctx.createBiquadFilter();
+      deadBand.type = 'bandpass';
+      deadBand.frequency.setValueAtTime(1200, now);
+      deadBand.Q.setValueAtTime(2.0, now);
+      sampleGain.gain.setValueAtTime(gainVal * 0.45, now);
+      sampleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+      source.connect(deadBand);
+      deadBand.connect(touchFilter);
+      touchFilter.connect(sampleGain);
+    } else if (articulation === 'palm_mute') {
+      const pmLowpass = ctx.createBiquadFilter();
+      pmLowpass.type = 'lowpass';
+      pmLowpass.frequency.setValueAtTime(800, now);
+      pmLowpass.Q.setValueAtTime(1.2, now);
+      sampleGain.gain.setValueAtTime(gainVal * 0.7, now);
+      sampleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+      source.connect(pmLowpass);
+      pmLowpass.connect(touchFilter);
+      touchFilter.connect(sampleGain);
+    } else if (articulation === 'harmonic') {
+      const bellHigh = ctx.createBiquadFilter();
+      bellHigh.type = 'highpass';
+      bellHigh.frequency.setValueAtTime(900, now);
+      bellHigh.Q.setValueAtTime(1.5, now);
+      source.connect(bellHigh);
+      bellHigh.connect(touchFilter);
+      touchFilter.connect(sampleGain);
+    } else if (articulation === 'ghost') {
+      sampleGain.gain.setValueAtTime(gainVal * 0.4, now);
+      source.connect(touchFilter);
+      touchFilter.connect(sampleGain);
     } else if (pitchShift < 0.85) {
       // Slowing down a sample (playbackRate < 0.85) drops body formants into sub-bass,
       // making it sound like a bass guitar. A dynamic highpass filter removes the mud.
@@ -1114,7 +1467,8 @@ export class AudioPipeline {
       lowCut.frequency.setValueAtTime(cutoff, ctx.currentTime);
       lowCut.Q.setValueAtTime(0.55, ctx.currentTime);
       source.connect(lowCut);
-      lowCut.connect(sampleGain);
+      lowCut.connect(touchFilter);
+      touchFilter.connect(sampleGain);
     } else if (pitchShift > 1.05) {
       const highDamp = ctx.createBiquadFilter();
       highDamp.type = 'lowpass';
@@ -1122,9 +1476,11 @@ export class AudioPipeline {
       highDamp.frequency.setValueAtTime(cutoff, ctx.currentTime);
       highDamp.Q.setValueAtTime(0.55, ctx.currentTime);
       source.connect(highDamp);
-      highDamp.connect(sampleGain);
+      highDamp.connect(touchFilter);
+      touchFilter.connect(sampleGain);
     } else {
-      source.connect(sampleGain);
+      source.connect(touchFilter);
+      touchFilter.connect(sampleGain);
     }
     sampleGain.connect(this.sampleInputNode);
     this.activeSampleSources.set(stringIndex, { source, gain: sampleGain });
@@ -1232,6 +1588,7 @@ export class AudioPipeline {
         string_idx: stringIndex,
         freq: freq,
         velocity: velocity,
+        time: startTime,
       });
 
       // For articulations that involve pitch glide, send a bend message
@@ -1242,6 +1599,7 @@ export class AudioPipeline {
           string_idx: stringIndex,
           targetFreq: endFreq,
           durationMs: 150,
+          time: startTime,
         });
       } else if (articulation === 'bend') {
         const endFreq = targetFreq || freq * 1.122;
@@ -1250,6 +1608,7 @@ export class AudioPipeline {
           string_idx: stringIndex,
           targetFreq: endFreq,
           durationMs: 180,
+          time: startTime,
         });
       } else if (articulation === 'release') {
         const endFreq = targetFreq || freq * 0.89;
@@ -1258,6 +1617,7 @@ export class AudioPipeline {
           string_idx: stringIndex,
           targetFreq: endFreq,
           durationMs: 150,
+          time: startTime,
         });
       } else if (articulation === 'hammer' || articulation === 'pull') {
         // Legato: glide to target with no new pick transient
@@ -1267,30 +1627,35 @@ export class AudioPipeline {
             string_idx: stringIndex,
             targetFreq: targetFreq,
             durationMs: 60,
+            time: startTime,
           });
         }
       } else if (articulation === 'vibrato') {
         // Vibrato: schedule multiple small bends
         const vibratoDepth = 1.015; // ~25 cents
-        const cycleMs = 80;
-        setTimeout(() => {
-          this.wdfWorkletNode?.port.postMessage({
-            type: 'bend', string_idx: stringIndex,
-            targetFreq: freq * vibratoDepth, durationMs: cycleMs,
-          });
-        }, 0);
-        setTimeout(() => {
-          this.wdfWorkletNode?.port.postMessage({
-            type: 'bend', string_idx: stringIndex,
-            targetFreq: freq / vibratoDepth, durationMs: cycleMs,
-          });
-        }, cycleMs);
-        setTimeout(() => {
-          this.wdfWorkletNode?.port.postMessage({
-            type: 'bend', string_idx: stringIndex,
-            targetFreq: freq, durationMs: cycleMs,
-          });
-        }, cycleMs * 2);
+        const cycleSec = 0.08;
+        const baseTime = startTime && startTime > ctx.currentTime ? startTime : ctx.currentTime;
+        this.wdfWorkletNode.port.postMessage({
+          type: 'bend',
+          string_idx: stringIndex,
+          targetFreq: freq * vibratoDepth,
+          durationMs: 80,
+          time: baseTime,
+        });
+        this.wdfWorkletNode.port.postMessage({
+          type: 'bend',
+          string_idx: stringIndex,
+          targetFreq: freq / vibratoDepth,
+          durationMs: 80,
+          time: baseTime + cycleSec,
+        });
+        this.wdfWorkletNode.port.postMessage({
+          type: 'bend',
+          string_idx: stringIndex,
+          targetFreq: freq,
+          durationMs: 80,
+          time: baseTime + cycleSec * 2,
+        });
       } else if (targetFreq && targetFreq !== freq) {
         // Direct retune glide
         this.wdfWorkletNode.port.postMessage({
@@ -1298,6 +1663,7 @@ export class AudioPipeline {
           string_idx: stringIndex,
           targetFreq: targetFreq,
           durationMs: 120,
+          time: startTime,
         });
       }
 
@@ -1348,38 +1714,22 @@ export class AudioPipeline {
     const releaseTau = Math.max(0.3, sustain * 0.3);
     env.gain.setTargetAtTime(0.0001, releaseStart, releaseTau);
 
-    // Apply Articulation Pitch Automations (slides, bends, hammer/pull, vibrato)
-    if (articulation === 'slide_up' || articulation === 'slide_down') {
-      const endFreq = targetFreq || (articulation === 'slide_up' ? freq * 1.122 : freq * 0.89);
-      const shift = endFreq / freq;
-      stringSource.playbackRate.setValueAtTime(1.0, now);
-      stringSource.playbackRate.linearRampToValueAtTime(shift, now + 0.15);
-    } else if (articulation === 'bend') {
-      const endFreq = targetFreq || freq * 1.122;
-      const shift = endFreq / freq;
-      stringSource.playbackRate.setValueAtTime(1.0, now);
-      stringSource.playbackRate.linearRampToValueAtTime(shift, now + 0.18);
-    } else if (articulation === 'release') {
-      const endFreq = targetFreq || freq * 0.89;
-      const shift = endFreq / freq;
-      stringSource.playbackRate.setValueAtTime(1.0, now);
-      stringSource.playbackRate.linearRampToValueAtTime(shift, now + 0.15);
-    } else if (articulation === 'hammer' || articulation === 'pull') {
-      if (targetFreq) {
-        const shift = targetFreq / freq;
-        stringSource.playbackRate.setValueAtTime(1.0, now);
-        stringSource.playbackRate.linearRampToValueAtTime(shift, now + 0.06);
-      } else {
-        stringSource.playbackRate.setValueAtTime(1.0, now);
-      }
-    } else if (articulation === 'vibrato') {
-      stringSource.playbackRate.setValueAtTime(1.0, now);
-      stringSource.playbackRate.linearRampToValueAtTime(1.015, now + 0.08);
-      stringSource.playbackRate.linearRampToValueAtTime(0.985, now + 0.16);
-      stringSource.playbackRate.linearRampToValueAtTime(1.0, now + 0.24);
-    } else {
-      stringSource.playbackRate.setValueAtTime(1.0, now);
-    }
+    // Apply Non-Linear Articulation Pitch Automations (Sigmoidal S-Curve Bends, Apex Vibrato, Friction Slides)
+    const endFreq = targetFreq || (
+      articulation === 'slide_up' ? freq * 1.122 :
+      articulation === 'slide_down' ? freq * 0.89 :
+      articulation === 'bend' ? freq * 1.122 :
+      articulation === 'release' ? freq * 0.89 : freq
+    );
+    const endShift = endFreq / freq;
+
+    this.applySigmoidalPitchAutomation(
+      stringSource.playbackRate,
+      1.0,
+      endShift,
+      now,
+      articulation,
+    );
 
     stringSource.connect(rawStringMix);
     rawStringMix.connect(highpass);

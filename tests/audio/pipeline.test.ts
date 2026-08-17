@@ -44,6 +44,11 @@ function createMockContext() {
       return makeNode();
     },
     createDelay: () => makeNode(),
+    createOscillator: () => ({
+      ...makeNode(),
+      start: () => {},
+      stop: () => {},
+    }),
     createChannelMerger: () => makeNode(),
     createAnalyser: () => makeNode(),
     createBuffer: (_channels: number, length: number, sampleRate: number) => {

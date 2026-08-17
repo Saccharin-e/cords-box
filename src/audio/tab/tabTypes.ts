@@ -14,7 +14,8 @@ export type ArticulationType =
   | 'tap'
   | 'harmonic'
   | 'palm_mute'
-  | 'mute';
+  | 'mute'
+  | 'ghost';
 
 export interface TabNote {
   /** String index: 0 = High E, 5 = Low E */

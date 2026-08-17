@@ -145,6 +145,26 @@ E|---------------|
     expect(notes[1].targetFret).toBe(7);
   });
 
+  it('should parse ghost/tied notes (n) and standalone releases r<target>', () => {
+    const rawTab = `
+e|---(14)---r12---|
+B|----------------|
+G|----------------|
+D|----------------|
+A|----------------|
+E|----------------|
+`;
+    const score = parseAsciiTab(rawTab);
+    const notes = score.measures[0].beats.flatMap((b) => b.notes);
+
+    expect(notes.length).toBe(2);
+    expect(notes[0].fret).toBe(14);
+    expect(notes[0].articulation).toBe('ghost');
+
+    expect(notes[1].articulation).toBe('release');
+    expect(notes[1].targetFret).toBe(12);
+  });
+
   it('should support alternate tunings and recognize Eb/D headers', () => {
     const ebTab = `
 eb|---0-----------|

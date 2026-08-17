@@ -261,7 +261,7 @@ export class TabScheduler {
   private scheduleEvent(
     event: FlatEvent,
     targetAudioTime: number,
-    secondsPerBeat: number,
+    _secondsPerBeat: number,
   ): void {
     // Legato articulations: don't damp the previous note, glide pitch instead
     const LEGATO_ARTS = new Set(['hammer', 'pull', 'slide_up', 'slide_down', 'release']);
@@ -271,7 +271,22 @@ export class TabScheduler {
 
     sortedNotes.forEach((note, idx) => {
       const openFreq = this.openFreqs[note.stringIdx] ?? 110.0;
-      const freq = openFreq * Math.pow(2, note.fret / 12);
+      let freq: number;
+      if (note.articulation === 'harmonic') {
+        if (note.fret === 12) {
+          freq = openFreq * 2.0;
+        } else if (note.fret === 7 || note.fret === 19) {
+          freq = openFreq * 3.0;
+        } else if (note.fret === 5 || note.fret === 24) {
+          freq = openFreq * 4.0;
+        } else if (note.fret === 4 || note.fret === 9 || note.fret === 16) {
+          freq = openFreq * 5.0;
+        } else {
+          freq = openFreq * Math.pow(2, note.fret / 12) * 2.0;
+        }
+      } else {
+        freq = openFreq * Math.pow(2, note.fret / 12);
+      }
 
       // Compute target frequency if targetFret is present
       let targetFreq: number | undefined;
@@ -279,11 +294,10 @@ export class TabScheduler {
         targetFreq = openFreq * Math.pow(2, note.targetFret / 12);
       }
 
-      // Compute note duration in seconds for damping scheduling
-      const noteDurationSec = note.durationBeats * secondsPerBeat;
-
-      // Natural strum stagger: ~6ms per string crossing
-      const strumDelay = idx * 0.006;
+      // Natural strum / rake sweep stagger: ~16ms per string on rakes, ~6ms on chords
+      const isRake = sortedNotes.some((n) => n.articulation === 'mute') && sortedNotes.some((n) => n.articulation !== 'mute');
+      const staggerSec = isRake ? 0.016 : 0.006;
+      const strumDelay = idx * staggerSec;
       const noteStartTime = targetAudioTime + strumDelay;
 
       // --- Per-string damping/legato logic ---
@@ -319,18 +333,6 @@ export class TabScheduler {
         fret: note.fret,
       });
 
-      // Schedule automatic damping at the end of this note's duration,
-      // unless a subsequent note will supersede it
-      const dampEndTime = noteStartTime + noteDurationSec;
-      setTimeout(() => {
-        const stillRinging = this.ringingNotes.get(note.stringIdx);
-        // Only damp if this note is still the one ringing (not superseded)
-        if (stillRinging && stillRinging.fret === note.fret &&
-            stillRinging.endBeat === event.absoluteBeat + note.durationBeats) {
-          audioPipeline.dampString(note.stringIdx, undefined);
-          this.ringingNotes.delete(note.stringIdx);
-        }
-      }, Math.max(0, (dampEndTime - (audioEngine.getContext()?.currentTime ?? 0)) * 1000));
 
       this.onNotePlayCallbacks.forEach((cb) => cb(note));
     });

@@ -86,7 +86,50 @@ function parseStringSegment(
       continue;
     }
 
-    // Dead/muted note
+    // Ghost / Tied note: (n) notation
+    if (ch === '(') {
+      const closeIdx = seg.indexOf(')', col + 1);
+      if (closeIdx > col + 1) {
+        const inner = seg.substring(col + 1, closeIdx);
+        const ghostFret = parseInt(inner, 10);
+        if (!isNaN(ghostFret)) {
+          events.push({
+            col,
+            stringIdx,
+            fret: ghostFret,
+            velocity: 0.45,
+            articulation: 'ghost',
+          });
+          col = closeIdx + 1;
+          continue;
+        }
+      }
+      col++;
+      continue;
+    }
+
+    // Standalone release notation: r<target> (e.g. r15, r9)
+    if (ch === 'r') {
+      const targetResult = readFret(seg, col + 1);
+      if (targetResult) {
+        const relOrigin = lastBendOriginFret !== undefined ? lastBendOriginFret + 2 : targetResult.fret + 2;
+        events.push({
+          col,
+          stringIdx,
+          fret: relOrigin,
+          velocity: 0.7,
+          articulation: 'release',
+          targetFret: targetResult.fret,
+        });
+        lastBendOriginFret = undefined;
+        col += 1 + targetResult.len;
+        continue;
+      }
+      col++;
+      continue;
+    }
+
+    // Dead/muted note or rake
     if (ch.toLowerCase() === 'x') {
       events.push({
         col,

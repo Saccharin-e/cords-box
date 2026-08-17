@@ -19,86 +19,129 @@ import { useCanvasStore } from '@store/canvasStore';
 import { useTuningStore } from '@store/tuningStore';
 import { Button } from '../common/Button';
 import { Slider } from '../common/Slider';
-import { Download, Edit2, Music, Timer, Upload, X } from 'lucide-react';
+import { Download, Edit2, Music, Sliders, Timer, Upload, X } from 'lucide-react';
+import { RIG_PRESETS, audioPipeline } from '@audio/index';
 
-export const TAB_PRESETS: { id: string; label: string; tab: string; bpm: number; durationDesc: string; tuningId: string }[] = [
+export const TAB_PRESETS: {
+  id: string;
+  label: string;
+  tab: string;
+  bpm: number;
+  durationDesc: string;
+  tuningId: string;
+  rigPresetId: string;
+}[] = [
+  {
+    id: 'comfortably_numb',
+    label: 'Pink Floyd - Comfortably Numb (First Solo)',
+    bpm: 65,
+    tuningId: 'standard_e',
+    rigPresetId: 'gilmour_lead',
+    durationDesc: '~37s (10 Measures, First Solo)',
+    tab: `e|----------------|----------------|----------------|----------------|----------------|----------------|------15-14-12--|----------------|----------------|----------------|
+B|----------------|15b17v--15r14---|----------------|15r14-----------|----------------|----------------|----x---------15|12-10-9-9v------|----------------|----------------|
+G|--------x-14-x14|--------------14|12v-------x14b15|------14-12-9-7-|9b12v-r9-11-9-7-|9v--9-7-7v-9-7--|----x---------12|----------10-9-7|9b11-9b11-9-7---|----------------|
+D|--------x----x--|----------------|----------x-----|----------------|----------------|--------------9-|----x-----------|----------------|--------------7h|9p7v------------|
+A|--------x-------|----------------|----------x-----|----------------|----------------|----------------|----------------|----------------|----------------|----------------|
+E|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|`,
+  },
+  {
+    id: 'comfortably_numb_2',
+    label: 'Pink Floyd - Comfortably Numb (Outro Solo)',
+    bpm: 65,
+    tuningId: 'standard_e',
+    rigPresetId: 'gilmour_lead',
+    durationDesc: '~44s (12 Measures, Outro Solo)',
+    tab: `e|----------------|----------------|----------------|----------------|----------------|10b12v--10r10---|7-10-7----------|----------------|17b19v--17b19---|17b19r17-15-17v-|14h15p14-12/14v-|12h14p12--------|
+B|----------------|----7-10--------|----------------|----------------|10/12v--10-12---|----------------|-------10b12v---|10p7---7--------|----------------|----------------|----------------|---------15-12v-|
+G|----7---9b11v---|9b11----9b11r9-7|9-7-------------|--------7-9-9b11|----------------|----------------|----------------|-----9---9b11r9p|7v--------------|----------------|----------------|----------------|
+D|9---------------|----------------|----9-9v--------|----7/9---------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|
+A|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|
+E|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|----------------|`,
+  },
   {
     id: 'back_in_black',
     label: 'AC/DC - Back in Black (Main Riff)',
     bpm: 94,
     tuningId: 'standard_e',
-    durationDesc: '~15s (4 Measures)',
-    tab: `e|-----------------------|---3p0-----------------|-----------------------|-----------------------|
-B|-----------3---3-------|-------3p0-------------|-----------3---3-------|-----------------------|
-G|-----------2---2---2-2-|-----------2b4r2-0v----|-----------2---2---2-2-|-----------------------|
-D|---2-------0---0---2-2-|-----------------------|---2-------0---0---2-2-|-------2-------2-------|
-A|---2---------------0-0-|-----------------------|---2---------------0-0-|---2-4---2-4-5---2-4-6-|
-E|---0-------------------|-----------------------|---0-------------------|-----------------------|`,
+    rigPresetId: 'classic_rock_crunch',
+    durationDesc: '~10s (4 Measures)',
+    tab: `e|----------------|------3p0-------|----------------|----------------|
+B|--------3-3-----|---------3p0----|--------3-3-----|----------------|
+G|--------2-2---2-|2-2---------2b40|--------2-2---2-|2-2-------------|
+D|2-------0-0---2-|2-2-------------|2-------0-0---2-|2-2-------------|
+A|2-------------0-|0-0-------------|2-------------0-|0-0--2---2---2--|
+E|0---------------|----------------|0---------------|-------4---5---6|`,
+  },
+  {
+    id: 'sweet_child',
+    label: 'Guns N\' Roses - Sweet Child O\' Mine (Intro)',
+    bpm: 125,
+    tuningId: 'eb_standard',
+    rigPresetId: 'classic_rock_crunch',
+    durationDesc: '~8s (4 Measures)',
+    tab: `eb|----12------12--|----12------12--|----12------12--|----12------12--|
+Bb|--15------15----|--15------15----|--15------15----|--15------15----|
+Gb|------14------14|------14------14|------14------14|------14------14|
+Db|12--------------|14--------------|----------------|12--------------|
+Ab|----------------|----------------|15--------------|----------------|
+Eb|----------------|----------------|----------------|----------------|`,
   },
   {
     id: 'little_wing',
     label: 'Jimi Hendrix - Little Wing (Intro Snippet)',
     bpm: 70,
     tuningId: 'eb_standard',
-    durationDesc: '~15s (4 Measures)',
-    tab: `eb|-----------------------|-------0---------------|-----------------------|-----------------------|
-Bb|-------8---8-----------|-------0h1-0v----------|---7/8-8\\7---5v--------|-------1---1h3-1v------|
-Gb|-------7h9-9---9v------|-------0-------0-------|---7/9-9\\7---5v--------|-------0h2-2---0-------|
-Db|-------7h9-9---9v------|-------0h2---------2---|---7/9-9\\7---5v--------|-------0h2-2-------2---|
-Ab|---0-------------------|-----------------------|-------------0---------|---3-------------------|
-Eb|-----------------------|---0-------------------|-----------------------|-----------------------|`,
+    rigPresetId: 'clean_chime',
+    durationDesc: '~14s (4 Measures)',
+    tab: `eb|----------------|--------3/5-5v--|----------------|----------------|
+Bb|----8-------<12>|----0h1---------|----5v----------|----1h3---------|
+Gb|----7h9-----<12>|----0-----------|----5v--5h7-5v--|----0-----------|
+Db|----7h9---------|----0h2---------|----5v----------|----0h2-2/4-2---|
+Ab|----------------|----------------|0---------------|3---------------|
+Eb|0---------------|3---------------|----------------|----------------|`,
   },
   {
     id: 'master_of_puppets',
     label: 'Metallica - Master of Puppets (Main Riff)',
     bpm: 212,
     tuningId: 'standard_e',
-    durationDesc: '~10s (4 Measures)',
-    tab: `e|-----------------------|-------------------|-----------------------|-------------------|
-B|-----------------------|-------------------|-----------------------|-------------------|
-G|-----------------------|-------------------|-----------------------|-------------------|
-D|-----------------------|-------------------|-----------------------|-------------------|
-A|---------2---------3---|---------4---3---2-|---------2---------3---|---------4---3---2-|
-E|---0-1-2---0-1-2-3-----|---0-1-2---0---0---|---0-1-2---0-1-2-3-----|---0-1-2---0---0---|`,
+    rigPresetId: 'metal_high_gain',
+    durationDesc: '~5s (4 Measures)',
+    tab: `e|----------------|----------------|----------------|----------------|
+B|----------------|----------------|----------------|----------------|
+G|----------------|----------------|----------------|----------------|
+D|----------------|----------------|----------------|----------------|
+A|----------------|----------------|----2-----3---4-|----2-----3-4-32|
+E|0-0-7-0-0-6-0-5-|0-0-7-0-0-6-0-5-|0-1---0-1---0---|0-1---0-1-------|`,
   },
   {
     id: 'come_as_you_are',
     label: 'Nirvana - Come As You Are (Intro Riff)',
     bpm: 120,
     tuningId: 'd_standard',
-    durationDesc: '~12s (4 Measures)',
-    tab: `d|-----------------------|-----------------------|-----------------------|-----------------------|
-A|-----------------------|-----------------------|-----------------------|-----------------------|
-F|-----------------------|-----------------------|-----------------------|-----------------------|
-C|-----------------------|-----------------------|-----------------------|-----------------------|
-G|-----------0---0-------|---2-------2-----------|-----------0---0-------|---2-------2-----------|
-D|---0-0-1-2---2---2-2---|-----2-1-0---0-0-0-----|---0-0-1-2---2---2-2---|-----2-1-0---0-0-0-----|`,
+    rigPresetId: 'clean_chime',
+    durationDesc: '~8s (4 Measures)',
+    tab: `d|----------------|----------------|----------------|----------------|
+A|----------------|----------------|----------------|----------------|
+F|----------------|----------------|----------------|----------------|
+C|----------------|----------------|----------------|----------------|
+G|--------0---0---|--------2---2---|--------0---0---|--------2---2---|
+D|0-0-1-2---2---2-|2-2-1-0---0---0-|0-0-1-2---2---2-|2-2-1-0---0---0-|`,
   },
   {
     id: 'cant_stop',
     label: 'RHCP - Can\'t Stop (Main Riff)',
-    bpm: 94,
+    bpm: 91,
     tuningId: 'standard_e',
-    durationDesc: '~15s (4 Measures)',
-    tab: `e|-----------------------|-----------------------|-----------------------|-----------------------|
-B|-----------------------|-----------------------|-----------------------|-----------------------|
-G|-------7h9-9---7h9-9---|-------7h9-9---7h9-9---|-------7h9-9---7h9-9---|-------7h9-9---7h9-9---|
-D|---x-x-x---x-x-x---x---|---x-x-x---x-x-x---x---|---x-x-x---x-x-x---x---|---x-x-x---x-x-x---x---|
-A|---7-7-----------------|---5-5-----------------|-----------------------|-----------------------|
-E|-----------0-0---------|-----------0-0---------|---8-8-----0-0---------|---7-7-----0-0---------|`,
-  },
-  {
-    id: 'comfortably_numb',
-    label: 'Pink Floyd - Comfortably Numb (Solo & Harmonics)',
-    bpm: 68,
-    tuningId: 'standard_e',
-    durationDesc: '~18s (4 Measures)',
-    tab: `e|---<12>----------------|-----------------------|---14b16---14v---------|---12h14p12-10/12-12v--|
-B|-------<12>------------|---10/12---12v---------|-----------------------|-----------------------|
-G|-----------<12>--------|-----------------------|-----------------------|-----------------------|
-D|---------------<12>----|-----------------------|-----------------------|-----------------------|
-A|-----------------------|-----------------------|-----------------------|-----------------------|
-E|-----------------------|-----------------------|-----------------------|-----------------------|`,
+    rigPresetId: 'clean_chime',
+    durationDesc: '~10s (4 Measures)',
+    tab: `e|----------------|----------------|----------------|----------------|
+B|----------------|----------------|----------------|----------------|
+G|----7h9-----7h9-|----7h9-----7h9-|----7h9-----7h9-|----7h9-----7h9-|
+D|--x-----x-x-----|--x-----x-x-----|--x-----x-x-----|--x-----x-x-----|
+A|7---------------|5---------------|----------------|----------------|
+E|----------------|----------------|8---------------|7---------------|`,
   },
 ];
 
@@ -108,7 +151,8 @@ export function TabPanel() {
   const toggleTabPanel = useCanvasStore((s) => s.toggleTabPanel);
   const currentTuning = useTuningStore((s) => s.currentPreset);
   const setTuning = useTuningStore((s) => s.setTuning);
-  const [selectedPresetId, setSelectedPresetId] = useState('back_in_black');
+  const [selectedPresetId, setSelectedPresetId] = useState('comfortably_numb');
+  const [selectedRigId, setSelectedRigId] = useState('gilmour_lead');
   const [tabText, setTabText] = useState(TAB_PRESETS[0].tab);
   const [bpm, setBpm] = useState(TAB_PRESETS[0].bpm);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -187,6 +231,8 @@ export function TabPanel() {
       }
     });
 
+    // Apply Gilmour Lead rig for default Comfortably Numb preset
+    audioPipeline.applyRigPreset('gilmour_lead');
     handleParse();
 
     return () => {
@@ -213,10 +259,17 @@ export function TabPanel() {
     const preset = TAB_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
     setSelectedPresetId(presetId);
+    setSelectedRigId(preset.rigPresetId);
     setTabText(preset.tab);
     setBpm(preset.bpm);
     setTuning(preset.tuningId);
+    audioPipeline.applyRigPreset(preset.rigPresetId);
     handleParse(preset.tab, preset.bpm, preset.tuningId);
+  };
+
+  const handleRigChange = (rigId: string) => {
+    setSelectedRigId(rigId);
+    audioPipeline.applyRigPreset(rigId);
   };
 
   const handlePlayToggle = () => {
@@ -389,6 +442,57 @@ export function TabPanel() {
             containerStyle={{ marginTop: 0 }}
           />
         </div>
+      </div>
+
+      {/* Amp & FX Rig Tone Selector Bar */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '8px',
+          alignItems: 'center',
+          backgroundColor: '#14151a',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          border: '1px solid #27272a',
+        }}
+      >
+        <Sliders size={13} color="#c084fc" />
+        <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>Rig Tone:</span>
+        <select
+          value={selectedRigId}
+          onChange={(e) => handleRigChange(e.target.value)}
+          style={{
+            flex: 1,
+            backgroundColor: '#0c0d10',
+            color: '#c084fc',
+            border: '1px solid #3f3f46',
+            borderRadius: '4px',
+            fontSize: '11px',
+            fontWeight: 700,
+            padding: '3px 8px',
+            cursor: 'pointer',
+          }}
+        >
+          {Object.values(RIG_PRESETS).map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+            </option>
+          ))}
+        </select>
+        <span
+          style={{
+            fontSize: '10px',
+            color: '#71717a',
+            fontStyle: 'italic',
+            maxWidth: '240px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+          title={RIG_PRESETS[selectedRigId]?.description}
+        >
+          {RIG_PRESETS[selectedRigId]?.description}
+        </span>
       </div>
 
       {/* ASCII Tab Textarea (Paper & Ink Style ONLY) */}
@@ -584,26 +688,41 @@ export function TabPanel() {
                   let badgeBorder = isCurrent ? '1px solid #7dd3fc' : '1px solid #3f3f46';
 
                   if (n.articulation === 'hammer') {
-                    badgeText += 'h';
+                    badgeText = n.targetFret !== undefined ? `${n.fret}h${n.targetFret}` : `${n.fret}h`;
                     if (!isCurrent) { badgeBg = '#27272a'; badgeColor = '#fbbf24'; badgeBorder = '1px solid #d97706'; }
                   } else if (n.articulation === 'pull') {
-                    badgeText += 'p';
+                    badgeText = n.targetFret !== undefined ? `${n.fret}p${n.targetFret}` : `${n.fret}p`;
                     if (!isCurrent) { badgeBg = '#27272a'; badgeColor = '#f59e0b'; badgeBorder = '1px solid #d97706'; }
                   } else if (n.articulation === 'slide_up') {
-                    badgeText += '/';
+                    badgeText = n.targetFret !== undefined ? `${n.fret}/${n.targetFret}` : `${n.fret}/`;
                     if (!isCurrent) { badgeBg = '#14532d'; badgeColor = '#4ade80'; badgeBorder = '1px solid #16a34a'; }
                   } else if (n.articulation === 'slide_down') {
-                    badgeText += '\\';
+                    badgeText = n.targetFret !== undefined ? `${n.fret}\\${n.targetFret}` : `${n.fret}\\`;
                     if (!isCurrent) { badgeBg = '#14532d'; badgeColor = '#4ade80'; badgeBorder = '1px solid #16a34a'; }
                   } else if (n.articulation === 'bend') {
-                    badgeText += 'b';
+                    badgeText = n.targetFret !== undefined ? `${n.fret}b${n.targetFret}` : `${n.fret}b`;
                     if (!isCurrent) { badgeBg = '#0c4a6e'; badgeColor = '#38bdf8'; badgeBorder = '1px solid #0284c7'; }
+                  } else if (n.articulation === 'release') {
+                    badgeText = n.targetFret !== undefined ? `${n.fret}r${n.targetFret}` : `${n.fret}r`;
+                    if (!isCurrent) { badgeBg = '#0c4a6e'; badgeColor = '#7dd3fc'; badgeBorder = '1px solid #0369a1'; }
                   } else if (n.articulation === 'vibrato') {
-                    badgeText += '~';
+                    badgeText = `${n.fret}~`;
                     if (!isCurrent) { badgeBg = '#4c1d95'; badgeColor = '#c084fc'; badgeBorder = '1px solid #7c3aed'; }
                   } else if (n.articulation === 'mute') {
                     badgeText = 'x';
                     if (!isCurrent) { badgeBg = '#881337'; badgeColor = '#fda4af'; badgeBorder = '1px solid #e11d48'; }
+                  } else if (n.articulation === 'harmonic') {
+                    badgeText = `<${n.fret}>`;
+                    if (!isCurrent) { badgeBg = '#134e4a'; badgeColor = '#2dd4bf'; badgeBorder = '1px solid #0d9488'; }
+                  } else if (n.articulation === 'ghost') {
+                    badgeText = `(${n.fret})`;
+                    if (!isCurrent) { badgeBg = '#18181b'; badgeColor = '#a1a1aa'; badgeBorder = '1px dashed #52525b'; }
+                  } else if (n.articulation === 'palm_mute') {
+                    badgeText = `${n.fret}pm`;
+                    if (!isCurrent) { badgeBg = '#451a03'; badgeColor = '#fb923c'; badgeBorder = '1px solid #d97706'; }
+                  } else if (n.articulation === 'tap') {
+                    badgeText = `t${n.fret}`;
+                    if (!isCurrent) { badgeBg = '#312e81'; badgeColor = '#818cf8'; badgeBorder = '1px solid #6366f1'; }
                   }
 
                   return (

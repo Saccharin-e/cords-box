@@ -394,6 +394,7 @@ class GuitarProcessor extends AudioWorkletProcessor {
     this.wdf = new WdfCircuit(sampleRate);
     this.toneStack = new WdfToneStack(sampleRate);
     this.pendingPlucks = [];
+    this.scheduledEvents = [];
     this.initializing = false;
     this.delayLine = null;
     // Per-string frequency tracking for pitch-dependent pickup comb
@@ -404,6 +405,31 @@ class GuitarProcessor extends AudioWorkletProcessor {
     this.sagAttackCoeff = Math.exp(-1 / (sampleRate * 0.010)); // 10ms attack
     this.sagReleaseCoeff = Math.exp(-1 / (sampleRate * 0.150)); // 150ms release
     this.sagAmount = 0.3;
+
+    this.executeEvent = (msg) => {
+      if (msg.type === 'pluck') {
+        if (this.engine) {
+          this.engine.pluck(msg.string_idx, msg.freq, msg.velocity);
+        } else {
+          this.pendingPlucks.push(msg);
+        }
+        if (msg.string_idx >= 0 && msg.string_idx < 6) {
+          this.stringFreqs[msg.string_idx] = msg.freq;
+        }
+      } else if (msg.type === 'bend') {
+        if (this.engine) {
+          this.engine.bend(msg.string_idx, msg.targetFreq, msg.durationMs || 150);
+        }
+        if (msg.string_idx >= 0 && msg.string_idx < 6) {
+          this.stringFreqs[msg.string_idx] = msg.targetFreq;
+        }
+      } else if (msg.type === 'damp') {
+        if (this.engine && typeof msg.string_idx === 'number') {
+          const amount = typeof msg.amount === 'number' ? msg.amount : 1.0;
+          this.engine.damp(msg.string_idx, amount);
+        }
+      }
+    };
 
     const doInit = (wasmBytes) => {
       if (this.initializing || this.engine) return;
@@ -434,28 +460,12 @@ class GuitarProcessor extends AudioWorkletProcessor {
         doInit(msg.wasmBytes);
       } else if (msg.type === 'wdf-update') {
         this.wdf.updateParams(msg.params);
-      } else if (msg.type === 'pluck') {
-        if (this.engine) {
-          this.engine.pluck(msg.string_idx, msg.freq, msg.velocity);
+      } else if (msg.type === 'pluck' || msg.type === 'bend' || msg.type === 'damp') {
+        if (typeof msg.time === 'number' && msg.time > currentTime + 0.002) {
+          this.scheduledEvents.push(msg);
+          this.scheduledEvents.sort((a, b) => (a.time || 0) - (b.time || 0));
         } else {
-          this.pendingPlucks.push(msg);
-        }
-        // Track per-string frequency for pickup comb
-        if (msg.string_idx >= 0 && msg.string_idx < 6) {
-          this.stringFreqs[msg.string_idx] = msg.freq;
-        }
-      } else if (msg.type === 'bend') {
-        // Pitch glide: ramp toward target frequency
-        if (this.engine) {
-          this.engine.bend(msg.string_idx, msg.targetFreq, msg.durationMs || 150);
-        }
-        if (msg.string_idx >= 0 && msg.string_idx < 6) {
-          this.stringFreqs[msg.string_idx] = msg.targetFreq;
-        }
-      } else if (msg.type === 'damp') {
-        if (this.engine && typeof msg.string_idx === 'number') {
-          const amount = typeof msg.amount === 'number' ? msg.amount : 1.0;
-          this.engine.damp(msg.string_idx, amount);
+          this.executeEvent(msg);
         }
       } else if (msg.type === 'pickup-position' && this.engine) {
         this.engine.set_all_pickup_positions(msg.position);
@@ -491,6 +501,15 @@ class GuitarProcessor extends AudioWorkletProcessor {
 
     const outChan = output[0];
     const inChan = (input && input.length > 0 && input[0].length > 0) ? input[0] : null;
+
+    // Process scheduled events due in this render quantum
+    if (this.scheduledEvents.length > 0) {
+      const blockEndTime = currentTime + (outChan.length / sampleRate);
+      while (this.scheduledEvents.length > 0 && this.scheduledEvents[0].time <= blockEndTime) {
+        const ev = this.scheduledEvents.shift();
+        this.executeEvent(ev);
+      }
+    }
 
     // Run WASM DSP engine chunk if active
     if (this.engine) {

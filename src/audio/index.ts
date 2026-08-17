@@ -4,5 +4,6 @@ export {
   GUITAR_STRINGS,
   GUITAR_CHORDS,
   GUITAR_DEMO_GENRES,
+  RIG_PRESETS,
 } from './pipeline';
-export type { InputSourceType, GuitarDemoGenre } from './pipeline';
+export type { InputSourceType, GuitarDemoGenre, RigPreset } from './pipeline';
