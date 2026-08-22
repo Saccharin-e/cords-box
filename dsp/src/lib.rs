@@ -69,6 +69,39 @@ impl DispersionFilter {
     }
 }
 
+/// 1st-order Thiran allpass fractional delay filter.
+/// Provides maximally-flat group delay interpolation for waveguide pitch accuracy.
+/// Transfer function: H(z) = (a₁ + z⁻¹) / (1 + a₁·z⁻¹)
+/// where a₁ = (1 - d) / (1 + d) and d is the fractional delay in [0.1, 0.9].
+struct ThiranState {
+    y1: f32,
+    x1: f32,
+}
+
+impl ThiranState {
+    fn new() -> Self {
+        Self { y1: 0.0, x1: 0.0 }
+    }
+
+    fn reset(&mut self) {
+        self.y1 = 0.0;
+        self.x1 = 0.0;
+    }
+
+    /// Process one sample through the Thiran allpass.
+    /// `frac` is the fractional delay in (0, 1).
+    #[inline(always)]
+    fn process(&mut self, input: f32, frac: f32) -> f32 {
+        // Clamp fractional delay to stable range [0.1, 0.9]
+        let d = frac.clamp(0.1, 0.9);
+        let a1 = (1.0 - d) / (1.0 + d);
+        let output = a1 * input + self.x1 - a1 * self.y1;
+        self.x1 = input;
+        self.y1 = output;
+        output
+    }
+}
+
 struct GuitarString {
     delay_line_h: [f32; BUFFER_SIZE],
     delay_line_v: [f32; BUFFER_SIZE],
@@ -106,6 +139,12 @@ struct GuitarString {
     dispersion_v: DispersionFilter,
     pending_dispersion_h: DispersionFilter,
     pending_dispersion_v: DispersionFilter,
+
+    // 1st-order Thiran allpass fractional delay state (one per polarization plane)
+    thiran_h: ThiranState,
+    thiran_v: ThiranState,
+    pending_thiran_h: ThiranState,
+    pending_thiran_v: ThiranState,
 
     // Output ring buffer for subtractive pickup comb
     output_ring: [f32; OUTPUT_RING_SIZE],
@@ -166,6 +205,11 @@ impl GuitarString {
             dispersion_v: DispersionFilter::new(),
             pending_dispersion_h: DispersionFilter::new(),
             pending_dispersion_v: DispersionFilter::new(),
+
+            thiran_h: ThiranState::new(),
+            thiran_v: ThiranState::new(),
+            pending_thiran_h: ThiranState::new(),
+            pending_thiran_v: ThiranState::new(),
 
             output_ring: [0.0; OUTPUT_RING_SIZE],
             output_ring_idx: 0,
@@ -288,6 +332,8 @@ impl GuitarString {
             self.pending_dispersion_coeff = new_dispersion_coeff;
             self.pending_dispersion_h.reset();
             self.pending_dispersion_v.reset();
+            self.pending_thiran_h.reset();
+            self.pending_thiran_v.reset();
             self.pending_amplitude_env = 1.0;
             self.pending_amplitude_decay = new_amplitude_decay;
             self.pending_release_decay = 1.0;
@@ -315,6 +361,8 @@ impl GuitarString {
             self.dispersion_coeff = new_dispersion_coeff;
             self.dispersion_h.reset();
             self.dispersion_v.reset();
+            self.thiran_h.reset();
+            self.thiran_v.reset();
             self.amplitude_env = 1.0;
             self.amplitude_decay = new_amplitude_decay;
             self.release_decay = 1.0;
@@ -357,17 +405,33 @@ impl GuitarString {
         self.is_gliding = true;
     }
 
-    fn read_delay(delay_line: &[f32; BUFFER_SIZE], write_idx: usize, delay_samples: f32) -> f32 {
-        let mut read_idx_float = (write_idx as f32) - delay_samples;
-        while read_idx_float < 0.0 {
-            read_idx_float += BUFFER_SIZE as f32;
+    /// Read from delay line using 1st-order Thiran allpass fractional delay.
+    /// The integer part selects the delay line tap; the fractional part is
+    /// interpolated by the Thiran allpass for maximally-flat group delay.
+    fn read_delay_thiran(
+        delay_line: &[f32; BUFFER_SIZE],
+        write_idx: usize,
+        delay_samples: f32,
+        thiran: &mut ThiranState,
+    ) -> f32 {
+        // Ensure fractional delay stays in Thiran-stable range [0.1, 0.9].
+        // If fract < 0.1, increase integer delay by 1 and adjust fract.
+        let mut int_delay = delay_samples.floor() as usize;
+        let mut fract = delay_samples.fract();
+        if fract < 0.1 {
+            int_delay = int_delay.saturating_sub(1);
+            fract += 1.0;
+            // fract is now in [1.0, 1.1] — the allpass will clamp to 0.9
         }
 
-        let idx1 = read_idx_float.floor() as usize % BUFFER_SIZE;
-        let idx2 = (idx1 + 1) % BUFFER_SIZE;
-        let fract = read_idx_float.fract();
+        let mut read_pos = write_idx as isize - int_delay as isize;
+        while read_pos < 0 {
+            read_pos += BUFFER_SIZE as isize;
+        }
+        let idx = read_pos as usize % BUFFER_SIZE;
+        let tap = delay_line[idx];
 
-        delay_line[idx1] * (1.0 - fract) + delay_line[idx2] * fract
+        thiran.process(tap, fract)
     }
 
     /// Read from the output ring buffer at a fractional delay
@@ -416,8 +480,9 @@ impl GuitarString {
         decay: f32,
         dispersion: &mut DispersionFilter,
         compensation: f32,
+        thiran: &mut ThiranState,
     ) -> f32 {
-        let current = Self::read_delay(delay_line, *write_idx, delay_samples);
+        let current = Self::read_delay_thiran(delay_line, *write_idx, delay_samples, thiran);
 
         // Averaged loop filter models string damping
         let filtered = current * (1.0 - damping) + *prev_sample * damping;
@@ -467,13 +532,13 @@ impl GuitarString {
         let out_h = Self::compute_plane(
             &mut self.delay_line_h, &mut self.write_idx_h, &mut self.prev_sample_h,
             delay_h, self.damping, self.dispersion_coeff, self.decay,
-            &mut self.dispersion_h, comp_h,
+            &mut self.dispersion_h, comp_h, &mut self.thiran_h,
         );
 
         let out_v = Self::compute_plane(
             &mut self.delay_line_v, &mut self.write_idx_v, &mut self.prev_sample_v,
             delay_v, self.damping, self.dispersion_coeff, self.decay * 0.999, // Vertical plane decays slightly faster
-            &mut self.dispersion_v, comp_v,
+            &mut self.dispersion_v, comp_v, &mut self.thiran_v,
         );
 
         // 3. Mix dual planes with position-aware blend
@@ -514,13 +579,13 @@ impl GuitarString {
             let pending_out_h = Self::compute_plane(
                 &mut self.pending_delay_line_h, &mut self.pending_write_idx_h, &mut self.pending_prev_sample_h,
                 pending_delay_h, self.pending_damping, self.pending_dispersion_coeff, self.pending_decay,
-                &mut self.pending_dispersion_h, pending_comp_h,
+                &mut self.pending_dispersion_h, pending_comp_h, &mut self.pending_thiran_h,
             );
 
             let pending_out_v = Self::compute_plane(
                 &mut self.pending_delay_line_v, &mut self.pending_write_idx_v, &mut self.pending_prev_sample_v,
                 pending_delay_v, self.pending_damping, self.pending_dispersion_coeff, self.pending_decay * 0.999,
-                &mut self.pending_dispersion_v, pending_comp_v,
+                &mut self.pending_dispersion_v, pending_comp_v, &mut self.pending_thiran_v,
             );
 
             let pending_h_blend = 0.7 + self.pickup_position * 0.5;
@@ -552,6 +617,8 @@ impl GuitarString {
                 
                 std::mem::swap(&mut self.dispersion_h, &mut self.pending_dispersion_h);
                 std::mem::swap(&mut self.dispersion_v, &mut self.pending_dispersion_v);
+                std::mem::swap(&mut self.thiran_h, &mut self.pending_thiran_h);
+                std::mem::swap(&mut self.thiran_v, &mut self.pending_thiran_v);
                 
                 self.amplitude_env = self.pending_amplitude_env;
                 self.amplitude_decay = self.pending_amplitude_decay;
@@ -574,6 +641,9 @@ pub struct DspEngine {
     strings: Vec<GuitarString>,
     sample_rate: f32,
     drive: f32,
+    /// Global pitch offset in semitones, applied to all strings simultaneously.
+    /// Models a whammy/tremolo bar that alters bridge tension uniformly.
+    whammy_semitones: f32,
     output_buffer: [f32; 128], // WebAudio render quantum size
 }
 
@@ -594,6 +664,7 @@ impl DspEngine {
             strings,
             sample_rate,
             drive: 1.0,
+            whammy_semitones: 0.0,
             output_buffer: [0.0; 128],
         }
     }
@@ -638,6 +709,13 @@ impl DspEngine {
         self.drive = drive;
     }
 
+    /// Set whammy bar pitch offset in semitones.
+    /// Positive = pitch up (bar pull), negative = pitch down (bar dive).
+    /// Clamped to [-12, +12] (one octave each direction).
+    pub fn set_whammy(&mut self, semitones: f32) {
+        self.whammy_semitones = semitones.clamp(-12.0, 12.0);
+    }
+
     pub fn process_chunk(&mut self) {
         // Fast paths for silence
         let mut any_active = false;
@@ -655,13 +733,32 @@ impl DspEngine {
             return;
         }
 
+        // Pre-compute whammy bar delay scaling factor (applied uniformly to all strings).
+        // Pitch up = shorter delay = divide by factor > 1.
+        let whammy_factor = if self.whammy_semitones.abs() > 0.001 {
+            2.0f32.powf(self.whammy_semitones / 12.0)
+        } else {
+            1.0
+        };
+
         // Per-sample buffer for individual string outputs (sympathetic coupling)
         let mut string_outputs = [0.0f32; MAX_STRINGS];
 
         for i in 0..128 {
             let mut mix = 0.0;
             for (si, s) in self.strings.iter_mut().enumerate() {
+                // Apply whammy bar: temporarily scale delay length for this sample.
+                // We modify base_delay_samples in-place and restore after process_sample()
+                // to avoid allocating new state. This is correct because process_sample()
+                // uses base_delay_samples only for the current sample's read position.
+                let original_delay = s.base_delay_samples;
+                if whammy_factor != 1.0 && s.is_active {
+                    s.base_delay_samples = (original_delay / whammy_factor).clamp(2.0, (BUFFER_SIZE - 2) as f32);
+                }
                 let out = s.process_sample();
+                if whammy_factor != 1.0 && s.is_active {
+                    s.base_delay_samples = original_delay;
+                }
                 string_outputs[si] = out;
                 mix += out;
             }

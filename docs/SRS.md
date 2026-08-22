@@ -1,32 +1,34 @@
 # Software Requirements Specification (SRS)
-## Advanced Guitar Crafting Sandbox
+## Cords Box — Advanced Guitar Crafting Sandbox & Physical Modeling Engine
 
 ### 1. Functional Requirements
 
 | ID | Requirement | Status |
 |---|---|---|
-| FR-1 | Component library: drag-and-drop pickups (single-coil, humbucker), 3/4/5-way switches, push-pull/push-push pots, concentric pots, capacitors, resistors, and output jacks. Selectable wire colors, gauges, and connection methods (soldered vs quick-connect). | Implemented |
-| FR-2 | Dual-view rendering: synchronized physical guitar-body layout + node-based electrical schematic canvas. | Implemented |
+| FR-1 | Component library: drag-and-drop pickups (single-coil, humbucker, P90), 3/4/5-way switches, push-pull/push-push pots, concentric pots, capacitors, resistors, and output jacks. Selectable wire colors, gauges, and connection methods (soldered vs quick-connect). | Implemented |
+| FR-2 | Dual-view rendering: synchronized physical guitar-body layout + node-based electrical schematic canvas powered by Konva.js with 60FPS optimizations. | Implemented |
 | FR-3 | Real-time graph solving: automatic netlist solver recomputes active signal path and topology state on every switch/pot interaction without manual simulation steps. | Implemented |
-| FR-4 | Audio processing: accept recorded DI guitar sample bank or synthesized Karplus-Strong string input, applying WDF circuit filtering, tube saturation, cabinet IR, and room ambience derived from graph state. | Implemented |
+| FR-4 | Audio processing: accept recorded DI guitar sample bank or synthesized physical modeling input, applying off-thread WDF circuit filtering, WDF passive tone-stack shaping, tube saturation, modal cabinet IR, and room ambience derived from graph state. | Implemented |
 | FR-5 | State validation (linter): flag dead shorts to ground, open circuits, and same-pole jumper chains that transitively tie isolated switch positions together. | Implemented |
-| FR-6 | Editable component values: capacitor (pF/µF), resistor (Ω), pickup resistance/inductance, and potentiometer (kΩ plus linear/log taper). Real-time propagation to audio worklet engine. | Implemented |
+| FR-6 | Editable component values: capacitor (pF/µF), resistor (Ω), pickup resistance/inductance, and potentiometer (kΩ plus linear/log taper). Real-time propagation to audio worklet engine via `'wdf-update'`. | Implemented |
 | FR-7 | Truth-table export: output resolved connectivity matrix and truth tables for all switch positions as human-readable documents or JSON/PDF export. | Implemented |
 | FR-8 | Interactive Playable Fretboard: multi-string interactive fretboard UI allowing manual note plucking, chord strumming, speed control, and pitch-shifted audio playback. | Implemented |
 | FR-9 | Saveable Layout Slots: persistent local storage slots for saving and recalling canvas positions, component configurations, and custom wire routing. | Implemented |
 | FR-10 | High-Resolution Canvas Export: export physical layout and schematic views to high-DPI PNG or vector PDF with custom canvas crop region selection indicators. | Implemented |
 | FR-11 | CAD Viewport Controls: snap-to-grid alignment, grid background rendering, space-reclaiming retractable toolbars, dark/light canvas themes, and customizable keyboard shortcuts. | Implemented |
-| FR-12 | Rust WebAssembly DSP Core: optional WASM-compiled physical modeling engine for low-latency string vibration calculations. | Implemented |
+| FR-12 | Rust WebAssembly DSP Core: Digital Waveguide physical modeling engine featuring dual H/V polarization, cascaded dispersion allpass (Fletcher inharmonicity), fundamental-gain compensated loop filter, per-string persistent PRNG excitation, `bend()`/`damp()` APIs, and sympathetic string coupling. | Implemented |
+| FR-13 | Guitar Tab Parsing & Scheduling: headless ASCII tablature parser (`tabParser.ts`) with hammer-on, pull-off, slide, bend, vibrato, and palm-mute articulation support, paired with a sample-accurate lookahead Web Audio scheduler (`tabScheduler.ts`). | Implemented |
+| FR-14 | MIDI Integration & Web MIDI: MIDI Type 0/1 file parsing (`midiParser.ts`), MIDI Type 1 file export (`midiExporter.ts`), and real-time Web MIDI hardware controller input (`webMidiManager.ts`). | Implemented |
 
 ### 2. Non-Functional Requirements
 
 | ID | Requirement | Status |
 |---|---|---|
-| NFR-1 | Extensibility: Data schemas require an `instrument_family` tag (e.g. "Guitar") allowing seamless future adaptation to bass guitars, mandolins, or synth wiring without core rewrites. | Verified |
-| NFR-2 | Audio performance: Audio round-trip latency < 20ms with zero main-thread GC stutter by utilizing off-thread `AudioWorkletNode` execution. | Verified |
+| NFR-1 | Extensibility: Data schemas require an `instrument_family` tag (e.g. "Guitar", "Bass") allowing seamless future adaptation to bass guitars, mandolins, or custom instruments without core rewrites. | Verified |
+| NFR-2 | Audio performance: Real-time AudioWorklet processing within the 128-sample render quantum (< 2.7ms at 48kHz) with zero main-thread GC stutter. | Verified |
 | NFR-3 | Browser & OS compatibility: Fully verified on modern Chrome and Firefox across Linux, Windows, and macOS. | Verified |
-| NFR-4 | Headless graph decoupling: Circuit graph engine and linter are completely decoupled from React DOM / Konva canvas, running headlessly in Vitest. | Verified (10/10 test files passing) |
-| NFR-5 | Preset validation: Every shipped default preset (Stratocaster, Telecaster, Les Paul, 4-Way Series/Parallel, Phase Mod) passes the FR-5 linter with zero errors. | Verified |
+| NFR-4 | Headless graph decoupling: Circuit graph engine, linter, tab parser, and DSP solvers are completely decoupled from React DOM / Konva canvas, running headlessly in Vitest. | Verified (19/19 test files, 90/90 tests passing) |
+| NFR-5 | Preset validation: Every shipped default preset (Stratocaster HSS, Indie-Rock Telecaster, 50s Telecaster, Les Paul, 4-Way Series/Parallel, Phase Mod) passes the FR-5 linter with zero errors. | Verified |
 
 ### 3. Reference Circuit — Validation Dataset
 

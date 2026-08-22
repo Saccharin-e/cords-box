@@ -192,4 +192,61 @@ D|---------------|
     const customScore = parseAsciiTab(ebTab, 140, 'drop_d');
     expect(customScore.tuningId).toBe('drop_d');
   });
+
+  it('should handle open string (fret 0) as a valid pull-off target', () => {
+    const rawTab = `
+e|---5p0---3p0---|
+B|---------------|
+G|---------------|
+D|---------------|
+A|---------------|
+E|---------------|
+`;
+    const score = parseAsciiTab(rawTab);
+    const notes = score.measures[0].beats.flatMap((b) => b.notes);
+
+    const pullNotes = notes.filter((n) => n.articulation === 'pull');
+    expect(pullNotes.length).toBe(2);
+    expect(pullNotes[0].fret).toBe(5);
+    expect(pullNotes[0].targetFret).toBe(0);
+    expect(pullNotes[1].fret).toBe(3);
+    expect(pullNotes[1].targetFret).toBe(0);
+  });
+
+  it('should handle slide to open string (fret 0)', () => {
+    const rawTab = `
+e|---3/0---|
+B|---------|
+G|---------|
+D|---------|
+A|---------|
+E|---------|
+`;
+    const score = parseAsciiTab(rawTab);
+    const notes = score.measures[0].beats.flatMap((b) => b.notes);
+
+    const slideNotes = notes.filter((n) => n.articulation === 'slide_up');
+    expect(slideNotes.length).toBe(1);
+    expect(slideNotes[0].fret).toBe(3);
+    expect(slideNotes[0].targetFret).toBe(0);
+  });
+
+  it('should parse pinch harmonic [n] notation', () => {
+    const rawTab = `
+e|---[7]---[12]---|
+B|----------------|
+G|----------------|
+D|----------------|
+A|----------------|
+E|----------------|
+`;
+    const score = parseAsciiTab(rawTab);
+    const notes = score.measures[0].beats.flatMap((b) => b.notes);
+
+    const pinchNotes = notes.filter((n) => n.articulation === 'pinch_harmonic');
+    expect(pinchNotes.length).toBe(2);
+    expect(pinchNotes[0].fret).toBe(7);
+    expect(pinchNotes[0].velocity).toBe(0.9);
+    expect(pinchNotes[1].fret).toBe(12);
+  });
 });

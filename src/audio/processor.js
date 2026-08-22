@@ -489,6 +489,8 @@ class GuitarProcessor extends AudioWorkletProcessor {
         }
       } else if (msg.type === 'drive' && this.engine) {
         this.engine.set_drive(msg.drive);
+      } else if (msg.type === 'whammy' && this.engine) {
+        this.engine.set_whammy(typeof msg.semitones === 'number' ? msg.semitones : 0);
       }
     };
   }
@@ -577,7 +579,17 @@ class GuitarProcessor extends AudioWorkletProcessor {
       
       // Pass the array of voltages to the WDF circuit model
       // The WDF circuit naturally handles parallel averaging and series boosting
-      const wdfOut = this.wdf.processSample(vinArray);
+      let wdfOut = this.wdf.processSample(vinArray);
+
+      // Post-WDF polynomial magnetic saturation: models the pickup coil's
+      // nonlinear response to large string displacement (magnetic saturation).
+      // 3rd-order odd polynomial: y = x - k·x³  where k is small (default 0.015).
+      // Adds subtle 2nd/3rd harmonic warmth at high velocity without audible
+      // effect on clean playing.  Configurable via wdf-update pickupSaturation.
+      const satK = this.wdf._params.pickupSaturation ?? 0.015;
+      if (satK > 0) {
+        wdfOut = wdfOut - satK * wdfOut * wdfOut * wdfOut;
+      }
       
       // Route through the coupled passive tone stack (replaces independent biquads)
       const toneOut = this.toneStack.processSample(wdfOut);

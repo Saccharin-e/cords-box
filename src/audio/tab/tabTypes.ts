@@ -13,6 +13,7 @@ export type ArticulationType =
   | 'vibrato'
   | 'tap'
   | 'harmonic'
+  | 'pinch_harmonic'
   | 'palm_mute'
   | 'mute'
   | 'ghost';

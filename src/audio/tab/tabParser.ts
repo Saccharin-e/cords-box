@@ -86,6 +86,29 @@ function parseStringSegment(
       continue;
     }
 
+    // Pinch harmonic: [n] notation (aggressive pick attack + harmonic squeal)
+    if (ch === '[') {
+      const closeIdx = seg.indexOf(']', col + 1);
+      if (closeIdx > col + 1) {
+        const inner = seg.substring(col + 1, closeIdx);
+        const pinchFret = parseInt(inner, 10);
+        if (!isNaN(pinchFret)) {
+          events.push({
+            col,
+            stringIdx,
+            fret: pinchFret,
+            velocity: 0.9,
+            articulation: 'pinch_harmonic',
+          });
+          col = closeIdx + 1;
+          continue;
+        }
+      }
+      // Malformed pinch harmonic, skip the '['
+      col++;
+      continue;
+    }
+
     // Ghost / Tied note: (n) notation
     if (ch === '(') {
       const closeIdx = seg.indexOf(')', col + 1);

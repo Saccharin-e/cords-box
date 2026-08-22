@@ -201,6 +201,7 @@ export class TabScheduler {
     this.isPlaying = false;
     this.currentBeat = 0;
     this.nextEventIndex = 0;
+    this.dampAllStrings();
     this.ringingNotes.clear();
     this.onBeatCallbacks.forEach((cb) => cb(0));
     this.notifyState();
@@ -333,6 +334,15 @@ export class TabScheduler {
         fret: note.fret,
       });
 
+      // Schedule note-off damp at the note's duration end time.
+      // Skip for legato articulations — the next note on the string will
+      // glide pitch rather than re-attack, so we don't want to silence it.
+      if (!isLegato && note.articulation !== 'vibrato') {
+        const secondsPerBeat = 60.0 / this.bpm;
+        const noteEndTime = noteStartTime + note.durationBeats * secondsPerBeat;
+        // Soft release damp (amount 0.3) for natural note decay
+        audioPipeline.dampString(note.stringIdx, 0.3, noteEndTime);
+      }
 
       this.onNotePlayCallbacks.forEach((cb) => cb(note));
     });
@@ -345,6 +355,13 @@ export class TabScheduler {
 
   private notifyState(): void {
     this.onStateChangeCallbacks.forEach((cb) => cb(this.isPlaying));
+  }
+
+  /** Damp all 6 strings to silence any ringing notes (used on stop). */
+  private dampAllStrings(): void {
+    for (let i = 0; i < 6; i++) {
+      audioPipeline.dampString(i, 0.5);
+    }
   }
 }
 
