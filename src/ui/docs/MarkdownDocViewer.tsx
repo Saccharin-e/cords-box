@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import katex from 'katex';
 
 interface MarkdownDocViewerProps {
   content: string;
@@ -12,7 +13,7 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '16px',
+        gap: '18px',
         color: '#d4d4d8',
         fontSize: '14px',
         lineHeight: 1.65,
@@ -26,13 +27,13 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
               <h1
                 key={idx}
                 style={{
-                  margin: '8px 0 4px 0',
-                  fontSize: '24px',
+                  margin: '4px 0 2px 0',
+                  fontSize: '22px',
                   fontWeight: 800,
                   color: '#ffffff',
-                  letterSpacing: '-0.4px',
+                  letterSpacing: '-0.3px',
                   borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                  paddingBottom: '10px',
+                  paddingBottom: '8px',
                 }}
               >
                 {renderInline(block.text)}
@@ -43,8 +44,8 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
               <h2
                 key={idx}
                 style={{
-                  margin: '16px 0 4px 0',
-                  fontSize: '18px',
+                  margin: '14px 0 2px 0',
+                  fontSize: '17px',
                   fontWeight: 700,
                   color: '#f4f4f5',
                   letterSpacing: '-0.2px',
@@ -58,8 +59,8 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
               <h3
                 key={idx}
                 style={{
-                  margin: '12px 0 2px 0',
-                  fontSize: '15px',
+                  margin: '10px 0 2px 0',
+                  fontSize: '14.5px',
                   fontWeight: 700,
                   color: '#38bdf8',
                   letterSpacing: '-0.1px',
@@ -102,7 +103,7 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
                   borderRadius: '8px',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   backgroundColor: 'rgba(18, 18, 21, 0.7)',
-                  margin: '8px 0',
+                  margin: '6px 0',
                 }}
               >
                 <table
@@ -119,7 +120,7 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
                         <th
                           key={hIdx}
                           style={{
-                            padding: '10px 14px',
+                            padding: '9px 12px',
                             fontWeight: 700,
                             color: '#ffffff',
                             letterSpacing: '0.2px',
@@ -143,7 +144,7 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
                           <td
                             key={cIdx}
                             style={{
-                              padding: '9px 14px',
+                              padding: '8px 12px',
                               color: '#cbd5e1',
                             }}
                           >
@@ -164,7 +165,7 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
                   borderRadius: '8px',
                   backgroundColor: '#0d0d10',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
-                  padding: '14px 16px',
+                  padding: '12px 16px',
                   fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
                   fontSize: '12px',
                   color: '#38bdf8',
@@ -175,24 +176,31 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
                 <pre style={{ margin: 0 }}>{block.text}</pre>
               </div>
             );
-          case 'math':
+          case 'math': {
+            const html = katex.renderToString(block.text, {
+              displayMode: true,
+              throwOnError: false,
+              output: 'html',
+            });
             return (
               <div
                 key={idx}
                 style={{
-                  padding: '10px 16px',
+                  padding: '14px 20px',
                   borderRadius: '8px',
-                  backgroundColor: 'rgba(56, 189, 248, 0.06)',
-                  border: '1px solid rgba(56, 189, 248, 0.18)',
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: '13px',
+                  backgroundColor: 'rgba(2, 132, 199, 0.06)',
+                  border: '1px solid rgba(2, 132, 199, 0.22)',
+                  fontSize: '15px',
                   color: '#7dd3fc',
+                  margin: '8px 0',
+                  boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.4)',
+                  overflowX: 'auto',
                   textAlign: 'center',
                 }}
-              >
-                {block.text}
-              </div>
+                dangerouslySetInnerHTML={{ __html: html }}
+              />
             );
+          }
           default:
             return null;
         }
@@ -253,7 +261,7 @@ function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
         codeLines.push(lines[i]);
         i++;
       }
-      i++; // skip closing ```
+      i++;
       blocks.push({
         type: 'codeblock',
         language,
@@ -263,13 +271,33 @@ function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
     }
 
     // Math blocks $$
-    if (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4) {
-      blocks.push({
-        type: 'math',
-        text: trimmed.slice(2, -2).trim(),
-      });
-      i++;
-      continue;
+    if (trimmed.startsWith('$$')) {
+      if (trimmed.endsWith('$$') && trimmed.length > 4) {
+        blocks.push({
+          type: 'math',
+          text: trimmed.slice(2, -2).trim(),
+        });
+        i++;
+        continue;
+      } else {
+        // Multi-line $$ block
+        const mathLines: string[] = [];
+        i++;
+        while (i < lines.length && !lines[i].trim().endsWith('$$')) {
+          mathLines.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length) {
+          const lastLine = lines[i].trim().replace(/\$\$$/, '');
+          if (lastLine) mathLines.push(lastLine);
+          i++;
+        }
+        blocks.push({
+          type: 'math',
+          text: mathLines.join('\n').trim(),
+        });
+        continue;
+      }
     }
 
     // Headings
@@ -297,7 +325,6 @@ function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
         .map((c) => c.trim());
       i++;
 
-      // Skip separator row |:---|:---|
       if (i < lines.length && lines[i].includes('---')) {
         i++;
       }
@@ -337,19 +364,26 @@ function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
 }
 
 function renderInline(text: string): ReactNode[] {
-  // Split on bold (**...**), inline code (`...`), and math ($...$)
   const parts: ReactNode[] = [];
-  const regex = /(\*\*[^*]+\*\*|`[^`]+`|\$[^$]+\$)/g;
+  const regex = /(\*\*[^*]+\*\*|`[^`]+`|\$[^$]+\$|\*[^*]+\*)/g;
   const tokens = text.split(regex);
 
   tokens.forEach((tok, idx) => {
     if (!tok) return;
 
     if (tok.startsWith('**') && tok.endsWith('**')) {
+      const inner = tok.slice(2, -2);
       parts.push(
         <strong key={idx} style={{ color: '#ffffff', fontWeight: 600 }}>
-          {tok.slice(2, -2)}
+          {renderInline(inner)}
         </strong>,
+      );
+    } else if (tok.startsWith('*') && tok.endsWith('*') && tok.length > 2) {
+      const inner = tok.slice(1, -1);
+      parts.push(
+        <em key={idx} style={{ color: '#f4f4f5', fontStyle: 'italic' }}>
+          {renderInline(inner)}
+        </em>,
       );
     } else if (tok.startsWith('`') && tok.endsWith('`')) {
       parts.push(
@@ -368,18 +402,22 @@ function renderInline(text: string): ReactNode[] {
         </code>,
       );
     } else if (tok.startsWith('$') && tok.endsWith('$')) {
+      const mathExp = tok.slice(1, -1);
+      const html = katex.renderToString(mathExp, {
+        displayMode: false,
+        throwOnError: false,
+        output: 'html',
+      });
       parts.push(
         <span
           key={idx}
           style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontStyle: 'italic',
-            color: '#a5f3fc',
+            display: 'inline-block',
+            color: '#7dd3fc',
             padding: '0 2px',
           }}
-        >
-          {tok.slice(1, -1)}
-        </span>,
+          dangerouslySetInnerHTML={{ __html: html }}
+        />,
       );
     } else {
       parts.push(tok);
