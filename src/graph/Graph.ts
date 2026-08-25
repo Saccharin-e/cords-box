@@ -206,18 +206,26 @@ export class Graph {
   }
 
   static fromJSON(data: CircuitGraph): Graph {
-    const graph = new Graph(data.instrument_family);
-    for (const node of data.nodes) {
-      graph.addNode(node);
+    const graph = new Graph(data.instrument_family || 'Guitar');
+    if (Array.isArray(data.nodes)) {
+      for (const node of data.nodes) {
+        graph.addNode(node);
+      }
     }
-    for (const edge of data.edges) {
-      graph.addEdge(edge);
+    if (Array.isArray(data.edges)) {
+      for (const edge of data.edges) {
+        graph.addEdge(edge);
+      }
     }
-    for (const component of data.components) {
-      graph.addComponent(component);
+    if (Array.isArray(data.components)) {
+      for (const component of data.components) {
+        graph.addComponent(component);
+      }
     }
-    for (const switchState of data.switchStates) {
-      graph.setSwitchState(switchState);
+    if (Array.isArray(data.switchStates)) {
+      for (const switchState of data.switchStates) {
+        graph.setSwitchState(switchState);
+      }
     }
     return graph;
   }

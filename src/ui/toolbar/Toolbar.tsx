@@ -2,8 +2,12 @@ import { useState, useRef, useEffect } from 'react';
 import { useCanvasStore } from '@store/canvasStore';
 import { useCircuitStore } from '@store/circuitStore';
 import { useKeybindingsStore } from '@store/keybindingsStore';
+import { useProjectStore } from '@store/projectStore';
+import { downloadCordsBoxFile, loadCordsBoxFromFile } from '@graph/circuitSerializer';
+import { CordsBoxLogo } from '../common/CordsBoxLogo';
 import { Button } from '../common/Button';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { Home, Download, FolderOpen } from 'lucide-react';
 
 export function Toolbar() {
   const activeView = useCanvasStore((s) => s.activeView);
@@ -29,9 +33,9 @@ export function Toolbar() {
   const toggleExportModal = useCanvasStore((s) => s.toggleExportModal);
 
   const openSettings = useKeybindingsStore((s) => s.openSettings);
-  const exportJSON = useCircuitStore((s) => s.exportJSON);
-  const importJSON = useCircuitStore((s) => s.importJSON);
   const resetGraph = useCircuitStore((s) => s.reset);
+  const navigateTo = useProjectStore((s) => s.navigateTo);
+  const activeProject = useProjectStore((s) => s.activeProject);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Dropdown Open States
@@ -73,30 +77,6 @@ export function Toolbar() {
     toggleWiringMode();
   }
 
-  function handleExport() {
-    const json = exportJSON();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'indie-tele-harness.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function handleImport() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const text = await file.text();
-      importJSON(text);
-    };
-    input.click();
-  }
-
   function handleReset() {
     setIsConfirmOpen(true);
   }
@@ -121,45 +101,60 @@ export function Toolbar() {
         borderBottom: '1px solid #27272a',
       }}
     >
-      {/* Left Section: Brand Logo + Sidebar Toggle */}
-      <div className="toolbar__brand" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
-            <rect
-              x="1.5"
-              y="1.5"
-              width="29"
-              height="29"
-              rx="5"
-              fill="#121215"
-              stroke="#3f3f46"
-              strokeWidth="1.5"
-            />
-            <path
-              d="M 6 10 C 14 4, 18 20, 26 14 C 20 28, 8 18, 16 10 C 24 2, 28 22, 22 26"
-              stroke="#d97706"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-            <path
-              d="M 10 26 C 4 18, 22 8, 14 24 C 28 12, 10 6, 26 22"
-              stroke="#0284c7"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              opacity="0.9"
-            />
-            <circle cx="6" cy="10" r="1.5" fill="#d97706" />
-            <circle cx="22" cy="26" r="1.5" fill="#d97706" />
-            <circle cx="10" cy="26" r="1.5" fill="#0284c7" />
-            <circle cx="26" cy="22" r="1.5" fill="#0284c7" />
-          </svg>
+      {/* Left Section: Brand Logo + Home Navigation + Sidebar Toggle */}
+      <div className="toolbar__brand" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Home Navigation Button */}
+        <Button
+          className="btn--sm"
+          onClick={() => navigateTo('home')}
+          title="Return to Home Dashboard"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            fontWeight: 700,
+            fontSize: 11,
+            padding: '4px 8px',
+            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+            color: '#f87171',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+          }}
+        >
+          <Home size={12} />
+          <span>Home</span>
+        </Button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <CordsBoxLogo size={26} />
           <span
             className="toolbar__title"
-            style={{ fontWeight: 800, fontSize: 14, letterSpacing: '0.04em' }}
+            style={{ fontWeight: 800, fontSize: 13, letterSpacing: '0.04em' }}
           >
             Cords Box
           </span>
         </div>
+
+        {/* Project Name Badge */}
+        {activeProject && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#d4d4d8',
+              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              maxWidth: '160px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={activeProject.title}
+          >
+            {activeProject.title}
+          </span>
+        )}
 
         {/* Toggle Component Library Sidebar */}
         <Button
@@ -228,6 +223,54 @@ export function Toolbar() {
 
           {isFileMenuOpen && (
             <div style={dropdownStyle}>
+              {/* 1:1 Portable Save Action */}
+              <Button
+                variant="ghost"
+                style={dropdownItemStyle}
+                onClick={() => {
+                  setIsFileMenuOpen(false);
+                  downloadCordsBoxFile({
+                    title: activeProject?.title,
+                    description: activeProject?.description,
+                    templateOriginId: activeProject?.templateOriginId,
+                  });
+                }}
+              >
+                <Download size={14} color="#38bdf8" />
+                <span style={{ fontWeight: 600, color: '#38bdf8' }}>Save .cdx Project (1:1)</span>
+              </Button>
+
+              <Button
+                variant="ghost"
+                style={dropdownItemStyle}
+                onClick={() => {
+                  setIsFileMenuOpen(false);
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.cdx,.cordsbox,.cords,.json';
+                  input.onchange = async () => {
+                    const file = input.files?.[0];
+                    if (!file) return;
+                    const res = await loadCordsBoxFromFile(file);
+                    if (res.valid && res.project) {
+                      useProjectStore.getState().updateProjectMetadata({
+                        title: res.project.metadata.title,
+                        description: res.project.metadata.description,
+                        templateOriginId: res.project.metadata.templateOriginId,
+                      });
+                    } else {
+                      alert(`Failed to load file:\n${res.errors.join('\n')}`);
+                    }
+                  };
+                  input.click();
+                }}
+              >
+                <FolderOpen size={14} />
+                <span>Open .cdx Project...</span>
+              </Button>
+
+              <div style={dropdownDividerStyle} />
+
               <Button
                 variant="ghost"
                 style={dropdownItemStyle}
@@ -260,54 +303,6 @@ export function Toolbar() {
                 style={dropdownItemStyle}
                 onClick={() => {
                   setIsFileMenuOpen(false);
-                  handleExport();
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                  <polyline points="17 21 17 13 7 13 7 21" />
-                  <polyline points="7 3 7 8 15 8" />
-                </svg>
-                <span>Save JSON Harness</span>
-              </Button>
-
-              <Button
-                variant="ghost"
-                style={dropdownItemStyle}
-                onClick={() => {
-                  setIsFileMenuOpen(false);
-                  handleImport();
-                }}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                </svg>
-                <span>Open JSON Harness...</span>
-              </Button>
-
-              <Button
-                variant="ghost"
-                style={dropdownItemStyle}
-                onClick={() => {
-                  setIsFileMenuOpen(false);
                   toggleSlotModal();
                 }}
               >
@@ -324,6 +319,20 @@ export function Toolbar() {
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                 </svg>
                 <span>Layout Slots & Templates...</span>
+              </Button>
+
+              <div style={dropdownDividerStyle} />
+
+              <Button
+                variant="ghost"
+                style={dropdownItemStyle}
+                onClick={() => {
+                  setIsFileMenuOpen(false);
+                  navigateTo('home');
+                }}
+              >
+                <Home size={14} />
+                <span>Home Dashboard</span>
               </Button>
 
               <Button

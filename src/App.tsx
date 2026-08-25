@@ -1,8 +1,9 @@
 /**
- * App.tsx — Main Cords Box Layout Container.
+ * App.tsx — Main Cords Box Root Container.
  *
- * Header bar stays at top providing one-click toggles for Library, Inspector,
- * and CAD Tools. Retracted sidebars collapse to 0px so canvas claims 100% space.
+ * Toggles between:
+ * 1. Home Dashboard (Templates, Tutorials, Docs, Saved Slots)
+ * 2. Studio Workbench (Physical & Schematic Dual Canvas, Toolbar, Inspector)
  */
 
 import { useEffect } from 'react';
@@ -12,10 +13,15 @@ import { DualCanvas } from './ui/canvas/DualCanvas';
 import { RightSidebar } from './ui/inspector/RightSidebar';
 import { ExportModal } from './ui/export/ExportModal';
 import { SettingsModal } from './ui/settings/SettingsModal';
+import { HomePage } from './ui/home/HomePage';
+import { FileDropzone } from './ui/common/FileDropzone';
+import { TutorialGuideOverlay } from './ui/tutorials/TutorialGuideOverlay';
 import { useCanvasStore } from '@store/canvasStore';
-import { loadPresetById } from '@presets/presetLibrary';
+import { useProjectStore } from '@store/projectStore';
 
 export default function App() {
+  const currentView = useProjectStore((s) => s.currentView);
+  const navigateTo = useProjectStore((s) => s.navigateTo);
   const isSidebarOpen = useCanvasStore((s) => s.isSidebarOpen);
   const isInspectorOpen = useCanvasStore((s) => s.isInspectorOpen);
   const inspectorWidth = useCanvasStore((s) => s.inspectorWidth);
@@ -23,15 +29,23 @@ export default function App() {
   useEffect(() => {
     document.documentElement.style.setProperty('--inspector-width', `${inspectorWidth}px`);
 
-    // Restore shared circuit from URL hash if present; otherwise load test bench template
+    // Restore shared circuit from URL hash if present
     import('@graph/circuitSerializer').then(({ importCircuitFromUrlHash }) => {
       const restored = importCircuitFromUrlHash();
-      if (!restored && useCanvasStore.getState().instances.length === 0) {
-        loadPresetById('guitar_sound_test_template');
-        useCanvasStore.setState({ isTestPanelOpen: true });
+      if (restored) {
+        navigateTo('editor');
       }
     });
-  }, [inspectorWidth]);
+  }, [inspectorWidth, navigateTo]);
+
+  if (currentView === 'home') {
+    return (
+      <>
+        <HomePage />
+        <FileDropzone />
+      </>
+    );
+  }
 
   const gridCols = `${isSidebarOpen ? '280px' : '0px'} 1fr ${isInspectorOpen ? 'var(--inspector-width, 320px)' : '0px'}`;
 
@@ -60,6 +74,8 @@ export default function App() {
       <RightSidebar />
       <ExportModal />
       <SettingsModal />
+      <TutorialGuideOverlay />
+      <FileDropzone />
     </div>
   );
 }

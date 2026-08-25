@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { useSlotStore } from '@store/slotStore';
 import { useCanvasStore } from '@store/canvasStore';
 import { Button } from '../common/Button';
-import { Edit2, Package, X, Zap } from 'lucide-react';
+import { Edit2, Package, X, Zap, RotateCcw } from 'lucide-react';
 
 export function LayoutSlotsModal() {
   const toggleSlotModal = useCanvasStore((s) => s.toggleSlotModal);
@@ -360,7 +360,7 @@ export function LayoutSlotsModal() {
                       }}
                       title="Reset Slot to Default Template"
                     >
-                      ↺
+                      <RotateCcw size={13} />
                     </Button>
                   )}
                 </div>

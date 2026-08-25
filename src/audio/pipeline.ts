@@ -703,9 +703,15 @@ export class AudioPipeline {
   private postWdfUpdate(graph?: Graph): void {
     if (!this.wdfWorkletNode) return;
     const comps = graph ? graph.getComponents() : [];
-    const volPot = comps.find((c) => c.type === 'pot_volume');
+    const volPot = comps.find(
+      (c) =>
+        c.type === 'pot_volume' ||
+        c.type === 'pot_pushpull' ||
+        c.type === 'pot_concentric',
+    );
     const tonePot = comps.find((c) => c.type === 'pot_tone');
     const toneCap = comps.find((c) => c.type === 'capacitor');
+    const trebleBleed = comps.find((c) => c.type === 'treble_bleed');
 
     let volPotMaxR = 250000;
     if (volPot?.value && 'resistance_kohms' in volPot.value) {
@@ -722,6 +728,14 @@ export class AudioPipeline {
       toneCapFarads = (toneCap.value.capacitance_pf ?? 47000) * 1e-12;
     }
 
+    let trebleBleedCapFarads = 0;
+    if (trebleBleed) {
+      trebleBleedCapFarads = 1000e-12;
+      if (trebleBleed.value && 'capacitance_pf' in trebleBleed.value) {
+        trebleBleedCapFarads = (trebleBleed.value.capacitance_pf ?? 1000) * 1e-12;
+      }
+    }
+
     const wdfPickups = this.activeTopology.pickups.map((p) => {
       let l = 2.4;
       let r = 6500;
@@ -735,6 +749,7 @@ export class AudioPipeline {
       return {
         inductanceH: l,
         resistanceR: r,
+        windingCapFarads: 120e-12,
         delayMs: p.delayTimeMs,
         resonantFreq: p.resonantFreq,
         resonantQ: p.resonantQ,
@@ -748,9 +763,12 @@ export class AudioPipeline {
       params: {
         volumePos: volPot?.value && 'position' in volPot.value ? volPot.value.position : 1.0,
         tonePos: tonePot?.value && 'position' in tonePot.value ? tonePot.value.position : 1.0,
+        volumePotTaper: volPot?.value && 'taper' in volPot.value ? volPot.value.taper : 'audio',
+        tonePotTaper: tonePot?.value && 'taper' in tonePot.value ? tonePot.value.taper : 'linear',
         volPotMaxR,
         tonePotMaxR,
         toneCapFarads,
+        trebleBleedCapFarads,
         pickups: wdfPickups, // Send full array of pickups
         isSeries: this.activeTopology.isSeries,
         cableCapFarads: this.ampPedalState.cableLengthMeters * 100e-12, // 100pF/m typical instrument cable

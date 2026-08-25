@@ -15,10 +15,30 @@ export interface WdfElement {
   portResistance: number;
   /** Compute reflected wave b from incident wave a */
   waveReflect(a: number): number;
-  /** Update internal state for next sample step (sample rate T = 1 / fs) */
+  /**
+   * Complete the downward pass and update state. Call immediately after one
+   * waveReflect() pass, without mutating element parameters in between.
+   */
   step(a: number): void;
   /** Reset internal state variables to zero */
   reset(): void;
+}
+
+const MIN_PORT_RESISTANCE = 0.001;
+
+export type PotTaper = 'linear' | 'audio' | 'reverse_audio';
+
+/** Map a logical knob position to its normalized resistive position. */
+export function applyPotTaper(position: number, taper: PotTaper): number {
+  const clamped = Math.min(1, Math.max(0, position));
+  switch (taper) {
+    case 'audio':
+      return clamped * clamped;
+    case 'reverse_audio':
+      return 1 - (1 - clamped) * (1 - clamped);
+    default:
+      return clamped;
+  }
 }
 
 /**
@@ -29,7 +49,7 @@ export class WdfResistor implements WdfElement {
   public portResistance: number;
 
   constructor(resistance: number) {
-    this.portResistance = Math.max(0.001, resistance);
+    this.portResistance = Math.max(MIN_PORT_RESISTANCE, resistance);
   }
 
   waveReflect(_a: number): number {
@@ -47,11 +67,13 @@ export class WdfVoltageSourceResistor implements WdfElement {
   private Vs: number;
 
   constructor(resistance: number) {
-    this.portResistance = Math.max(0.001, resistance);
+    this.portResistance = Math.max(MIN_PORT_RESISTANCE, resistance);
     this.Vs = 0;
   }
-  
-  setVoltage(Vs: number) { this.Vs = Vs; }
+
+  setVoltage(Vs: number) {
+    this.Vs = Vs;
+  }
 
   waveReflect(_a: number): number {
     return this.Vs;
@@ -59,25 +81,48 @@ export class WdfVoltageSourceResistor implements WdfElement {
 
   step(_a: number): void {}
 
-  reset(): void { this.Vs = 0; }
+  reset(): void {
+    this.Vs = 0;
+  }
 }
 
 /**
  * WDF Potentiometer
- * Variable resistance R_pot = maxResistance * position
+ * Variable resistance R_pot = maxResistance * taperFn(position)
+ *
+ * Taper types:
+ *   'linear'        — R = maxR × pos          (B-taper, typical tone pots)
+ *   'audio'         — R = maxR × pos²          (A-taper, typical volume pots)
+ *   'reverse_audio' — R = maxR × (1-(1-pos)²)  (C-taper, some treble pots)
  */
 export class WdfPotentiometer implements WdfElement {
   public portResistance: number;
   private maxResistance: number;
+  private position: number;
+  private taper: PotTaper;
 
-  constructor(maxResistance: number, initialPosition = 1.0) {
-    this.maxResistance = maxResistance;
-    this.portResistance = Math.max(0.001, maxResistance * Math.min(1.0, Math.max(0.0001, initialPosition)));
+  constructor(maxResistance: number, initialPosition = 1.0, taper: PotTaper = 'linear') {
+    this.maxResistance = Math.max(MIN_PORT_RESISTANCE, maxResistance);
+    this.position = Math.min(1, Math.max(0, initialPosition));
+    this.taper = taper;
+    this.portResistance = this.resistanceAtCurrentPosition();
   }
 
   setPosition(position: number): void {
-    const clampedPos = Math.min(1.0, Math.max(0.0001, position));
-    this.portResistance = Math.max(0.001, this.maxResistance * clampedPos);
+    this.position = Math.min(1, Math.max(0, position));
+    this.portResistance = this.resistanceAtCurrentPosition();
+  }
+
+  setTaper(taper: PotTaper): void {
+    this.taper = taper;
+    this.portResistance = this.resistanceAtCurrentPosition();
+  }
+
+  private resistanceAtCurrentPosition(): number {
+    return Math.max(
+      MIN_PORT_RESISTANCE,
+      this.maxResistance * applyPotTaper(this.position, this.taper),
+    );
   }
 
   waveReflect(_a: number): number {
@@ -87,6 +132,39 @@ export class WdfPotentiometer implements WdfElement {
   step(_a: number): void {}
 
   reset(): void {}
+}
+
+/**
+ * Transparent one-port wrapper that exposes the child's terminal voltage.
+ * The value is updated on the downward (incident-wave) pass.
+ */
+export class WdfVoltageProbe implements WdfElement {
+  public portResistance: number;
+  public voltage = 0;
+  private child: WdfElement;
+  private reflectedWave = 0;
+
+  constructor(child: WdfElement) {
+    this.child = child;
+    this.portResistance = child.portResistance;
+  }
+
+  waveReflect(a: number): number {
+    this.reflectedWave = this.child.waveReflect(a);
+    this.portResistance = this.child.portResistance;
+    return this.reflectedWave;
+  }
+
+  step(a: number): void {
+    this.voltage = (a + this.reflectedWave) * 0.5;
+    this.child.step(a);
+  }
+
+  reset(): void {
+    this.child.reset();
+    this.reflectedWave = 0;
+    this.voltage = 0;
+  }
 }
 
 /**
@@ -146,6 +224,10 @@ export class WdfInductor implements WdfElement {
 /**
  * WDF 3-Port Series Adaptor
  * Connects 2 child elements in series to a parent port.
+ *
+ * Optimizations over naive implementation:
+ *   - Cached reflected waves: waveReflect() stores b1/b2, step() reuses them.
+ *   - Dirty-flag gammas: port resistances are only recomputed when children change.
  */
 export class WdfSeriesAdaptor implements WdfElement {
   public portResistance: number;
@@ -153,6 +235,12 @@ export class WdfSeriesAdaptor implements WdfElement {
   private child2: WdfElement;
   private gamma1 = 0;
   private gamma2 = 0;
+  /** Cached child reflected waves from last waveReflect() call */
+  private _b1 = 0;
+  private _b2 = 0;
+  /** Last-seen child port resistances for dirty detection */
+  private _lastR1 = 0;
+  private _lastR2 = 0;
 
   constructor(child1: WdfElement, child2: WdfElement) {
     this.child1 = child1;
@@ -165,21 +253,32 @@ export class WdfSeriesAdaptor implements WdfElement {
     this.portResistance = this.child1.portResistance + this.child2.portResistance;
     this.gamma1 = this.child1.portResistance / this.portResistance;
     this.gamma2 = this.child2.portResistance / this.portResistance;
+    this._lastR1 = this.child1.portResistance;
+    this._lastR2 = this.child2.portResistance;
+  }
+
+  private ensureGammas(): void {
+    if (
+      this.child1.portResistance !== this._lastR1 ||
+      this.child2.portResistance !== this._lastR2
+    ) {
+      this.updateGammas();
+    }
   }
 
   waveReflect(_a: number): number {
-    this.updateGammas();
-    const b1 = this.child1.waveReflect(0);
-    const b2 = this.child2.waveReflect(0);
-    return -(b1 + b2);
+    this._b1 = this.child1.waveReflect(0);
+    this._b2 = this.child2.waveReflect(0);
+    // Child-first traversal propagates nested resistance changes to the root
+    // in this same upward pass.
+    this.ensureGammas();
+    return -(this._b1 + this._b2);
   }
 
   step(a: number): void {
-    this.updateGammas();
-    const b1 = this.child1.waveReflect(0);
-    const b2 = this.child2.waveReflect(0);
-    const a1 = b1 - this.gamma1 * (b1 + b2 + a);
-    const a2 = b2 - this.gamma2 * (b1 + b2 + a);
+    // Reuse cached b1, b2 from waveReflect() — no redundant child traversal
+    const a1 = this._b1 - this.gamma1 * (this._b1 + this._b2 + a);
+    const a2 = this._b2 - this.gamma2 * (this._b1 + this._b2 + a);
     this.child1.step(a1);
     this.child2.step(a2);
   }
@@ -187,19 +286,34 @@ export class WdfSeriesAdaptor implements WdfElement {
   reset(): void {
     this.child1.reset();
     this.child2.reset();
+    this._b1 = 0;
+    this._b2 = 0;
   }
 }
 
 /**
  * WDF 3-Port Parallel Adaptor
  * Connects 2 child elements in parallel to a parent port.
+ *
+ * Uses the adapted WDF parallel-junction scattering equations:
+ *   γi = Gi / (G1 + G2)
+ *   b0 = γ1·b1 + γ2·b2
+ *   ai = a0 + b0 − bi
  */
 export class WdfParallelAdaptor implements WdfElement {
   public portResistance: number;
   private child1: WdfElement;
   private child2: WdfElement;
-  private G1 = 0;
-  private G2 = 0;
+  private gamma1 = 0;
+  private gamma2 = 0;
+  /** Cached child reflected waves from last waveReflect() call */
+  private _b1 = 0;
+  private _b2 = 0;
+  /** Cached parent reflected wave */
+  private _b0 = 0;
+  /** Last-seen child port resistances for dirty detection */
+  private _lastR1 = 0;
+  private _lastR2 = 0;
 
   constructor(child1: WdfElement, child2: WdfElement) {
     this.child1 = child1;
@@ -209,32 +323,48 @@ export class WdfParallelAdaptor implements WdfElement {
   }
 
   private updateGammas(): void {
-    this.G1 = 1 / this.child1.portResistance;
-    this.G2 = 1 / this.child2.portResistance;
-    const G_total = this.G1 + this.G2;
-    this.portResistance = 1 / G_total;
+    const G1 = 1 / this.child1.portResistance;
+    const G2 = 1 / this.child2.portResistance;
+    const Gsum = G1 + G2;
+    this.portResistance = 1 / Gsum;
+    this.gamma1 = G1 / Gsum;
+    this.gamma2 = G2 / Gsum;
+    this._lastR1 = this.child1.portResistance;
+    this._lastR2 = this.child2.portResistance;
+  }
+
+  private ensureGammas(): void {
+    if (
+      this.child1.portResistance !== this._lastR1 ||
+      this.child2.portResistance !== this._lastR2
+    ) {
+      this.updateGammas();
+    }
   }
 
   waveReflect(_a: number): number {
-    this.updateGammas();
-    const b1 = this.child1.waveReflect(0);
-    const b2 = this.child2.waveReflect(0);
-    const G_total = this.G1 + this.G2 + 1 / this.portResistance;
-    return (2 * (this.G1 * b1 + this.G2 * b2) / G_total);
+    this._b1 = this.child1.waveReflect(0);
+    this._b2 = this.child2.waveReflect(0);
+    // Child-first traversal propagates nested resistance changes to the root
+    // in this same upward pass.
+    this.ensureGammas();
+    // Standard Fettweis parallel adaptor: b0 = gamma1 * b1 + gamma2 * b2
+    this._b0 = this.gamma1 * this._b1 + this.gamma2 * this._b2;
+    return this._b0;
   }
 
   step(a: number): void {
-    this.updateGammas();
-    const b1 = this.child1.waveReflect(0);
-    const b2 = this.child2.waveReflect(0);
-    const G_total = this.G1 + this.G2 + 1 / this.portResistance;
-    const v = (2 * (this.G1 * b1 + this.G2 * b2 + (1 / this.portResistance) * a)) / G_total;
-    this.child1.step(v - b1);
-    this.child2.step(v - b2);
+    // a1 = b0 + a - b1, a2 = b0 + a - b2
+    const v = this._b0 + a;
+    this.child1.step(v - this._b1);
+    this.child2.step(v - this._b2);
   }
 
   reset(): void {
     this.child1.reset();
     this.child2.reset();
+    this._b1 = 0;
+    this._b2 = 0;
+    this._b0 = 0;
   }
 }

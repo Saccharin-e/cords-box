@@ -14,7 +14,9 @@
       "@store/*": ["./src/store/*"],
       "@ui/*": ["./src/ui/*"],
       "@presets/*": ["./src/presets/*"],
-      "@lint/*": ["./src/lint/*"]
+      "@lint/*": ["./src/lint/*"],
+      "@tutorials/*": ["./src/tutorials/*"],
+      "@docs/*": ["./src/docs/*"]
     },
 
     /* Bundler mode */

@@ -14,6 +14,8 @@ export default defineConfig({
       '@ui': resolve(__dirname, 'src/ui'),
       '@presets': resolve(__dirname, 'src/presets'),
       '@lint': resolve(__dirname, 'src/lint'),
+      '@tutorials': resolve(__dirname, 'src/tutorials'),
+      '@docs': resolve(__dirname, 'src/docs'),
     },
   },
   test: {

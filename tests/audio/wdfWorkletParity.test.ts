@@ -1,154 +1,193 @@
 /**
- * WDF Worklet Parity Test
- *
- * Verifies that the inlined WDF primitives in processor.js produce
- * identical output to the TypeScript reference in wdfNodes.ts / wdfCircuitSolver.ts.
+ * Executes the actual inlined AudioWorklet WDF classes and compares them with
+ * the TypeScript reference implementation sample-for-sample.
  */
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
-  WdfResistor,
   WdfCapacitor,
-  WdfInductor,
-  WdfPotentiometer,
-  WdfSeriesAdaptor,
   WdfParallelAdaptor,
+  WdfPotentiometer,
+  WdfResistor,
+  WdfSeriesAdaptor,
 } from '../../src/audio/wdf/wdfNodes';
 import { WdfGuitarCircuitSolver } from '../../src/audio/wdf/wdfCircuitSolver';
+import { WdfToneStackSolver } from '../../src/audio/wdf/wdfToneStack';
+
+const SAMPLE_RATE = 48000;
+let worklet: typeof import('../../src/audio/processor.js');
+
+beforeAll(async () => {
+  class AudioWorkletProcessorStub {
+    port = {
+      onmessage: null as ((event: MessageEvent) => void) | null,
+      postMessage: vi.fn(),
+    };
+  }
+
+  vi.stubGlobal('AudioWorkletProcessor', AudioWorkletProcessorStub);
+  vi.stubGlobal('registerProcessor', vi.fn());
+  vi.stubGlobal('sampleRate', SAMPLE_RATE);
+  vi.stubGlobal('currentTime', 0);
+  worklet = await import('../../src/audio/processor.js');
+});
+
+afterAll(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('WDF Worklet Parity', () => {
-  const SAMPLE_RATE = 48000;
+  it('keeps primitive scattering, tapers, caching, and dirty updates bit-identical', () => {
+    const tsPot = new WdfPotentiometer(500000, 0.65, 'audio');
+    const jsPot = new worklet.WdfPotentiometer(500000, 0.65, 'audio');
+    const tsCap = new WdfCapacitor(47e-9, SAMPLE_RATE);
+    const jsCap = new worklet.WdfCapacitor(47e-9, SAMPLE_RATE);
+    const tsBranch = new WdfSeriesAdaptor(tsPot, tsCap);
+    const jsBranch = new worklet.WdfSeriesAdaptor(jsPot, jsCap);
+    const tsRoot = new WdfParallelAdaptor(tsBranch, new WdfResistor(330000));
+    const jsRoot = new worklet.WdfParallelAdaptor(jsBranch, new worklet.WdfResistor(330000));
 
-  it('should produce identical output between TS reference solver and equivalent JS topology', () => {
-    // Build the TypeScript reference circuit
-    const solver = new WdfGuitarCircuitSolver(SAMPLE_RATE);
-    solver.buildCircuit({
-      pickupInductanceH: 2.4,
-      pickupResistanceOhms: 6500,
-      volumePotMaxOhms: 250000,
-      volumePotPos: 0.7,
-      tonePotMaxOhms: 250000,
-      tonePotPos: 0.5,
-      toneCapFarads: 47e-9,
-      cableCapacitanceFarads: 500e-12,
-    });
-
-    // Build an equivalent circuit using raw WDF primitives (mirrors the worklet's WdfCircuit)
-    const pickupR = new WdfResistor(6500);
-    const pickupL = new WdfInductor(2.4, SAMPLE_RATE);
-    const pickupBranch = new WdfSeriesAdaptor(pickupR, pickupL);
-
-    const tonePot = new WdfPotentiometer(250000, 0.5);
-    const toneCap = new WdfCapacitor(47e-9, SAMPLE_RATE);
-    const toneBranch = new WdfSeriesAdaptor(tonePot, toneCap);
-
-    const volumePot = new WdfPotentiometer(250000, 0.7);
-    const cableCap = new WdfCapacitor(500e-12, SAMPLE_RATE);
-    const loadBranch = new WdfParallelAdaptor(volumePot, cableCap);
-
-    const toneAndLoad = new WdfParallelAdaptor(toneBranch, loadBranch);
-    const root = new WdfParallelAdaptor(pickupBranch, toneAndLoad);
-
-    // Generate a test input signal (impulse + noise burst)
-    const N = 256;
-    const input = new Float32Array(N);
-    input[0] = 1.0; // impulse
-    for (let i = 1; i < 32; i++) {
-      input[i] = Math.sin(i * 0.3) * 0.5; // short burst
-    }
-
-    // Process through both implementations
-    const refOutput = new Float32Array(N);
-    const testOutput = new Float32Array(N);
-
-    for (let i = 0; i < N; i++) {
-      refOutput[i] = solver.processSample(input[i]);
-
-      // Manual process matching WdfCircuit.processSample
-      const b = root.waveReflect(input[i]);
-      root.step(input[i]);
-      testOutput[i] = (input[i] + b) * 0.5;
-    }
-
-    // Outputs should be sample-identical (same algorithm, same params)
-    for (let i = 0; i < N; i++) {
-      expect(testOutput[i]).toBeCloseTo(refOutput[i], 10);
+    for (let i = 0; i < 256; i++) {
+      if (i === 73) {
+        tsPot.setPosition(0.2);
+        jsPot.setPosition(0.2);
+      }
+      if (i === 141) {
+        tsPot.setTaper('reverse_audio');
+        jsPot.setTaper('reverse_audio');
+      }
+      const incident = Math.sin(i * 0.137) * 0.7;
+      expect(jsRoot.waveReflect(incident)).toBe(tsRoot.waveReflect(incident));
+      expect(jsRoot.portResistance).toBe(tsRoot.portResistance);
+      jsRoot.step(incident);
+      tsRoot.step(incident);
     }
   });
 
-  it('should produce non-trivial filtering (output differs from input)', () => {
-    const solver = new WdfGuitarCircuitSolver(SAMPLE_RATE);
-    solver.buildCircuit({
+  it('matches the production guitar circuit including source, winding cap, divider, and bleed', () => {
+    const reference = new WdfGuitarCircuitSolver(SAMPLE_RATE);
+    reference.buildCircuit({
       pickupInductanceH: 2.4,
       pickupResistanceOhms: 6500,
+      pickupWindingCapFarads: 120e-12,
       volumePotMaxOhms: 250000,
-      volumePotPos: 0.5,
+      volumePotPos: 0.37,
+      volumePotTaper: 'audio',
       tonePotMaxOhms: 250000,
-      tonePotPos: 0.3, // tone rolled off
+      tonePotPos: 0.61,
+      tonePotTaper: 'linear',
       toneCapFarads: 47e-9,
+      trebleBleedCapFarads: 1e-9,
       cableCapacitanceFarads: 500e-12,
+      ampInputImpedanceOhms: 1_000_000,
     });
 
-    // Process several samples — WDF circuits are stateful (caps/inductors need
-    // multiple samples to build up energy through their state variables)
-    const N = 64;
-    let totalEnergy = 0;
-    for (let i = 0; i < N; i++) {
-      const input = i === 0 ? 1.0 : 0.0; // impulse
-      const out = solver.processSample(input);
-      totalEnergy += out * out;
-    }
+    const runtime = new worklet.WdfCircuit(SAMPLE_RATE);
+    runtime.updateParams({
+      pickups: [
+        {
+          inductanceH: 2.4,
+          resistanceR: 6500,
+          windingCapFarads: 120e-12,
+          isOutofPhase: false,
+        },
+      ],
+      isSeries: false,
+      volPotMaxR: 250000,
+      volumePos: 0.37,
+      volumePotTaper: 'audio',
+      tonePotMaxR: 250000,
+      tonePos: 0.61,
+      tonePotTaper: 'linear',
+      toneCapFarads: 47e-9,
+      trebleBleedCapFarads: 1e-9,
+      cableCapFarads: 500e-12,
+      ampInputImpedanceOhms: 1_000_000,
+    });
 
-    // Circuit should have passed some energy through (volume pot at 50%)
-    expect(totalEnergy).toBeGreaterThan(0.0);
-    // But not all of it (volume attenuation + filter rolloff)
-    expect(totalEnergy).toBeLessThan(1.0);
+    for (let i = 0; i < 512; i++) {
+      const input = (i === 0 ? 0.8 : 0) + Math.sin(i * 0.19) * 0.2;
+      expect(runtime.processSample(input)).toBe(reference.processSample(input));
+    }
   });
 
-  it('should respond to pot position changes', () => {
-    // Full volume — process impulse response
-    const solverFull = new WdfGuitarCircuitSolver(SAMPLE_RATE);
-    solverFull.buildCircuit({
-      pickupInductanceH: 2.4,
-      pickupResistanceOhms: 6500,
-      volumePotMaxOhms: 250000,
-      volumePotPos: 1.0,
-      tonePotMaxOhms: 250000,
-      tonePotPos: 1.0,
-      toneCapFarads: 47e-9,
-      cableCapacitanceFarads: 500e-12,
+  it('matches the production tone stack for every model and control update', () => {
+    for (const model of ['fender', 'marshall', 'mesa', 'vox'] as const) {
+      const reference = new WdfToneStackSolver(SAMPLE_RATE);
+      const runtime = new worklet.WdfToneStack(SAMPLE_RATE);
+      reference.build(model);
+      runtime.build(model);
+      reference.setControls(0.72, 0.31, 0.84);
+      runtime.setControls(0.72, 0.31, 0.84);
+
+      for (let i = 0; i < 256; i++) {
+        const input = Math.sin(i * 0.23) * 0.4;
+        expect(runtime.processSample(input)).toBe(reference.processSample(input));
+      }
+    }
+  });
+
+  it('applies pickup phase once inside the circuit source', () => {
+    const inPhase = new worklet.WdfCircuit(SAMPLE_RATE);
+    const outOfPhase = new worklet.WdfCircuit(SAMPLE_RATE);
+    const basePickup = {
+      inductanceH: 2.4,
+      resistanceR: 6500,
+      windingCapFarads: 120e-12,
+    };
+    inPhase.updateParams({ pickups: [{ ...basePickup, isOutofPhase: false }] });
+    outOfPhase.updateParams({ pickups: [{ ...basePickup, isOutofPhase: true }] });
+
+    for (let i = 0; i < 256; i++) {
+      const input = Math.sin(i * 0.11) * 0.5;
+      const phaseSum = outOfPhase.processSample(input) + inPhase.processSample(input);
+      expect(Math.abs(phaseSum)).toBeLessThan(1e-12);
+    }
+  });
+
+  it('cancels identical parallel pickups when one is out of phase', () => {
+    const runtime = new worklet.WdfCircuit(SAMPLE_RATE);
+    const basePickup = {
+      inductanceH: 2.4,
+      resistanceR: 6500,
+      windingCapFarads: 120e-12,
+    };
+    runtime.updateParams({
+      pickups: [
+        { ...basePickup, isOutofPhase: false },
+        { ...basePickup, isOutofPhase: true },
+      ],
+      isSeries: false,
     });
 
-    let fullVolEnergy = 0;
-    for (let i = 0; i < 128; i++) {
-      const input = i === 0 ? 1.0 : 0.0;
-      const out = solverFull.processSample(input);
-      fullVolEnergy += out * out;
+    const inputs = new Float64Array(2);
+    for (let i = 0; i < 256; i++) {
+      inputs[0] = Math.sin(i * 0.17) * 0.4;
+      inputs[1] = inputs[0];
+      expect(Math.abs(runtime.processSample(inputs))).toBeLessThan(1e-12);
+    }
+  });
+
+  it('sums series pickups without changing global polarity', () => {
+    const single = new worklet.WdfCircuit(SAMPLE_RATE);
+    const series = new worklet.WdfCircuit(SAMPLE_RATE);
+    const pickup = {
+      inductanceH: 2.4,
+      resistanceR: 6500,
+      windingCapFarads: 120e-12,
+      isOutofPhase: false,
+    };
+    single.updateParams({ pickups: [pickup], isSeries: false });
+    series.updateParams({ pickups: [pickup, pickup], isSeries: true });
+
+    let singleOutput = 0;
+    let seriesOutput = 0;
+    const seriesInputs = new Float64Array([0.25, 0.25]);
+    for (let i = 0; i < 1024; i++) {
+      singleOutput = single.processSample(0.25);
+      seriesOutput = series.processSample(seriesInputs);
     }
 
-    // Low volume — fresh solver instance
-    const solverLow = new WdfGuitarCircuitSolver(SAMPLE_RATE);
-    solverLow.buildCircuit({
-      pickupInductanceH: 2.4,
-      pickupResistanceOhms: 6500,
-      volumePotMaxOhms: 250000,
-      volumePotPos: 0.1, // nearly off
-      tonePotMaxOhms: 250000,
-      tonePotPos: 1.0,
-      toneCapFarads: 47e-9,
-      cableCapacitanceFarads: 500e-12,
-    });
-
-    let lowVolEnergy = 0;
-    for (let i = 0; i < 128; i++) {
-      const input = i === 0 ? 1.0 : 0.0;
-      const out = solverLow.processSample(input);
-      lowVolEnergy += out * out;
-    }
-
-    // Both should pass some energy
-    expect(fullVolEnergy).toBeGreaterThan(0);
-    expect(lowVolEnergy).toBeGreaterThan(0);
-    // Low volume should produce less total energy
-    expect(lowVolEnergy).toBeLessThan(fullVolEnergy);
+    expect(Math.sign(seriesOutput)).toBe(Math.sign(singleOutput));
+    expect(Math.abs(seriesOutput)).toBeGreaterThan(Math.abs(singleOutput));
   });
 });

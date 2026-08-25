@@ -7,12 +7,16 @@
 
 import {
   type WdfElement,
-  WdfResistor,
+  type PotTaper,
+  applyPotTaper,
+  WdfVoltageSourceResistor,
   WdfCapacitor,
   WdfInductor,
   WdfPotentiometer,
   WdfSeriesAdaptor,
   WdfParallelAdaptor,
+  WdfResistor,
+  WdfVoltageProbe,
 } from './wdfNodes';
 import type { Graph } from '@graph/Graph';
 import type { SolverResult } from '@graph/solver';
@@ -20,19 +24,27 @@ import type { SolverResult } from '@graph/solver';
 export interface WdfCircuitParams {
   pickupInductanceH: number;
   pickupResistanceOhms: number;
+  pickupWindingCapFarads?: number;
   volumePotMaxOhms: number;
   volumePotPos: number;
+  volumePotTaper?: PotTaper;
   tonePotMaxOhms: number;
   tonePotPos: number;
+  tonePotTaper?: PotTaper;
   toneCapFarads: number;
   cableCapacitanceFarads: number;
+  trebleBleedCapFarads?: number;
+  ampInputImpedanceOhms?: number;
 }
 
 export class WdfGuitarCircuitSolver {
   private rootAdaptor: WdfElement | null = null;
   private volumePot: WdfPotentiometer | null = null;
+  private volumeTopPot: WdfPotentiometer | null = null;
   private tonePot: WdfPotentiometer | null = null;
   private toneCap: WdfCapacitor | null = null;
+  private pickupSource: WdfVoltageSourceResistor | null = null;
+  private outputProbe: WdfVoltageProbe | null = null;
   private sampleRate: number;
 
   constructor(sampleRate = 48000) {
@@ -43,20 +55,51 @@ export class WdfGuitarCircuitSolver {
    * Build WDF tree from circuit parameters
    */
   buildCircuit(params: WdfCircuitParams): void {
-    const pickupR = new WdfResistor(params.pickupResistanceOhms);
+    this.pickupSource = new WdfVoltageSourceResistor(params.pickupResistanceOhms);
     const pickupL = new WdfInductor(params.pickupInductanceH, this.sampleRate);
-    const pickupBranch = new WdfSeriesAdaptor(pickupR, pickupL);
+    const pickupRL = new WdfSeriesAdaptor(this.pickupSource, pickupL);
 
-    this.tonePot = new WdfPotentiometer(params.tonePotMaxOhms, params.tonePotPos);
+    // Pickup coil self-resonance via distributed winding capacitance (80-200pF)
+    let pickupBranch: WdfElement = pickupRL;
+    const pickupWindingCapFarads = params.pickupWindingCapFarads ?? 120e-12;
+    if (pickupWindingCapFarads > 0) {
+      const windingCap = new WdfCapacitor(pickupWindingCapFarads, this.sampleRate);
+      pickupBranch = new WdfParallelAdaptor(pickupRL, windingCap);
+    }
+
+    this.tonePot = new WdfPotentiometer(
+      params.tonePotMaxOhms,
+      params.tonePotPos,
+      params.tonePotTaper ?? 'linear',
+    );
     this.toneCap = new WdfCapacitor(params.toneCapFarads, this.sampleRate);
     const toneBranch = new WdfSeriesAdaptor(this.tonePot, this.toneCap);
 
-    this.volumePot = new WdfPotentiometer(params.volumePotMaxOhms, params.volumePotPos);
-    const cableCap = new WdfCapacitor(params.cableCapacitanceFarads, this.sampleRate);
-    const loadBranch = new WdfParallelAdaptor(this.volumePot, cableCap);
+    // A real three-lug volume pot is a divider. The tapered position is the
+    // wiper-to-ground fraction; the complementary section runs hot-to-wiper.
+    const volumeTaper = params.volumePotTaper ?? 'audio';
+    const wiperFraction = applyPotTaper(params.volumePotPos, volumeTaper);
+    this.volumeTopPot = new WdfPotentiometer(params.volumePotMaxOhms, 1 - wiperFraction, 'linear');
+    this.volumePot = new WdfPotentiometer(params.volumePotMaxOhms, wiperFraction, 'linear');
 
-    const toneAndLoad = new WdfParallelAdaptor(toneBranch, loadBranch);
-    this.rootAdaptor = new WdfParallelAdaptor(pickupBranch, toneAndLoad);
+    // A treble bleed bridges the hot and wiper lugs, so it is parallel with
+    // the upper section of the divider rather than with the cable load.
+    let upperVolumeBranch: WdfElement = this.volumeTopPot;
+    const trebleBleedCapFarads = params.trebleBleedCapFarads ?? 0;
+    if (trebleBleedCapFarads > 0) {
+      const tbCap = new WdfCapacitor(trebleBleedCapFarads, this.sampleRate);
+      upperVolumeBranch = new WdfParallelAdaptor(this.volumeTopPot, tbCap);
+    }
+
+    const cableCap = new WdfCapacitor(params.cableCapacitanceFarads, this.sampleRate);
+    const ampInput = new WdfResistor(params.ampInputImpedanceOhms ?? 1_000_000);
+    const cableAndAmp = new WdfParallelAdaptor(cableCap, ampInput);
+    const lowerVolumeBranch = new WdfParallelAdaptor(this.volumePot, cableAndAmp);
+    this.outputProbe = new WdfVoltageProbe(lowerVolumeBranch);
+    const volumeDivider = new WdfSeriesAdaptor(upperVolumeBranch, this.outputProbe);
+
+    const pickupAndTone = new WdfParallelAdaptor(pickupBranch, toneBranch);
+    this.rootAdaptor = new WdfParallelAdaptor(pickupAndTone, volumeDivider);
   }
 
   /**
@@ -65,47 +108,60 @@ export class WdfGuitarCircuitSolver {
   buildFromGraph(graph: Graph, solverResult: SolverResult | null): void {
     const activeNodes = solverResult?.activeNodes;
     const activeComponents = activeNodes
-      ? graph.getComponents().filter((c) => graph.getComponentNodes(c.id).some((n) => activeNodes.has(n.id)))
+      ? graph
+          .getComponents()
+          .filter((c) => graph.getComponentNodes(c.id).some((n) => activeNodes.has(n.id)))
       : graph.getComponents();
 
     let volumePos = 1.0;
     let tonePos = 1.0;
     let volumeMaxOhms = 250000;
     let toneMaxOhms = 250000;
+    let volumeTaper: PotTaper = 'audio';
+    let toneTaper: PotTaper = 'linear';
     let toneCapFarads = 47e-9; // Default 0.047 uF
     let trebleBleedCapFarads = 0;
 
     for (const comp of activeComponents) {
-      if (comp.type === 'pot_volume' || comp.type === 'pot_pushpull' || comp.type === 'pot_concentric') {
-        const val = comp.value as { position?: number; maxOhms?: number } | undefined;
+      if (
+        comp.type === 'pot_volume' ||
+        comp.type === 'pot_pushpull' ||
+        comp.type === 'pot_concentric'
+      ) {
+        const val = comp.value as
+          { position?: number; resistance_kohms?: number; taper?: PotTaper } | undefined;
         volumePos = val?.position ?? volumePos;
-        volumeMaxOhms = val?.maxOhms ?? volumeMaxOhms;
+        volumeMaxOhms = (val?.resistance_kohms ?? volumeMaxOhms / 1000) * 1000;
+        volumeTaper = val?.taper ?? volumeTaper;
       } else if (comp.type === 'pot_tone') {
-        const val = comp.value as { position?: number; maxOhms?: number } | undefined;
+        const val = comp.value as
+          { position?: number; resistance_kohms?: number; taper?: PotTaper } | undefined;
         tonePos = val?.position ?? tonePos;
-        toneMaxOhms = val?.maxOhms ?? toneMaxOhms;
-      } else if (comp.type === 'capacitor' || comp.type === 'treble_bleed') {
-        const val = comp.value as { farads?: number } | number | undefined;
-        const capValue = typeof val === 'number' ? val : (val?.farads ?? 47e-9);
-        if (capValue < 5e-9) {
-          // Small capacitor (<5nF e.g. 1nF) -> Treble Bleed Network
-          trebleBleedCapFarads = capValue;
-        } else {
-          // Main tone capacitor
-          toneCapFarads = capValue;
-        }
+        toneMaxOhms = (val?.resistance_kohms ?? toneMaxOhms / 1000) * 1000;
+        toneTaper = val?.taper ?? toneTaper;
+      } else if (comp.type === 'capacitor') {
+        const val = comp.value as { capacitance_pf?: number } | undefined;
+        toneCapFarads = (val?.capacitance_pf ?? 47_000) * 1e-12;
+      } else if (comp.type === 'treble_bleed') {
+        const val = comp.value as { capacitance_pf?: number } | undefined;
+        trebleBleedCapFarads = (val?.capacitance_pf ?? 1_000) * 1e-12;
       }
     }
 
     this.buildCircuit({
       pickupInductanceH: 3.2,
       pickupResistanceOhms: 6500,
+      pickupWindingCapFarads: 120e-12,
       volumePotMaxOhms: volumeMaxOhms,
       volumePotPos: volumePos,
+      volumePotTaper: volumeTaper,
       tonePotMaxOhms: toneMaxOhms,
       tonePotPos: tonePos,
+      tonePotTaper: toneTaper,
       toneCapFarads: toneCapFarads,
-      cableCapacitanceFarads: 500e-12 + trebleBleedCapFarads, // High-frequency bypass compensation
+      cableCapacitanceFarads: 500e-12,
+      trebleBleedCapFarads: trebleBleedCapFarads,
+      ampInputImpedanceOhms: 1_000_000,
     });
   }
 
@@ -113,14 +169,13 @@ export class WdfGuitarCircuitSolver {
    * Process a single audio sample v_in through WDF circuit tree
    */
   processSample(vin: number): number {
-    if (!this.rootAdaptor) return vin;
+    if (!this.rootAdaptor || !this.pickupSource || !this.outputProbe) return vin;
 
-    // Convert incident voltage v_in to incident wave a
-    const b = this.rootAdaptor.waveReflect(vin);
-    this.rootAdaptor.step(vin);
+    this.pickupSource.setVoltage(vin);
+    const b = this.rootAdaptor.waveReflect(0);
+    this.rootAdaptor.step(b);
 
-    // Compute node voltage v_out = (a + b) / 2
-    return (vin + b) * 0.5;
+    return this.outputProbe.voltage;
   }
 
   /**
