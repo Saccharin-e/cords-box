@@ -58,6 +58,14 @@ export class WdfSeriesAdaptor implements WorkletWdfElement {
   reset(): void;
 }
 
+export class WdfSeriesNAdaptor implements WorkletWdfElement {
+  constructor(children: WorkletWdfElement[]);
+  portResistance: number;
+  waveReflect(a: number): number;
+  step(a: number): void;
+  reset(): void;
+}
+
 export class WdfParallelAdaptor implements WorkletWdfElement {
   constructor(child1: WorkletWdfElement, child2: WorkletWdfElement);
   portResistance: number;
@@ -80,6 +88,7 @@ export interface WorkletPickupParams {
   resistanceR: number;
   windingCapFarads?: number;
   delayMs?: number;
+  positionFraction?: number;
   blendGain?: number;
   isOutofPhase?: boolean;
 }

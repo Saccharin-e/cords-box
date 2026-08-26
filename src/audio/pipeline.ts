@@ -14,6 +14,7 @@ import { SampleBank } from './sampleBank';
 import { WdfGuitarCircuitSolver } from './wdf/wdfCircuitSolver';
 import type { SolverResult } from '@graph/solver';
 import type { Graph } from '@graph/Graph';
+import type { Component, ComponentType, PotTaper } from '@graph/types';
 import { useCircuitStore } from '@store/circuitStore';
 import dspWasmUrl from './wasm-pkg/dsp_bg.wasm?url';
 
@@ -65,6 +66,47 @@ export interface ActivePickupState {
   isOutofPhase: boolean;
   blendGain: number; // 0.0 to 1.0 (controlled by blender pots)
   delayTimeMs: number; // Comb filter delay (pickup position along string)
+}
+
+export type PickupComponentType = Extract<
+  ComponentType,
+  'pickup_single_coil' | 'pickup_humbucker' | 'pickup_p90'
+>;
+
+export interface PickupWdfProfile {
+  inductanceH: number;
+  resistanceOhms: number;
+  windingCapFarads: number;
+}
+
+/**
+ * Nominal unloaded electrical models for the pickup families supported by the
+ * graph schema. These values belong to the component type, never its display
+ * label or id, so renaming a pickup cannot change its sound.
+ */
+export const PICKUP_WDF_PROFILES: Readonly<Record<PickupComponentType, PickupWdfProfile>> = {
+  pickup_single_coil: {
+    inductanceH: 2.4,
+    resistanceOhms: 6500,
+    windingCapFarads: 100e-12,
+  },
+  pickup_humbucker: {
+    inductanceH: 4.2,
+    resistanceOhms: 8500,
+    windingCapFarads: 160e-12,
+  },
+  pickup_p90: {
+    inductanceH: 3.2,
+    resistanceOhms: 7200,
+    windingCapFarads: 130e-12,
+  },
+};
+
+export function getPickupWdfProfile(type: string): PickupWdfProfile {
+  if (type === 'pickup_humbucker' || type === 'pickup_p90') {
+    return PICKUP_WDF_PROFILES[type];
+  }
+  return PICKUP_WDF_PROFILES.pickup_single_coil;
 }
 
 export interface CircuitTopologyState {
@@ -175,7 +217,8 @@ export const RIG_PRESETS: Record<string, RigPreset> = {
   gilmour_lead: {
     id: 'gilmour_lead',
     name: 'David Gilmour Lead Rig (Big Muff + 480ms Echo + Hiwatt)',
-    description: 'Electro-Harmonix Big Muff Pi fuzz saturation, singing sustain, 4x12 stack cab, liquid chorus, and 480ms tape echo.',
+    description:
+      'Electro-Harmonix Big Muff Pi fuzz saturation, singing sustain, 4x12 stack cab, liquid chorus, and 480ms tape echo.',
     state: {
       compressorEnabled: true,
       compressorSustain: 0.65,
@@ -217,7 +260,8 @@ export const RIG_PRESETS: Record<string, RigPreset> = {
   classic_rock_crunch: {
     id: 'classic_rock_crunch',
     name: 'Marshall JCM800 Crunch (Plexi Drive)',
-    description: 'Classic British tube crunch with 4x12 stack cab and subtle room reverb for AC/DC and Guns N Roses.',
+    description:
+      'Classic British tube crunch with 4x12 stack cab and subtle room reverb for AC/DC and Guns N Roses.',
     state: {
       compressorEnabled: false,
       overdriveEnabled: true,
@@ -242,7 +286,8 @@ export const RIG_PRESETS: Record<string, RigPreset> = {
   clean_chime: {
     id: 'clean_chime',
     name: 'Fender Twin Reverb Clean (Lush Chorus & Space)',
-    description: 'Sparkling clean Blackface tube amp with 2x12 Tweed cab, optical compressor, and stereo chorus.',
+    description:
+      'Sparkling clean Blackface tube amp with 2x12 Tweed cab, optical compressor, and stereo chorus.',
     state: {
       compressorEnabled: true,
       compressorSustain: 0.45,
@@ -271,7 +316,8 @@ export const RIG_PRESETS: Record<string, RigPreset> = {
   metal_high_gain: {
     id: 'metal_high_gain',
     name: 'High Gain Modern Lead (Tight Rectifier)',
-    description: 'Cascaded high gain tube preamp with scooped mids and aggressive 4x12 V30 cabinet punch.',
+    description:
+      'Cascaded high gain tube preamp with scooped mids and aggressive 4x12 V30 cabinet punch.',
     state: {
       compressorEnabled: true,
       compressorSustain: 0.5,
@@ -298,7 +344,8 @@ export const RIG_PRESETS: Record<string, RigPreset> = {
   bypass_clean: {
     id: 'bypass_clean',
     name: 'Direct Input (Clean Studio Bypass)',
-    description: 'Pure clean direct input for testing uncolored passive pickup circuits and wiring harnesses.',
+    description:
+      'Pure clean direct input for testing uncolored passive pickup circuits and wiring harnesses.',
     state: {
       compressorEnabled: false,
       overdriveEnabled: false,
@@ -362,6 +409,294 @@ const AMP_TONE_STACK_MODEL: Record<AmpModelType, string> = {
   high_gain: 'mesa',
   vox_chime: 'vox',
 };
+
+const OUTPUT_LEVEL_TRIM = 0.35;
+export const TRUE_CEILING_DB = -1;
+export const TRUE_CEILING_LINEAR = 10 ** (TRUE_CEILING_DB / 20);
+const PARAM_SMOOTHING_SECONDS = 0.018;
+
+function isPickupType(type: ComponentType): type is PickupComponentType {
+  return type === 'pickup_single_coil' || type === 'pickup_humbucker' || type === 'pickup_p90';
+}
+
+function getPickupSignalNodes(graph: Graph, pickupId: string) {
+  return graph
+    .getComponentNodes(pickupId)
+    .filter(
+      (node) =>
+        (node.role === 'hot' || node.role === 'ground') &&
+        !node.id.toLowerCase().includes('shield'),
+    );
+}
+
+function hasExternalReference(graph: Graph, nodeIds: Set<string>): boolean {
+  for (const nodeId of nodeIds) {
+    const node = graph.getNode(nodeId);
+    if (!node) continue;
+    const component = graph.getComponent(node.componentId);
+    if (component && isPickupType(component.type)) continue;
+    if (
+      node.type === 'jack_terminal' ||
+      node.type === 'ground' ||
+      node.role === 'tip' ||
+      node.role === 'ground' ||
+      component?.type === 'ground_terminal'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export interface PickupSelectionInference {
+  activePickupIds: string[];
+  isSeries: boolean;
+}
+
+/**
+ * Infer selected pickups from the solved output paths, then expand across
+ * isolated pickup-to-pickup links. The expansion is important for series
+ * wiring: a graph path solver cannot traverse through an ideal voltage source,
+ * so only one end of a series pair reaches the output path directly.
+ */
+export function inferPickupSelection(
+  graph: Graph,
+  solverResult: SolverResult,
+): PickupSelectionInference {
+  const pickupComponents = graph
+    .getComponents()
+    .filter((component) => isPickupType(component.type));
+  const directIds = new Set(
+    pickupComponents
+      .filter((component) =>
+        getPickupSignalNodes(graph, component.id).some((node) =>
+          solverResult.activeNodes.has(node.id),
+        ),
+      )
+      .map((component) => component.id),
+  );
+
+  const seriesLinks = new Map<string, Set<string>>();
+  const addSeriesLink = (left: string, right: string) => {
+    if (!seriesLinks.has(left)) seriesLinks.set(left, new Set());
+    if (!seriesLinks.has(right)) seriesLinks.set(right, new Set());
+    seriesLinks.get(left)!.add(right);
+    seriesLinks.get(right)!.add(left);
+  };
+
+  for (let leftIndex = 0; leftIndex < pickupComponents.length; leftIndex += 1) {
+    const left = pickupComponents[leftIndex];
+    const leftTerminals = getPickupSignalNodes(graph, left.id);
+    for (let rightIndex = leftIndex + 1; rightIndex < pickupComponents.length; rightIndex += 1) {
+      const right = pickupComponents[rightIndex];
+      const rightTerminalIds = new Set(
+        getPickupSignalNodes(graph, right.id).map((node) => node.id),
+      );
+      const linked = leftTerminals.some((terminal) => {
+        const connected = graph.getConnectedComponent(terminal.id);
+        if (hasExternalReference(graph, connected)) return false;
+        for (const nodeId of connected) {
+          if (rightTerminalIds.has(nodeId)) return true;
+        }
+        return false;
+      });
+      if (linked) addSeriesLink(left.id, right.id);
+    }
+  }
+
+  const selectedIds = new Set(directIds);
+  const pending = [...directIds];
+  while (pending.length > 0) {
+    const pickupId = pending.pop()!;
+    for (const linkedId of seriesLinks.get(pickupId) ?? []) {
+      if (selectedIds.has(linkedId)) continue;
+      selectedIds.add(linkedId);
+      pending.push(linkedId);
+    }
+  }
+
+  const activePickupIds = pickupComponents
+    .filter((component) => selectedIds.has(component.id))
+    .map((component) => component.id);
+  const isSeries = activePickupIds.some((pickupId) =>
+    [...(seriesLinks.get(pickupId) ?? [])].some((linkedId) => selectedIds.has(linkedId)),
+  );
+
+  return { activePickupIds, isSeries };
+}
+
+function getPhaseSwitchNodes(graph: Graph, phaseSwitch: Component) {
+  const nodes = graph.getComponentNodes(phaseSwitch.id);
+  return phaseSwitch.type === 'pot_pushpull'
+    ? nodes.filter((node) => node.id.toLowerCase().includes('_sw'))
+    : nodes;
+}
+
+/**
+ * A pulled DPDT only inverts the pickup whose two coil leads are wired to the
+ * two switch commons. This avoids the old "always invert the neck pickup"
+ * heuristic and does not mistake a one-lead coil split for phase reversal.
+ */
+export function inferOutOfPhasePickupIds(
+  graph: Graph,
+  activePickupIds: readonly string[],
+): Set<string> {
+  const inverted = new Set<string>();
+  const activeIdSet = new Set(activePickupIds);
+  const phaseSwitches = graph
+    .getComponents()
+    .filter(
+      (component) =>
+        (component.type === 'switch_dpdt' || component.type === 'pot_pushpull') &&
+        graph.getSwitchState(component.id)?.currentPosition === 2,
+    );
+
+  for (const phaseSwitch of phaseSwitches) {
+    const commonNodeIds = new Set(
+      getPhaseSwitchNodes(graph, phaseSwitch)
+        .filter((node) => node.role === 'common')
+        .map((node) => node.id),
+    );
+    if (commonNodeIds.size < 2) continue;
+
+    for (const pickupId of activeIdSet) {
+      const connectedCommons = new Set<string>();
+      for (const pickupNode of getPickupSignalNodes(graph, pickupId)) {
+        for (const neighborId of graph.getNeighbors(pickupNode.id)) {
+          if (commonNodeIds.has(neighborId)) connectedCommons.add(neighborId);
+        }
+      }
+      if (connectedCommons.size < 2) continue;
+      if (inverted.has(pickupId)) inverted.delete(pickupId);
+      else inverted.add(pickupId);
+    }
+  }
+
+  return inverted;
+}
+
+function componentSignalScore(
+  graph: Graph,
+  solverResult: SolverResult,
+  component: Component,
+): number {
+  let score = 0;
+  for (const node of graph.getComponentNodes(component.id)) {
+    if (solverResult.activeNodes.has(node.id)) score += 4;
+    for (const neighborId of graph.getNeighbors(node.id)) {
+      if (solverResult.activeNodes.has(neighborId)) score += 1;
+    }
+  }
+  return score;
+}
+
+function componentTouchesComponent(graph: Graph, leftId: string, rightId: string): number {
+  let connections = 0;
+  for (const edge of graph.getEdges()) {
+    const sourceComponent = graph.getNode(edge.source)?.componentId;
+    const targetComponent = graph.getNode(edge.target)?.componentId;
+    if (
+      (sourceComponent === leftId && targetComponent === rightId) ||
+      (sourceComponent === rightId && targetComponent === leftId)
+    ) {
+      connections += 1;
+    }
+  }
+  return connections;
+}
+
+export interface ActiveHarnessControls {
+  volumePot?: Component;
+  tonePot?: Component;
+  toneCap?: Component;
+  trebleBleed?: Component;
+}
+
+/** Select controls electrically attached to the solved signal path. */
+export function findActiveHarnessControls(
+  graph: Graph,
+  solverResult: SolverResult,
+): ActiveHarnessControls {
+  const components = graph.getComponents();
+  const ranked = (candidates: readonly Component[]) =>
+    [...candidates].sort(
+      (left, right) =>
+        componentSignalScore(graph, solverResult, right) -
+        componentSignalScore(graph, solverResult, left),
+    );
+
+  const volumeCandidates = ranked(
+    components.filter(
+      (component) =>
+        component.type === 'pot_volume' ||
+        component.type === 'pot_pushpull' ||
+        component.type === 'pot_concentric',
+    ),
+  );
+  const activeVolumeCandidates = volumeCandidates.filter(
+    (component) => componentSignalScore(graph, solverResult, component) > 0,
+  );
+  const dedicatedVolume = activeVolumeCandidates.find(
+    (component) => component.type !== 'pot_concentric',
+  );
+  const volumePot = dedicatedVolume ?? activeVolumeCandidates[0];
+
+  const toneCandidates = ranked(
+    components.filter(
+      (component) => component.type === 'pot_tone' || component.type === 'pot_concentric',
+    ),
+  );
+  const tonePot = toneCandidates.find(
+    (component) => componentSignalScore(graph, solverResult, component) > 0,
+  );
+
+  const capacitors = components.filter(
+    (component) => component.type === 'capacitor' || component.type === 'treble_bleed',
+  );
+  const trebleBleed = ranked(capacitors).find((component) => {
+    if (component.type === 'treble_bleed' || /treble\s*bleed/i.test(component.label)) return true;
+    return !!volumePot && componentTouchesComponent(graph, component.id, volumePot.id) >= 2;
+  });
+  const toneCap = ranked(capacitors).find((component) => {
+    if (component.id === trebleBleed?.id) return false;
+    return (
+      /tone/i.test(component.label) ||
+      (!!tonePot && componentTouchesComponent(graph, component.id, tonePot.id) > 0)
+    );
+  });
+
+  return { volumePot, tonePot, toneCap, trebleBleed };
+}
+
+function getPotValue(component: Component | undefined) {
+  return component?.value as
+    { position?: number; resistance_kohms?: number; taper?: PotTaper } | undefined;
+}
+
+function getCapacitance(component: Component | undefined, fallbackPf: number): number {
+  const value = component?.value as { capacitance_pf?: number } | undefined;
+  return (value?.capacitance_pf ?? fallbackPf) * 1e-12;
+}
+
+export function createTrueCeilingCurve(): Float32Array<ArrayBuffer> {
+  const size = 4096;
+  const curve = new Float32Array(new ArrayBuffer(size * Float32Array.BYTES_PER_ELEMENT));
+  for (let index = 0; index < size; index += 1) {
+    const input = (index * 2) / (size - 1) - 1;
+    curve[index] = Math.max(-TRUE_CEILING_LINEAR, Math.min(TRUE_CEILING_LINEAR, input));
+  }
+  return curve;
+}
+
+function smoothParam(
+  parameter: AudioParam,
+  value: number,
+  now: number,
+  timeConstant = PARAM_SMOOTHING_SECONDS,
+): void {
+  parameter.cancelScheduledValues(now);
+  parameter.setTargetAtTime(value, now, timeConstant);
+}
 
 /**
  * Koren-inspired asymmetric triode saturation waveshaper curve.
@@ -473,7 +808,9 @@ function createOverdriveCurve(type: DriveType = 'overdrive'): Float32Array<Array
       const sign = input < 0 ? -1 : 1;
       const magnitude = Math.abs(input);
       const softKnee =
-        magnitude < 0.24 ? magnitude * 1.12 : 0.24 + (1 - Math.exp(-(magnitude - 0.24) * 2.2)) * 0.76;
+        magnitude < 0.24
+          ? magnitude * 1.12
+          : 0.24 + (1 - Math.exp(-(magnitude - 0.24) * 2.2)) * 0.76;
       curve[i] = sign * softKnee;
     }
   }
@@ -487,41 +824,41 @@ function createOverdriveCurve(type: DriveType = 'overdrive'): Float32Array<Array
 // Lower modes ring longer (smaller decay rate); higher breakup modes die fast.
 const CABINET_MODES: Record<CabinetModelType, Array<[number, number, number]>> = {
   '1x12_open': [
-    [105, 90, 0.40],    // baffle fundamental
-    [245, 110, 0.28],   // back-panel reflection (open back)
-    [680, 160, 0.18],   // first cone breakup
-    [1250, 200, 0.14],  // cone/surround coupling
-    [2600, 280, 0.09],  // high cone breakup
-    [4200, 380, 0.04],  // edge diffraction
+    [105, 90, 0.4], // baffle fundamental
+    [245, 110, 0.28], // back-panel reflection (open back)
+    [680, 160, 0.18], // first cone breakup
+    [1250, 200, 0.14], // cone/surround coupling
+    [2600, 280, 0.09], // high cone breakup
+    [4200, 380, 0.04], // edge diffraction
   ],
   '2x12_tweed': [
-    [95, 80, 0.42],     // larger baffle fundamental
-    [210, 100, 0.30],   // cabinet depth mode
-    [450, 130, 0.22],   // inter-speaker coupling
-    [820, 170, 0.15],   // cone breakup
-    [1800, 240, 0.10],  // high-mid breakup
-    [3200, 320, 0.06],  // presence peak
-    [5000, 420, 0.03],  // air/diffusion
+    [95, 80, 0.42], // larger baffle fundamental
+    [210, 100, 0.3], // cabinet depth mode
+    [450, 130, 0.22], // inter-speaker coupling
+    [820, 170, 0.15], // cone breakup
+    [1800, 240, 0.1], // high-mid breakup
+    [3200, 320, 0.06], // presence peak
+    [5000, 420, 0.03], // air/diffusion
   ],
   '4x12_stack': [
-    [120, 70, 0.45],    // sealed box fundamental
-    [280, 95, 0.32],    // cabinet depth standing wave
-    [520, 130, 0.22],   // inter-speaker mode
-    [900, 170, 0.16],   // first cone breakup (G12T-75 style)
-    [1600, 220, 0.11],  // second breakup
-    [2800, 300, 0.07],  // presence dip/peak
-    [4500, 400, 0.04],  // high breakup
-    [6200, 500, 0.02],  // air mode
+    [120, 70, 0.45], // sealed box fundamental
+    [280, 95, 0.32], // cabinet depth standing wave
+    [520, 130, 0.22], // inter-speaker mode
+    [900, 170, 0.16], // first cone breakup (G12T-75 style)
+    [1600, 220, 0.11], // second breakup
+    [2800, 300, 0.07], // presence dip/peak
+    [4500, 400, 0.04], // high breakup
+    [6200, 500, 0.02], // air mode
   ],
   '4x12_metal': [
-    [130, 65, 0.48],    // tight sealed box
-    [310, 85, 0.35],    // box mode (tighter Q)
-    [580, 120, 0.24],   // inter-speaker coupling
-    [1050, 160, 0.18],  // V30-style early breakup
-    [2200, 240, 0.12],  // aggressive presence
-    [3600, 320, 0.08],  // cone edge
-    [5200, 420, 0.04],  // sizzle
-    [7000, 550, 0.02],  // air/fizz
+    [130, 65, 0.48], // tight sealed box
+    [310, 85, 0.35], // box mode (tighter Q)
+    [580, 120, 0.24], // inter-speaker coupling
+    [1050, 160, 0.18], // V30-style early breakup
+    [2200, 240, 0.12], // aggressive presence
+    [3600, 320, 0.08], // cone edge
+    [5200, 420, 0.04], // sizzle
+    [7000, 550, 0.02], // air/fizz
   ],
 };
 
@@ -627,13 +964,34 @@ function createRoomImpulseResponse(ctx: AudioContext): AudioBuffer {
 
 export class AudioPipeline {
   private wdfWorkletNode: AudioWorkletNode | null = null;
+  private toneStackWorkletNode: AudioWorkletNode | null = null;
+  private toneStackInputNode: GainNode | null = null;
+  private toneStackOutputNode: GainNode | null = null;
+  private toneStackFallbackNode: GainNode | null = null;
+  private wdfWorkletStatus: 'unavailable' | 'initializing' | 'ready' | 'error' = 'unavailable';
+  private toneStackWorkletStatus: 'unavailable' | 'initializing' | 'ready' | 'error' =
+    'unavailable';
   private masterGain: GainNode | null = null;
   private finalOutputGain: GainNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
+  private trueCeilingNode: WaveShaperNode | null = null;
   private analyserNode: AnalyserNode | null = null;
+  private lastGraph: Graph | null = null;
+  private lastSolverResult: SolverResult | null = null;
+  private lastToneStackModel: string | null = null;
+  private lastToneStackControls: { bass: number; mid: number; treble: number } | null = null;
+  private lastAppliedAmpModel: AmpModelType | null = null;
 
   public getAnalyserNode(): AnalyserNode | null {
     return this.analyserNode;
+  }
+
+  public getWorkletStatus(): 'unavailable' | 'initializing' | 'ready' | 'error' {
+    return this.wdfWorkletStatus;
+  }
+
+  public getToneStackWorkletStatus(): 'unavailable' | 'initializing' | 'ready' | 'error' {
+    return this.toneStackWorkletStatus;
   }
   private micStream: MediaStream | null = null;
   private strumIntervalId: number | null = null;
@@ -646,110 +1004,168 @@ export class AudioPipeline {
   private topologyRouted = false;
   private sampleBank = new SampleBank();
   private wdfSolver = new WdfGuitarCircuitSolver(48000);
-  private activeSampleSources = new Map<number, { source: AudioBufferSourceNode; gain: GainNode }>();
+  private activeSampleSources = new Map<
+    number,
+    { source: AudioBufferSourceNode; gain: GainNode }
+  >();
 
   constructor() {
     audioEngine.subscribe(() => {
       const ctx = audioEngine.getContext();
-      if (ctx && audioEngine.isWorkletReady() && !this.wdfWorkletNode) {
+      if (ctx && audioEngine.isWorkletReady()) {
         const currentGraph = useCircuitStore.getState().graph;
-        this.instantiateWdfWorklet(ctx, currentGraph);
-        this.topologyRouted = false;
-        this.routeInputThroughTopology(ctx, 1.0);
+        void this.instantiateWdfWorklet(ctx, currentGraph);
       }
     });
   }
 
   private async instantiateWdfWorklet(ctx: AudioContext, graph?: Graph): Promise<void> {
     if (!audioEngine.isWorkletReady() || !ctx.audioWorklet) return;
+    this.ensureToneStackWorklet(ctx);
     if (this.wdfWorkletNode) return;
+
+    let node: AudioWorkletNode | null = null;
     try {
-      const node = new AudioWorkletNode(ctx, 'guitar-processor', {
+      const workletNode = new AudioWorkletNode(ctx, 'guitar-processor', {
         numberOfInputs: 1,
         numberOfOutputs: 1,
         outputChannelCount: [1],
       });
-      this.wdfWorkletNode = node;
-      const res = await fetch(dspWasmUrl);
-      const wasmBytes = await res.arrayBuffer();
-      node.port.postMessage({ type: 'init', wasmBytes }, [wasmBytes]);
-      this.postWdfUpdate(graph);
-
-      // Listen for sag-level feedback from the worklet: modulate preamp gain
-      // upward when sag is high (less headroom = more saturation, the coupled
-      // gain-up/volume-down behavior of real tube power-amp sag)
-      node.port.onmessage = (e) => {
-        const msg = e.data;
-        if (msg.type === 'sag-level' && msg.level > 0) {
-          const preampGain = this.activeNodes.get('preamp-gain') as GainNode | undefined;
-          if (preampGain && ctx.state === 'running') {
-            // Increase drive into preamp proportional to sag (more sag = more crunch)
-            const sagDriveBoost = 1.0 + msg.level * 0.8; // up to +80% gain boost
-            preampGain.gain.setTargetAtTime(
-              sagDriveBoost * (this.ampPedalState.ampGain * 1.35 + 0.5),
-              ctx.currentTime, 0.05,
-            );
-          }
+      node = workletNode;
+      this.wdfWorkletNode = workletNode;
+      this.wdfWorkletStatus = 'initializing';
+      workletNode.onprocessorerror = () => this.handleGuitarWorkletError(workletNode);
+      workletNode.port.onmessage = (event) => {
+        const message = event.data as { type?: string };
+        if (message.type === 'ready') {
+          if (this.wdfWorkletNode !== workletNode) return;
+          this.wdfWorkletStatus = 'ready';
+          this.postWdfUpdate(this.lastGraph ?? graph, this.lastSolverResult);
+          this.topologyRouted = false;
+          this.routeInputThroughTopology(ctx, 1.0);
+          this.emitStateChange();
+        } else if (message.type === 'error') {
+          this.handleGuitarWorkletError(workletNode);
         }
       };
 
-      // Sync the WDF tone stack with the current amp model and knob state
-      this.postToneStackUpdate();
+      // The passive harness can process Web Audio input before WASM finishes
+      // initializing. Route it now, then re-sync on the explicit ready event.
+      if (this.masterGain) {
+        this.topologyRouted = false;
+        this.routeInputThroughTopology(ctx, 1.0);
+      }
+      this.postWdfUpdate(this.lastGraph ?? graph, this.lastSolverResult);
+
+      const res = await fetch(dspWasmUrl);
+      if (!res.ok) throw new Error(`WASM fetch failed (${res.status})`);
+      const wasmBytes = await res.arrayBuffer();
+      if (this.wdfWorkletNode !== workletNode) return;
+      workletNode.port.postMessage({ type: 'init', wasmBytes }, [wasmBytes]);
     } catch {
-      this.wdfWorkletNode = null;
+      if (node) this.handleGuitarWorkletError(node);
     }
   }
 
-  private postWdfUpdate(graph?: Graph): void {
-    if (!this.wdfWorkletNode) return;
-    const comps = graph ? graph.getComponents() : [];
-    const volPot = comps.find(
-      (c) =>
-        c.type === 'pot_volume' ||
-        c.type === 'pot_pushpull' ||
-        c.type === 'pot_concentric',
-    );
-    const tonePot = comps.find((c) => c.type === 'pot_tone');
-    const toneCap = comps.find((c) => c.type === 'capacitor');
-    const trebleBleed = comps.find((c) => c.type === 'treble_bleed');
-
-    let volPotMaxR = 250000;
-    if (volPot?.value && 'resistance_kohms' in volPot.value) {
-      volPotMaxR = (volPot.value.resistance_kohms ?? 250) * 1000;
+  private handleGuitarWorkletError(node: AudioWorkletNode): void {
+    if (this.wdfWorkletNode !== node) return;
+    try {
+      node.disconnect();
+    } catch {
+      // The processor may have failed before it was connected.
     }
-
-    let tonePotMaxR = 250000;
-    if (tonePot?.value && 'resistance_kohms' in tonePot.value) {
-      tonePotMaxR = (tonePot.value.resistance_kohms ?? 250) * 1000;
+    this.wdfWorkletNode = null;
+    this.wdfWorkletStatus = 'error';
+    const ctx = audioEngine.getContext();
+    if (ctx && this.masterGain) {
+      this.topologyRouted = false;
+      this.routeInputThroughTopology(ctx, 1.0);
     }
+    this.emitStateChange();
+  }
 
-    let toneCapFarads = 47e-9;
-    if (toneCap?.value && 'capacitance_pf' in toneCap.value) {
-      toneCapFarads = (toneCap.value.capacitance_pf ?? 47000) * 1e-12;
-    }
-
-    let trebleBleedCapFarads = 0;
-    if (trebleBleed) {
-      trebleBleedCapFarads = 1000e-12;
-      if (trebleBleed.value && 'capacitance_pf' in trebleBleed.value) {
-        trebleBleedCapFarads = (trebleBleed.value.capacitance_pf ?? 1000) * 1e-12;
+  private ensureToneStackWorklet(ctx: AudioContext): void {
+    if (!audioEngine.isWorkletReady() || !ctx.audioWorklet) return;
+    if (!this.toneStackWorkletNode) {
+      try {
+        const node = new AudioWorkletNode(ctx, 'tone-stack-processor', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+        });
+        this.toneStackWorkletNode = node;
+        this.toneStackWorkletStatus = 'initializing';
+        this.lastToneStackModel = null;
+        this.lastToneStackControls = null;
+        node.onprocessorerror = () => this.handleToneStackWorkletError(node);
+        node.port.onmessage = (event) => {
+          const message = event.data as { type?: string };
+          if (message.type === 'error') this.handleToneStackWorkletError(node);
+          else if (message.type === 'ready' && this.toneStackWorkletNode === node) {
+            this.toneStackWorkletStatus = 'ready';
+            this.postToneStackUpdate();
+          }
+        };
+        // The current processor has no asynchronous initialization. Treat a
+        // successful construction as ready while still honoring future ready
+        // and error messages from the shared processor module.
+        this.toneStackWorkletStatus = 'ready';
+      } catch {
+        this.toneStackWorkletNode = null;
+        this.toneStackWorkletStatus = 'error';
       }
     }
+
+    if (this.toneStackWorkletNode && this.toneStackInputNode && this.toneStackOutputNode) {
+      try {
+        this.toneStackInputNode.disconnect();
+        this.toneStackWorkletNode.disconnect();
+        this.toneStackInputNode.connect(this.toneStackWorkletNode);
+        this.toneStackWorkletNode.connect(this.toneStackOutputNode);
+      } catch {
+        this.handleToneStackWorkletError(this.toneStackWorkletNode);
+        return;
+      }
+    }
+    this.postToneStackUpdate();
+  }
+
+  private handleToneStackWorkletError(node: AudioWorkletNode): void {
+    if (this.toneStackWorkletNode !== node) return;
+    try {
+      node.disconnect();
+    } catch {
+      // The processor may have failed before it was connected.
+    }
+    this.toneStackWorkletNode = null;
+    this.toneStackWorkletStatus = 'error';
+    this.lastToneStackModel = null;
+    this.lastToneStackControls = null;
+    if (this.toneStackInputNode && this.toneStackOutputNode && this.toneStackFallbackNode) {
+      try {
+        this.toneStackInputNode.disconnect();
+        this.toneStackFallbackNode.disconnect();
+        this.toneStackInputNode.connect(this.toneStackFallbackNode);
+        this.toneStackFallbackNode.connect(this.toneStackOutputNode);
+      } catch {
+        // Keep the rest of the amp alive even if the failed node was detached.
+      }
+    }
+    this.emitStateChange();
+  }
+
+  private postWdfUpdate(graph?: Graph | null, solverResult?: SolverResult | null): void {
+    if (!this.wdfWorkletNode) return;
+    const controls = graph && solverResult ? findActiveHarnessControls(graph, solverResult) : {};
+    const volumeValue = getPotValue(controls.volumePot);
+    const toneValue = getPotValue(controls.tonePot);
 
     const wdfPickups = this.activeTopology.pickups.map((p) => {
-      let l = 2.4;
-      let r = 6500;
-      if (p.id.includes('humbucker')) {
-        l = 4.2;
-        r = 8500;
-      } else if (p.id.includes('p90')) {
-        l = 3.2;
-        r = 7200;
-      }
+      const profile = getPickupWdfProfile(p.type);
       return {
-        inductanceH: l,
-        resistanceR: r,
-        windingCapFarads: 120e-12,
+        inductanceH: profile.inductanceH,
+        resistanceR: profile.resistanceOhms,
+        windingCapFarads: profile.windingCapFarads,
         delayMs: p.delayTimeMs,
         resonantFreq: p.resonantFreq,
         resonantQ: p.resonantQ,
@@ -761,17 +1177,17 @@ export class AudioPipeline {
     this.wdfWorkletNode.port.postMessage({
       type: 'wdf-update',
       params: {
-        volumePos: volPot?.value && 'position' in volPot.value ? volPot.value.position : 1.0,
-        tonePos: tonePot?.value && 'position' in tonePot.value ? tonePot.value.position : 1.0,
-        volumePotTaper: volPot?.value && 'taper' in volPot.value ? volPot.value.taper : 'audio',
-        tonePotTaper: tonePot?.value && 'taper' in tonePot.value ? tonePot.value.taper : 'linear',
-        volPotMaxR,
-        tonePotMaxR,
-        toneCapFarads,
-        trebleBleedCapFarads,
-        pickups: wdfPickups, // Send full array of pickups
+        volumePos: volumeValue?.position ?? 1.0,
+        tonePos: toneValue?.position ?? 1.0,
+        volumePotTaper: volumeValue?.taper ?? 'audio',
+        tonePotTaper: toneValue?.taper ?? 'linear',
+        volPotMaxR: (volumeValue?.resistance_kohms ?? 250) * 1000,
+        tonePotMaxR: (toneValue?.resistance_kohms ?? 250) * 1000,
+        toneCapFarads: getCapacitance(controls.toneCap, 47000),
+        trebleBleedCapFarads: controls.trebleBleed ? getCapacitance(controls.trebleBleed, 1000) : 0,
+        pickups: wdfPickups,
         isSeries: this.activeTopology.isSeries,
-        cableCapFarads: this.ampPedalState.cableLengthMeters * 100e-12, // 100pF/m typical instrument cable
+        cableCapFarads: this.ampPedalState.cableLengthMeters * 100e-12,
         ampInputImpedanceOhms: this.ampPedalState.ampInputImpedanceOhms,
       },
     });
@@ -784,15 +1200,28 @@ export class AudioPipeline {
    * BiquadFilterNodes in the main-thread Web Audio graph.
    */
   private postToneStackUpdate(): void {
-    if (!this.wdfWorkletNode) return;
+    if (!this.toneStackWorkletNode) return;
     const s = this.ampPedalState;
-    this.wdfWorkletNode.port.postMessage({
-      type: 'tone-stack-update',
-      model: AMP_TONE_STACK_MODEL[s.ampModel],
-      bass: s.ampBass,
-      mid: s.ampMid,
-      treble: s.ampTreble,
-    });
+    const model = AMP_TONE_STACK_MODEL[s.ampModel];
+    const modelChanged = model !== this.lastToneStackModel;
+    const previous = this.lastToneStackControls;
+    const message: {
+      type: 'tone-stack-update';
+      model?: string;
+      bass?: number;
+      mid?: number;
+      treble?: number;
+    } = { type: 'tone-stack-update' };
+
+    if (modelChanged) message.model = model;
+    if (modelChanged || previous?.bass !== s.ampBass) message.bass = s.ampBass;
+    if (modelChanged || previous?.mid !== s.ampMid) message.mid = s.ampMid;
+    if (modelChanged || previous?.treble !== s.ampTreble) message.treble = s.ampTreble;
+    if (Object.keys(message).length === 1) return;
+
+    this.toneStackWorkletNode.port.postMessage(message);
+    this.lastToneStackModel = model;
+    this.lastToneStackControls = { bass: s.ampBass, mid: s.ampMid, treble: s.ampTreble };
   }
 
   private activeNodes: Map<string, AudioNode> = new Map();
@@ -813,14 +1242,12 @@ export class AudioPipeline {
   public setMasterVolumeBoost(boost: number): void {
     this.masterVolumeBoost = Math.max(0.3, Math.min(4.0, boost));
     const ctx = audioEngine.getContext();
-    if (ctx && this.masterGain) {
-      const now = ctx.currentTime;
-      this.masterGain.gain.setValueAtTime(1.0, now);
-    }
     if (ctx && this.finalOutputGain) {
-      const now = ctx.currentTime;
-      const s = this.ampPedalState;
-      this.finalOutputGain.gain.setValueAtTime(s.ampMaster * 2.8 * this.masterVolumeBoost, now);
+      smoothParam(
+        this.finalOutputGain.gain,
+        this.ampPedalState.ampMaster * this.masterVolumeBoost * OUTPUT_LEVEL_TRIM,
+        ctx.currentTime,
+      );
     }
     this.emitStateChange();
   }
@@ -858,6 +1285,9 @@ export class AudioPipeline {
     const ctx = audioEngine.getContext();
     if (ctx && this.masterGain) {
       this.applyPedalboardStateToNodes(ctx);
+    } else {
+      this.postWdfUpdate(this.lastGraph, this.lastSolverResult);
+      this.postToneStackUpdate();
     }
   }
 
@@ -881,11 +1311,24 @@ export class AudioPipeline {
     const chorusWet = this.activeNodes.get('chorus-wet') as GainNode | undefined;
     const roomSend = this.activeNodes.get('room-send') as GainNode | undefined;
     const roomReturn = this.activeNodes.get('room-return') as GainNode | undefined;
+    const preampTube = this.activeNodes.get('preamp-tube') as WaveShaperNode | undefined;
+    const secondTube = this.activeNodes.get('second-tube') as WaveShaperNode | undefined;
+    const powerAmpTube = this.activeNodes.get('power-amp-tube') as WaveShaperNode | undefined;
+    const chorusLfo = this.activeNodes.get('chorus-lfo') as OscillatorNode | undefined;
+    const chorusLfoGain = this.activeNodes.get('chorus-lfo-gain') as GainNode | undefined;
 
-    // Tone stack is now solved per-sample inside the AudioWorklet's WdfToneStack
-    // (a coupled passive RC network). Sync knob positions via postMessage.
+    this.ensureToneStackWorklet(ctx);
     this.postToneStackUpdate();
-    if (presence) presence.gain.setValueAtTime((s.ampPresence - 0.5) * 8, now);
+    this.postWdfUpdate(this.lastGraph, this.lastSolverResult);
+    if (presence) smoothParam(presence.gain, (s.ampPresence - 0.5) * 8, now);
+
+    if (this.lastAppliedAmpModel !== s.ampModel) {
+      const curve = createTubeCurve(s.ampModel);
+      if (preampTube) preampTube.curve = curve;
+      if (secondTube) secondTube.curve = curve;
+      if (powerAmpTube) powerAmpTube.curve = curve;
+      this.lastAppliedAmpModel = s.ampModel;
+    }
 
     if (preampGain) {
       let gainBase = 0.5;
@@ -900,16 +1343,16 @@ export class AudioPipeline {
         gainBase = 0.6;
         gainMult = 1.1;
       }
-      preampGain.gain.setValueAtTime(gainBase + s.ampGain * gainMult, now);
+      smoothParam(preampGain.gain, gainBase + s.ampGain * gainMult, now);
     }
 
     if (pedalCompressor) {
       if (s.compressorEnabled) {
-        pedalCompressor.threshold.setValueAtTime(-10 - s.compressorSustain * 25, now);
-        pedalCompressor.ratio.setValueAtTime(1.5 + s.compressorSustain * 4.5, now);
+        smoothParam(pedalCompressor.threshold, -10 - s.compressorSustain * 25, now);
+        smoothParam(pedalCompressor.ratio, 1.5 + s.compressorSustain * 4.5, now);
       } else {
-        pedalCompressor.threshold.setValueAtTime(0, now);
-        pedalCompressor.ratio.setValueAtTime(1.0, now); // Pristine 1:1 linear pass-through
+        smoothParam(pedalCompressor.threshold, 0, now);
+        smoothParam(pedalCompressor.ratio, 1.0, now);
       }
     }
 
@@ -918,21 +1361,26 @@ export class AudioPipeline {
     }
 
     if (pedalDrive) {
-      const driveMul = s.overdriveType === 'fuzz_muff' ? 4.5 : (s.overdriveType === 'distortion' ? 3.0 : 1.8);
-      pedalDrive.gain.setValueAtTime(1.0 + s.overdriveDrive * driveMul, now);
+      const driveMul =
+        s.overdriveType === 'fuzz_muff' ? 4.5 : s.overdriveType === 'distortion' ? 3.0 : 1.8;
+      smoothParam(pedalDrive.gain, 1.0 + s.overdriveDrive * driveMul, now);
     }
 
     if (overdriveTone) {
-      overdriveTone.frequency.setValueAtTime(1800 + s.overdriveTone * 3500, now);
+      smoothParam(overdriveTone.frequency, 1800 + s.overdriveTone * 3500, now);
     }
 
     if (pedalDry && overdriveWet) {
       if (s.overdriveEnabled) {
-        pedalDry.gain.setValueAtTime(s.overdriveType === 'fuzz_muff' ? 0.08 : 0.3, now);
-        overdriveWet.gain.setValueAtTime(s.overdriveLevel * (s.overdriveType === 'fuzz_muff' ? 1.1 : 0.8), now);
+        smoothParam(pedalDry.gain, s.overdriveType === 'fuzz_muff' ? 0.08 : 0.3, now);
+        smoothParam(
+          overdriveWet.gain,
+          s.overdriveLevel * (s.overdriveType === 'fuzz_muff' ? 1.1 : 0.8),
+          now,
+        );
       } else {
-        pedalDry.gain.setValueAtTime(1.0, now); // 100% clean bypass
-        overdriveWet.gain.setValueAtTime(0.0, now); // 0% overdrive leakage
+        smoothParam(pedalDry.gain, 1.0, now);
+        smoothParam(overdriveWet.gain, 0.0, now);
       }
     }
 
@@ -941,32 +1389,34 @@ export class AudioPipeline {
     }
 
     if (delayNode) {
-      delayNode.delayTime.setValueAtTime(Math.max(0.05, s.delayTimeMs / 1000), now);
+      smoothParam(delayNode.delayTime, Math.max(0.05, s.delayTimeMs / 1000), now, 0.03);
     }
 
     if (delayFeedback) {
-      delayFeedback.gain.setValueAtTime(s.delayEnabled ? s.delayFeedback : 0.0, now);
+      smoothParam(delayFeedback.gain, s.delayEnabled ? s.delayFeedback : 0.0, now);
     }
 
     if (delayWet) {
-      delayWet.gain.setValueAtTime(s.delayEnabled ? s.delayMix : 0.0, now);
+      smoothParam(delayWet.gain, s.delayEnabled ? s.delayMix : 0.0, now);
     }
 
     if (chorusWet) {
-      chorusWet.gain.setValueAtTime(s.chorusEnabled ? s.chorusMix : 0.0, now);
+      smoothParam(chorusWet.gain, s.chorusEnabled ? s.chorusMix : 0.0, now);
     }
+    if (chorusLfo) smoothParam(chorusLfo.frequency, s.chorusRate, now, 0.03);
+    if (chorusLfoGain) smoothParam(chorusLfoGain.gain, s.chorusDepth * 0.0035, now, 0.03);
 
     if (roomSend && roomReturn) {
       const roomVal = s.reverbEnabled ? 0.05 + s.reverbMix * 0.3 : 0.0;
-      roomSend.gain.setValueAtTime(roomVal, now);
-      roomReturn.gain.setValueAtTime(roomVal * 1.2, now);
-    }
-
-    if (this.masterGain) {
-      this.masterGain.gain.setValueAtTime(1.0, now);
+      smoothParam(roomSend.gain, roomVal, now);
+      smoothParam(roomReturn.gain, roomVal * 1.2, now);
     }
     if (this.finalOutputGain) {
-      this.finalOutputGain.gain.setValueAtTime(s.ampMaster * 2.8 * this.masterVolumeBoost, now);
+      smoothParam(
+        this.finalOutputGain.gain,
+        s.ampMaster * this.masterVolumeBoost * OUTPUT_LEVEL_TRIM,
+        now,
+      );
     }
   }
 
@@ -993,14 +1443,6 @@ export class AudioPipeline {
     }
     if (!ctx) return;
 
-    // Evaluate active components in solved graph
-    const activeNodes = solverResult?.activeNodes;
-    const activeComponents = activeNodes
-      ? graph
-          .getComponents()
-          .filter((c) => graph.getComponentNodes(c.id).some((n) => activeNodes.has(n.id)))
-      : [];
-
     const result: SolverResult = solverResult ?? {
       activeNodes: new Set(),
       activeEdges: new Set(),
@@ -1008,13 +1450,40 @@ export class AudioPipeline {
       deadEndNodes: new Set(),
     };
 
+    this.lastGraph = graph;
+    this.lastSolverResult = result;
+
+    const pickupSelection = inferPickupSelection(graph, result);
+    const controls = findActiveHarnessControls(graph, result);
+    const activeComponentIds = new Set(
+      graph
+        .getComponents()
+        .filter((component) =>
+          graph.getComponentNodes(component.id).some((node) => result.activeNodes.has(node.id)),
+        )
+        .map((component) => component.id),
+    );
+    for (const pickupId of pickupSelection.activePickupIds) activeComponentIds.add(pickupId);
+    for (const control of Object.values(controls)) {
+      if (control) activeComponentIds.add(control.id);
+    }
+    const activeComponents = graph
+      .getComponents()
+      .filter((component) => activeComponentIds.has(component.id));
+
     // Detect Active Pickup Characteristics & Topology
-    const topology = this.detectActiveTopology(activeComponents, graph, result);
+    const topology = this.detectActiveTopology(
+      activeComponents,
+      graph,
+      result,
+      pickupSelection.isSeries,
+    );
     this.wdfSolver.buildFromGraph(graph, result);
 
     if (audioEngine.isWorkletReady() && ctx.audioWorklet) {
-      this.instantiateWdfWorklet(ctx, graph);
+      void this.instantiateWdfWorklet(ctx, graph);
     }
+    this.postWdfUpdate(graph, result);
 
     // Topology signature: structural features only, excluding value knobs.
     // Blend gains and master volume/tone are live parameters applied below.
@@ -1026,10 +1495,13 @@ export class AudioPipeline {
         )
         .join(';') + `|${topology.isSeries ? 1 : 0}`;
 
-    if (this.masterGain && this.structuralKey === structureKey) {
-      // Same circuit — knob automation path, no node churn.
+    if (this.masterGain && (this.wdfWorkletNode || this.structuralKey === structureKey)) {
+      // A live worklet owns pickup/harness topology changes. Updating its WDF
+      // tree must not tear down the downstream amp or stop sounding voices.
+      this.structuralKey = structureKey;
       this.applyPedalboardStateToNodes(ctx);
       this.applyLiveTopologyParams(ctx);
+      this.routeInputThroughTopology(ctx, 1.0);
       return;
     }
 
@@ -1104,13 +1576,20 @@ export class AudioPipeline {
     secondTube.curve = createTubeCurve(this.ampPedalState.ampModel);
     secondTube.oversample = '4x';
 
-    // 4b. Passive tone stack — the coupled RC network (bass/mid/treble pots
-    // sharing a resistive ladder) is now solved per-sample inside the
-    // AudioWorklet's WdfToneStack.  A unity-gain pass-through replaces the
-    // old three-band BiquadFilterNode chain here so the signal path stays
-    // continuous without double-filtering.
+    // 4b. Passive tone stack insertion point. A separate AudioWorklet owns the
+    // shared tone-stack core and is patched between these stable endpoints.
+    // The fallback stays connected until that processor is available.
+    const toneStackInput = ctx.createGain();
+    toneStackInput.gain.value = 1.0;
     const toneStackPassthrough = ctx.createGain();
     toneStackPassthrough.gain.value = 1.0;
+    const toneStackOutput = ctx.createGain();
+    toneStackOutput.gain.value = 1.0;
+    toneStackInput.connect(toneStackPassthrough);
+    toneStackPassthrough.connect(toneStackOutput);
+    this.toneStackInputNode = toneStackInput;
+    this.toneStackFallbackNode = toneStackPassthrough;
+    this.toneStackOutputNode = toneStackOutput;
 
     // 5. Power amp: a second tube stage drives the speaker. Sag/compression
     // is handled by the single final limiter below — stacked generic browser
@@ -1157,7 +1636,9 @@ export class AudioPipeline {
     delayFilter.frequency.value = 2800; // Warm tape/analog repeats
     delayFilter.Q.value = 0.5;
     const delayFeedback = ctx.createGain();
-    delayFeedback.gain.value = this.ampPedalState.delayEnabled ? this.ampPedalState.delayFeedback : 0.0;
+    delayFeedback.gain.value = this.ampPedalState.delayEnabled
+      ? this.ampPedalState.delayFeedback
+      : 0.0;
     const delayWet = ctx.createGain();
     delayWet.gain.value = this.ampPedalState.delayEnabled ? this.ampPedalState.delayMix : 0.0;
 
@@ -1174,6 +1655,7 @@ export class AudioPipeline {
       chorusLfoGain.connect(chorusDelay.delayTime);
       chorusLfo.start();
       this.activeNodes.set('chorus-lfo', chorusLfo as unknown as AudioNode);
+      this.activeNodes.set('chorus-lfo-gain', chorusLfoGain);
     }
     const chorusWet = ctx.createGain();
     chorusWet.gain.value = this.ampPedalState.chorusEnabled ? this.ampPedalState.chorusMix : 0.0;
@@ -1191,13 +1673,16 @@ export class AudioPipeline {
 
     const stereoMerger = ctx.createChannelMerger(2);
 
-    // 8. Final anti-clipping dynamics limiter.
+    // 8. Final limiter followed by an exact -1 dBFS sample ceiling.
     this.compressorNode = ctx.createDynamicsCompressor();
-    this.compressorNode.threshold.setValueAtTime(-3, ctx.currentTime);
-    this.compressorNode.knee.setValueAtTime(6, ctx.currentTime);
-    this.compressorNode.ratio.setValueAtTime(8, ctx.currentTime);
-    this.compressorNode.attack.setValueAtTime(0.003, ctx.currentTime);
-    this.compressorNode.release.setValueAtTime(0.15, ctx.currentTime);
+    this.compressorNode.threshold.setValueAtTime(TRUE_CEILING_DB, ctx.currentTime);
+    this.compressorNode.knee.setValueAtTime(0, ctx.currentTime);
+    this.compressorNode.ratio.setValueAtTime(20, ctx.currentTime);
+    this.compressorNode.attack.setValueAtTime(0.001, ctx.currentTime);
+    this.compressorNode.release.setValueAtTime(0.08, ctx.currentTime);
+    this.trueCeilingNode = ctx.createWaveShaper();
+    this.trueCeilingNode.curve = createTrueCeilingCurve();
+    this.trueCeilingNode.oversample = '4x';
 
     // Analyser Node for Visual Oscilloscope
     this.analyserNode = ctx.createAnalyser();
@@ -1211,6 +1696,13 @@ export class AudioPipeline {
     this.activeNodes.set('overdrive-tone', overdriveTone);
     this.activeNodes.set('pedal-wet', pedalWet);
     this.activeNodes.set('preamp-gain', preampGain);
+    this.activeNodes.set('preamp-tube', preampTube);
+    this.activeNodes.set('second-tube', secondTube);
+    this.activeNodes.set('power-amp-gain', powerAmpGain);
+    this.activeNodes.set('power-amp-tube', powerAmpTube);
+    this.activeNodes.set('tone-stack-input', toneStackInput);
+    this.activeNodes.set('tone-stack-fallback', toneStackPassthrough);
+    this.activeNodes.set('tone-stack-output', toneStackOutput);
     this.activeNodes.set('amp-presence', ampPresence);
     this.activeNodes.set('cabinet-convolver', cabinet);
     this.activeNodes.set('delay-node', delayNode);
@@ -1236,8 +1728,8 @@ export class AudioPipeline {
     preampTube.connect(interstage);
     interstage.connect(secondTubeGain);
     secondTubeGain.connect(secondTube);
-    secondTube.connect(toneStackPassthrough);
-    toneStackPassthrough.connect(powerAmpGain);
+    secondTube.connect(toneStackInput);
+    toneStackOutput.connect(powerAmpGain);
     powerAmpGain.connect(powerAmpTube);
     powerAmpTube.connect(cabinet);
 
@@ -1273,16 +1765,23 @@ export class AudioPipeline {
     roomReturn.connect(stereoMerger);
 
     this.finalOutputGain = ctx.createGain();
-    this.finalOutputGain.gain.value = this.ampPedalState.ampMaster * 2.8 * this.masterVolumeBoost;
+    this.finalOutputGain.gain.value =
+      this.ampPedalState.ampMaster * this.masterVolumeBoost * OUTPUT_LEVEL_TRIM;
+    this.activeNodes.set('final-output-gain', this.finalOutputGain);
+    this.activeNodes.set('final-limiter', this.compressorNode);
+    this.activeNodes.set('true-ceiling', this.trueCeilingNode);
 
-    stereoMerger.connect(this.compressorNode);
-    this.compressorNode.connect(this.finalOutputGain);
-    this.finalOutputGain.connect(this.analyserNode);
+    stereoMerger.connect(this.finalOutputGain);
+    this.finalOutputGain.connect(this.compressorNode);
+    this.compressorNode.connect(this.trueCeilingNode);
+    this.trueCeilingNode.connect(this.analyserNode);
     this.analyserNode.connect(ctx.destination);
 
     // Preload the real-guitar sample bank while the graph is being solved.
     void this.initializeSampleBank(ctx);
 
+    this.lastAppliedAmpModel = null;
+    this.ensureToneStackWorklet(ctx);
     this.applyPedalboardStateToNodes(ctx);
     this.routeInputThroughTopology(ctx, 1.0);
   }
@@ -1337,7 +1836,7 @@ export class AudioPipeline {
       rateParam.linearRampToValueAtTime(r1, t1);
 
       // S-curve tension phase 2 (rapid transit): 70% time -> 85% pitch delta
-      const t2 = now + durationSec * 0.70;
+      const t2 = now + durationSec * 0.7;
       const r2 = startPitchShift + (endPitchShift - startPitchShift) * 0.85;
       rateParam.linearRampToValueAtTime(r2, t2);
 
@@ -1409,12 +1908,17 @@ export class AudioPipeline {
     const pitchShift = 2 ** ((exactTargetMidi - sample.rootMidi) / 12);
 
     // Apply Non-Linear Articulation Pitch Automations (Sigmoidal S-Curve Bends, Apex Vibrato, Friction Slides)
-    const endFreq = targetFreq || (
-      articulation === 'slide_up' ? freq * 1.122 :
-      articulation === 'slide_down' ? freq * 0.89 :
-      articulation === 'bend' ? freq * 1.122 :
-      articulation === 'release' ? freq * 0.89 : freq
-    );
+    const endFreq =
+      targetFreq ||
+      (articulation === 'slide_up'
+        ? freq * 1.122
+        : articulation === 'slide_down'
+          ? freq * 0.89
+          : articulation === 'bend'
+            ? freq * 1.122
+            : articulation === 'release'
+              ? freq * 0.89
+              : freq);
     const endTargetMidi = 69 + 12 * Math.log2(endFreq / 440);
     const endPitchShift = 2 ** ((endTargetMidi - sample.rootMidi) / 12);
 
@@ -1552,21 +2056,24 @@ export class AudioPipeline {
         const tau = 0.008 + 0.04 * (1.0 - clampedAmount);
         entry.gain.gain.setTargetAtTime(0.0001, dampTime, tau);
         // Schedule stop slightly after the ramp finishes
-        setTimeout(() => {
-          try {
-            entry.source.stop();
-            entry.source.disconnect();
-            entry.gain.disconnect();
-          } catch {
-            // Ignored: source may already have ended
-          }
-          // Only remove if still the current entry for this string
-          const current = this.activeSampleSources.get(stringIndex);
-          if (current && current.source === entry.source) {
-            this.activeSampleSources.delete(stringIndex);
-            this.updateSampleBusGain(ctx);
-          }
-        }, Math.max(0, (dampTime - ctx.currentTime) * 1000) + 60);
+        setTimeout(
+          () => {
+            try {
+              entry.source.stop();
+              entry.source.disconnect();
+              entry.gain.disconnect();
+            } catch {
+              // Ignored: source may already have ended
+            }
+            // Only remove if still the current entry for this string
+            const current = this.activeSampleSources.get(stringIndex);
+            if (current && current.source === entry.source) {
+              this.activeSampleSources.delete(stringIndex);
+              this.updateSampleBusGain(ctx);
+            }
+          },
+          Math.max(0, (dampTime - ctx.currentTime) * 1000) + 60,
+        );
       } catch {
         // Ignored
       }
@@ -1733,21 +2240,20 @@ export class AudioPipeline {
     env.gain.setTargetAtTime(0.0001, releaseStart, releaseTau);
 
     // Apply Non-Linear Articulation Pitch Automations (Sigmoidal S-Curve Bends, Apex Vibrato, Friction Slides)
-    const endFreq = targetFreq || (
-      articulation === 'slide_up' ? freq * 1.122 :
-      articulation === 'slide_down' ? freq * 0.89 :
-      articulation === 'bend' ? freq * 1.122 :
-      articulation === 'release' ? freq * 0.89 : freq
-    );
+    const endFreq =
+      targetFreq ||
+      (articulation === 'slide_up'
+        ? freq * 1.122
+        : articulation === 'slide_down'
+          ? freq * 0.89
+          : articulation === 'bend'
+            ? freq * 1.122
+            : articulation === 'release'
+              ? freq * 0.89
+              : freq);
     const endShift = endFreq / freq;
 
-    this.applySigmoidalPitchAutomation(
-      stringSource.playbackRate,
-      1.0,
-      endShift,
-      now,
-      articulation,
-    );
+    this.applySigmoidalPitchAutomation(stringSource.playbackRate, 1.0, endShift, now, articulation);
 
     stringSource.connect(rawStringMix);
     rawStringMix.connect(highpass);
@@ -1794,7 +2300,8 @@ export class AudioPipeline {
   private detectActiveTopology(
     activeComponents: ReturnType<Graph['getComponents']>,
     graph: Graph,
-    solverResult: SolverResult,
+    _solverResult: SolverResult,
+    inferredSeries = false,
   ): CircuitTopologyState {
     const pickupComps = activeComponents.filter(
       (c) =>
@@ -1835,33 +2342,18 @@ export class AudioPipeline {
         const val = comp.value as { position: number } | undefined;
         masterTone = val?.position ?? 1.0;
       } else if (comp.type === 'pot_concentric') {
-        // Assume concentric outer is tone, inner is blend (simplification for indie rock tele)
+        // The current schema stores one shared concentric position. Until the
+        // graph exposes separate inner/outer values, apply it to tone and blend.
         const val = comp.value as { position: number } | undefined;
         blendGain = val?.position ?? 1.0;
+        masterTone = val?.position ?? masterTone;
       }
     }
 
-    // Check for Series Connection (Bridge ground connected to Neck hot path)
-    let isSeries = false;
-    const neckComp = pickupComps.find((c) => c.id.includes('neck'));
-    const bridgeComp = pickupComps.find((c) => c.id.includes('bridge'));
-    if (neckComp && bridgeComp) {
-      // Very basic heuristic for series: check if bridge ground reaches output tip
-      const bridgeGroundNodes = graph
-        .getComponentNodes(bridgeComp.id)
-        .filter((n) => n.role === 'ground');
-      isSeries = bridgeGroundNodes.some(
-        (n) => solverResult.activeNodes.has(n.id) && !solverResult.deadEndNodes.has(n.id),
-      );
-    }
-
-    // Determine Phase Reversal (DPDT Push-Pull state)
-    const hasDpdtPhase = activeComponents.some((c) => {
-      const swState = graph.getSwitchState(c.id);
-      return (
-        (c.type === 'switch_dpdt' || c.type === 'pot_pushpull') && swState?.currentPosition === 2
-      );
-    });
+    const outOfPhasePickupIds = inferOutOfPhasePickupIds(
+      graph,
+      pickupComps.map((pickup) => pickup.id),
+    );
 
     const pickups: ActivePickupState[] = pickupComps.map((p, idx) => {
       const idLower = `${p.id} ${p.label ?? ''}`.toLowerCase();
@@ -1894,8 +2386,7 @@ export class AudioPipeline {
         delayMs = isBridge ? 0.2 : isNeck ? 2.2 : isMiddle ? 1.2 : 1.2;
       }
 
-      // If it's the neck pickup on a phase-reversible circuit, invert phase
-      const isOutofPhase = hasDpdtPhase && (isNeck || idx === 0);
+      const isOutofPhase = outOfPhasePickupIds.has(p.id);
 
       // Handle concentric blender pots
       const isBlendNeck = isNeck && activeComponents.some((c) => c.type === 'pot_concentric');
@@ -1914,7 +2405,7 @@ export class AudioPipeline {
 
     this.activeTopology = {
       pickups,
-      isSeries,
+      isSeries: inferredSeries,
       masterVolume: masterVol,
       masterTone,
     };
@@ -1929,20 +2420,20 @@ export class AudioPipeline {
     const topology = this.activeTopology;
     const now = ctx.currentTime;
 
-    const currentGraph = useCircuitStore.getState().graph;
-    this.postWdfUpdate(currentGraph);
+    this.postWdfUpdate(this.lastGraph, this.lastSolverResult);
 
     if (this.masterToneFilter) {
       const minFreq = 350;
       const maxFreq = 10000;
-      this.masterToneFilter.frequency.setValueAtTime(
+      smoothParam(
+        this.masterToneFilter.frequency,
         minFreq + Math.pow(topology.masterTone, 2) * (maxFreq - minFreq),
         now,
       );
     }
 
     if (this.outputGainNode) {
-      this.outputGainNode.gain.setValueAtTime(topology.masterVolume, now);
+      smoothParam(this.outputGainNode.gain, topology.masterVolume, now);
     }
 
     const seriesBoost = topology.isSeries && topology.pickups.length > 1 ? 1.4 : 1.0;
@@ -1951,7 +2442,7 @@ export class AudioPipeline {
       if (!branchGain) continue;
       let gainVal = pickup.blendGain * seriesBoost;
       if (pickup.isOutofPhase) gainVal *= -1;
-      branchGain.gain.setValueAtTime(gainVal, now);
+      smoothParam(branchGain.gain, gainVal, now);
     }
   }
 
@@ -2037,12 +2528,28 @@ export class AudioPipeline {
               _stringIndex,
             )
           ) {
-            this.triggerSynthesizedGuitar(ctx, freq, velocity, startTime, articulation, targetFreq, _stringIndex);
+            this.triggerSynthesizedGuitar(
+              ctx,
+              freq,
+              velocity,
+              startTime,
+              articulation,
+              targetFreq,
+              _stringIndex,
+            );
           }
         }
       }
     } else {
-      this.triggerSynthesizedGuitar(ctx, freq, velocity, startTime, articulation, targetFreq, _stringIndex);
+      this.triggerSynthesizedGuitar(
+        ctx,
+        freq,
+        velocity,
+        startTime,
+        articulation,
+        targetFreq,
+        _stringIndex,
+      );
     }
   }
 
@@ -2630,6 +3137,12 @@ export class AudioPipeline {
   }
 
   public cleanupNodes() {
+    const chorusLfo = this.activeNodes.get('chorus-lfo') as OscillatorNode | undefined;
+    try {
+      chorusLfo?.stop();
+    } catch {
+      // The oscillator may already be stopped.
+    }
     for (const node of this.activeNodes.values()) {
       try {
         node.disconnect();
@@ -2656,6 +3169,8 @@ export class AudioPipeline {
       }
       this.compressorNode = null;
     }
+    this.trueCeilingNode = null;
+    this.finalOutputGain = null;
 
     if (this.masterGain) {
       try {
@@ -2673,6 +3188,12 @@ export class AudioPipeline {
     this.pickupBranchGains.clear();
     this.masterToneFilter = null;
     this.outputGainNode = null;
+    this.toneStackInputNode = null;
+    this.toneStackOutputNode = null;
+    this.toneStackFallbackNode = null;
+    this.lastToneStackModel = null;
+    this.lastToneStackControls = null;
+    this.lastAppliedAmpModel = null;
 
     if (this.wdfWorkletNode) {
       try {
@@ -2680,7 +3201,18 @@ export class AudioPipeline {
       } catch {
         // Ignored
       }
+      this.wdfWorkletNode = null;
     }
+    if (this.toneStackWorkletNode) {
+      try {
+        this.toneStackWorkletNode.disconnect();
+      } catch {
+        // Ignored
+      }
+      this.toneStackWorkletNode = null;
+    }
+    this.wdfWorkletStatus = 'unavailable';
+    this.toneStackWorkletStatus = 'unavailable';
 
     for (const [, entry] of this.activeSampleSources) {
       try {
@@ -2702,6 +3234,8 @@ export class AudioPipeline {
       this.strumIntervalId = null;
     }
     this.cleanupNodes();
+    this.lastGraph = null;
+    this.lastSolverResult = null;
     this.emitStateChange();
   }
 }

@@ -180,9 +180,9 @@ export function renderKarplusStrong(
   }
 
   // ── 3. Pickup-sensing comb: a pickup at position p cancels the harmonics
-  // whose node falls exactly on it — y = x(t) − x(t − 2·p·T) gives
+  // whose node falls exactly on it — y = x(t) − x(t − p·T) gives
   // |H| ∝ 2|sin(k·π·p)|, the true pickup position response.
-  const combDelay = Math.max(1, Math.round(2 * pickupPosition * N));
+  const combDelay = Math.max(1, Math.round(pickupPosition * N));
   for (let i = combDelay; i < length; i++) {
     data[i] = 0.5 * (data[i] - 0.4 * data[i - combDelay]);
   }

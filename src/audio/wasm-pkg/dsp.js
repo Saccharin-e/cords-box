@@ -12,17 +12,27 @@ export class DspEngine {
         wasm.__wbg_dspengine_free(ptr, 0);
     }
     /**
-     * Start a pitch glide on a string toward target_freq over duration_ms
-     * @param {number} string_idx
-     * @param {number} target_freq
-     * @param {number} duration_ms
+     * @returns {number}
      */
-    bend(string_idx, target_freq, duration_ms) {
-        wasm.dspengine_bend(this.__wbg_ptr, string_idx, target_freq, duration_ms);
+    active_voice_count() {
+        const ret = wasm.dspengine_active_voice_count(this.__wbg_ptr);
+        return ret >>> 0;
     }
     /**
-     * Damp a ringing string early with a smooth exponential fade.
-     * amount in 0.0..=1.0: 0.0 (gentle release) to 1.0 (hard dead-note mute).
+     * Reset the append cursor for one Web Audio render quantum.
+     */
+    begin_chunk() {
+        wasm.dspengine_begin_chunk(this.__wbg_ptr);
+    }
+    /**
+     * @param {number} string_idx
+     * @param {number} target_frequency
+     * @param {number} duration_ms
+     */
+    bend(string_idx, target_frequency, duration_ms) {
+        wasm.dspengine_bend(this.__wbg_ptr, string_idx, target_frequency, duration_ms);
+    }
+    /**
      * @param {number} string_idx
      * @param {number} amount
      */
@@ -48,35 +58,91 @@ export class DspEngine {
     }
     /**
      * @param {number} string_idx
-     * @param {number} freq
+     * @param {number} frequency
      * @param {number} velocity
      */
-    pluck(string_idx, freq, velocity) {
-        wasm.dspengine_pluck(this.__wbg_ptr, string_idx, freq, velocity);
+    pluck(string_idx, frequency, velocity) {
+        wasm.dspengine_pluck(this.__wbg_ptr, string_idx, frequency, velocity);
+    }
+    /**
+     * Pluck with explicit articulation without changing the legacy API.
+     * @param {number} string_idx
+     * @param {number} frequency
+     * @param {number} velocity
+     * @param {number} pick_position
+     * @param {number} pick_hardness
+     */
+    pluck_articulated(string_idx, frequency, velocity, pick_position, pick_hardness) {
+        wasm.dspengine_pluck_articulated(this.__wbg_ptr, string_idx, frequency, velocity, pick_position, pick_hardness);
     }
     process_chunk() {
         wasm.dspengine_process_chunk(this.__wbg_ptr);
     }
     /**
-     * Set the pickup position for all strings at once
-     * @param {number} position
+     * Append up to `frame_count` frames. The worklet may alternate this with
+     * control events to execute them at exact frame offsets.
+     * @param {number} frame_count
      */
-    set_all_pickup_positions(position) {
-        wasm.dspengine_set_all_pickup_positions(this.__wbg_ptr, position);
+    process_frames(frame_count) {
+        wasm.dspengine_process_frames(this.__wbg_ptr, frame_count);
     }
     /**
+     * Deprecated compatibility no-op. Pickup sensing is owned by the worklet.
+     * @param {number} _position
+     */
+    set_all_pickup_positions(_position) {
+        wasm.dspengine_set_all_pickup_positions(this.__wbg_ptr, _position);
+    }
+    /**
+     * Retained for compatibility. Drive is applied in the amplifier path.
      * @param {number} drive
      */
     set_drive(drive) {
         wasm.dspengine_set_drive(this.__wbg_ptr, drive);
     }
     /**
-     * Set the pickup position for a string (0..1, fraction from bridge)
+     * @param {number} string_idx
+     * @param {number} hardness
+     */
+    set_pick_hardness(string_idx, hardness) {
+        wasm.dspengine_set_pick_hardness(this.__wbg_ptr, string_idx, hardness);
+    }
+    /**
      * @param {number} string_idx
      * @param {number} position
      */
-    set_pickup_position(string_idx, position) {
-        wasm.dspengine_set_pickup_position(this.__wbg_ptr, string_idx, position);
+    set_pick_position(string_idx, position) {
+        wasm.dspengine_set_pick_position(this.__wbg_ptr, string_idx, position);
+    }
+    /**
+     * Deprecated compatibility no-op. Pickup sensing is owned by the worklet.
+     * @param {number} _string_idx
+     * @param {number} _position
+     */
+    set_pickup_position(_string_idx, _position) {
+        wasm.dspengine_set_pickup_position(this.__wbg_ptr, _string_idx, _position);
+    }
+    /**
+     * @param {number} semitones
+     */
+    set_whammy(semitones) {
+        wasm.dspengine_set_whammy(this.__wbg_ptr, semitones);
+    }
+    /**
+     * @param {number} string_idx
+     * @returns {number}
+     */
+    string_energy(string_idx) {
+        const ret = wasm.dspengine_string_energy(this.__wbg_ptr, string_idx);
+        return ret;
+    }
+    /**
+     * Pointer to 6x128 f32 values at `[string_idx * 128 + frame]`.
+     * @returns {number}
+     */
+    string_output_ptr() {
+        const ret = wasm.dspengine_string_output_ptr(this.__wbg_ptr);
+        return ret >>> 0;
     }
 }
 if (Symbol.dispose) DspEngine.prototype[Symbol.dispose] = DspEngine.prototype.free;

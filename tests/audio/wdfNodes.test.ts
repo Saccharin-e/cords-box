@@ -5,6 +5,7 @@ import {
   WdfCapacitor,
   WdfPotentiometer,
   WdfSeriesAdaptor,
+  WdfSeriesNAdaptor,
   WdfParallelAdaptor,
   WdfVoltageProbe,
 } from '@audio/wdf/wdfNodes';
@@ -122,6 +123,25 @@ describe('WDF Engine Primitives', () => {
     expect(child2.reflectCalls).toBe(1);
     expect(child1.incidentWaves[0]).toBeCloseTo(-0.25, 12);
     expect(child2.incidentWaves[0]).toBeCloseTo(2.75, 12);
+  });
+
+  it('scatters an arbitrary number of heterogeneous series branches exactly', () => {
+    const child1 = new FixedWaveElement(100, 2);
+    const child2 = new FixedWaveElement(200, -1);
+    const child3 = new FixedWaveElement(300, 0.5);
+    const series = new WdfSeriesNAdaptor([child1, child2, child3]);
+
+    expect(series.portResistance).toBe(600);
+    expect(series.waveReflect(0)).toBe(-1.5);
+    series.step(0.75);
+
+    const junctionWave = 2 - 1 + 0.5 + 0.75;
+    expect(child1.incidentWaves[0]).toBeCloseTo(2 - (100 / 600) * junctionWave, 12);
+    expect(child2.incidentWaves[0]).toBeCloseTo(-1 - (200 / 600) * junctionWave, 12);
+    expect(child3.incidentWaves[0]).toBeCloseTo(0.5 - (300 / 600) * junctionWave, 12);
+    expect(child1.reflectCalls).toBe(1);
+    expect(child2.reflectCalls).toBe(1);
+    expect(child3.reflectCalls).toBe(1);
   });
 
   it('propagates a nested pot resistance change to every ancestor in one reflection', () => {

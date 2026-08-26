@@ -1,4 +1,7 @@
 import init, { DspEngine } from './wasm-pkg/dsp.js';
+import { WdfToneStack } from './wdf/toneStackCore.js';
+
+export { WdfToneStack } from './wdf/toneStackCore.js';
 
 let wasmMemory;
 
@@ -23,7 +26,9 @@ export class WdfResistor {
   constructor(resistance) {
     this.portResistance = Math.max(MIN_PORT_RESISTANCE, resistance);
   }
-  waveReflect(_a) { return 0; }
+  waveReflect(_a) {
+    return 0;
+  }
   step(_a) {}
   reset() {}
 }
@@ -34,10 +39,16 @@ export class WdfVoltageSourceResistor {
     this.portResistance = Math.max(MIN_PORT_RESISTANCE, resistance);
     this.Vs = 0;
   }
-  setVoltage(Vs) { this.Vs = Vs; }
-  waveReflect(_a) { return this.Vs; }
+  setVoltage(Vs) {
+    this.Vs = Vs;
+  }
+  waveReflect(_a) {
+    return this.Vs;
+  }
   step(_a) {}
-  reset() { this.Vs = 0; }
+  reset() {
+    this.Vs = 0;
+  }
 }
 
 /** WDF Capacitor (bilinear transform): R = T/(2C), state: b[n] = a[n-1] */
@@ -47,9 +58,15 @@ export class WdfCapacitor {
     this.portResistance = T / (2 * Math.max(1e-12, capacitanceFarads));
     this._state = 0;
   }
-  waveReflect(_a) { return this._state; }
-  step(a) { this._state = a; }
-  reset() { this._state = 0; }
+  waveReflect(_a) {
+    return this._state;
+  }
+  step(a) {
+    this._state = a;
+  }
+  reset() {
+    this._state = 0;
+  }
 }
 
 /** WDF Inductor: R = 2L/T, state: b[n] = -a[n-1] */
@@ -59,9 +76,15 @@ export class WdfInductor {
     this.portResistance = (2 * Math.max(1e-6, inductanceHenries)) / T;
     this._state = 0;
   }
-  waveReflect(_a) { return -this._state; }
-  step(a) { this._state = a; }
-  reset() { this._state = 0; }
+  waveReflect(_a) {
+    return -this._state;
+  }
+  step(a) {
+    this._state = a;
+  }
+  reset() {
+    this._state = 0;
+  }
 }
 
 /** WDF Variable Resistor (Potentiometer): R = maxR × taperFn(position)
@@ -82,12 +105,11 @@ export class WdfPotentiometer {
     this.portResistance = this._resistanceAtCurrentPosition();
   }
   _resistanceAtCurrentPosition() {
-    return Math.max(
-      MIN_PORT_RESISTANCE,
-      this._maxR * applyPotTaper(this._position, this._taper)
-    );
+    return Math.max(MIN_PORT_RESISTANCE, this._maxR * applyPotTaper(this._position, this._taper));
   }
-  waveReflect(_a) { return 0; }
+  waveReflect(_a) {
+    return 0;
+  }
   step(_a) {}
   reset() {}
 }
@@ -154,7 +176,70 @@ export class WdfSeriesAdaptor {
     this._c1.step(a1);
     this._c2.step(a2);
   }
-  reset() { this._c1.reset(); this._c2.reset(); this._b1 = 0; this._b2 = 0; }
+  reset() {
+    this._c1.reset();
+    this._c2.reset();
+    this._b1 = 0;
+    this._b2 = 0;
+  }
+}
+
+/** N-port series junction that preserves each complete pickup branch. */
+export class WdfSeriesNAdaptor {
+  constructor(children) {
+    if (children.length === 0) throw new Error('WdfSeriesNAdaptor requires a child');
+    this._children = children.slice();
+    this._gammas = new Float64Array(children.length);
+    this._reflectedWaves = new Float64Array(children.length);
+    this._lastResistances = new Float64Array(children.length);
+    this._reflectedSum = 0;
+    this.portResistance = MIN_PORT_RESISTANCE;
+    this._updateGammas();
+  }
+  _updateGammas() {
+    let resistanceSum = 0;
+    for (let i = 0; i < this._children.length; i++) {
+      resistanceSum += this._children[i].portResistance;
+    }
+    this.portResistance = Math.max(MIN_PORT_RESISTANCE, resistanceSum);
+    for (let i = 0; i < this._children.length; i++) {
+      const resistance = this._children[i].portResistance;
+      this._gammas[i] = resistance / this.portResistance;
+      this._lastResistances[i] = resistance;
+    }
+  }
+  _ensureGammas() {
+    for (let i = 0; i < this._children.length; i++) {
+      if (this._children[i].portResistance !== this._lastResistances[i]) {
+        this._updateGammas();
+        return;
+      }
+    }
+  }
+  waveReflect(_a) {
+    let sum = 0;
+    for (let i = 0; i < this._children.length; i++) {
+      const reflected = this._children[i].waveReflect(0);
+      this._reflectedWaves[i] = reflected;
+      sum += reflected;
+    }
+    this._ensureGammas();
+    this._reflectedSum = sum;
+    return -sum;
+  }
+  step(a) {
+    const junctionWave = this._reflectedSum + a;
+    for (let i = 0; i < this._children.length; i++) {
+      this._children[i].step(this._reflectedWaves[i] - this._gammas[i] * junctionWave);
+    }
+  }
+  reset() {
+    for (let i = 0; i < this._children.length; i++) {
+      this._children[i].reset();
+      this._reflectedWaves[i] = 0;
+    }
+    this._reflectedSum = 0;
+  }
 }
 
 /** WDF 3-Port Parallel Adaptor — standard Fettweis equations: b0 = gamma1*b1 + gamma2*b2 */
@@ -199,7 +284,13 @@ export class WdfParallelAdaptor {
     this._c1.step(v - this._b1);
     this._c2.step(v - this._b2);
   }
-  reset() { this._c1.reset(); this._c2.reset(); this._b1 = 0; this._b2 = 0; this._b0 = 0; }
+  reset() {
+    this._c1.reset();
+    this._c2.reset();
+    this._b1 = 0;
+    this._b2 = 0;
+    this._b0 = 0;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -217,7 +308,16 @@ export class WdfCircuit {
     this.sampleRate = sampleRate;
     // Default component values (Stratocaster single-coil)
     this._params = {
-      pickups: [{ inductanceH: 2.4, resistanceR: 6500, windingCapFarads: 120e-12, delayMs: 1.1, blendGain: 1.0, isOutofPhase: false }],
+      pickups: [
+        {
+          inductanceH: 2.4,
+          resistanceR: 6500,
+          windingCapFarads: 120e-12,
+          delayMs: 1.1,
+          blendGain: 1.0,
+          isOutofPhase: false,
+        },
+      ],
       isSeries: false,
       volPotMaxR: 250000,
       volumePos: 1.0,
@@ -230,84 +330,79 @@ export class WdfCircuit {
       cableCapFarads: 500e-12,
       ampInputImpedanceOhms: 1000000, // 1MΩ standard passive guitar amp input
     };
+    this._currentVolumePos = this._params.volumePos;
+    this._targetVolumePos = this._params.volumePos;
+    this._currentTonePos = this._params.tonePos;
+    this._targetTonePos = this._params.tonePos;
+    this._controlSmoothing = 1 - Math.exp(-1 / (sampleRate * 0.012));
+    this._hasRuntimeParams = false;
     this._buildTree();
   }
 
   _buildTree() {
     const p = this._params;
     const sr = this.sampleRate;
-    const pickups = Array.isArray(p.pickups) && p.pickups.length > 0
-      ? p.pickups
-      : [{ resistanceR: 6500, inductanceH: 2.4, windingCapFarads: 120e-12, blendGain: 1, isOutofPhase: false }];
+    const pickups =
+      Array.isArray(p.pickups) && p.pickups.length > 0
+        ? p.pickups
+        : [
+            {
+              resistanceR: 6500,
+              inductanceH: 2.4,
+              windingCapFarads: 120e-12,
+              blendGain: 1,
+              isOutofPhase: false,
+            },
+          ];
 
     this._pickupSources = [];
     this._pickupConfigs = pickups;
     this._pickupInputVoltages = new Float64Array(pickups.length);
-    this._pickupCombDelaySamples = new Float64Array(pickups.length);
-    this._seriesPickupSource = null;
-
-    let currentPickupNode = null;
-    if (p.isSeries && pickups.length > 1) {
-      // Collapse series-connected pickups to their Thevenin equivalent. This
-      // preserves summed source polarity without adaptor-depth sign changes.
-      let totalResistance = 0;
-      let totalInductance = 0;
-      let inverseWindingCapacitance = 0;
-      let hasDisabledWindingCapacitance = false;
-      for (let pickupIndex = 0; pickupIndex < pickups.length; pickupIndex++) {
-        const pu = pickups[pickupIndex];
-        const windingCapFarads = pu.windingCapFarads ?? 120e-12;
-        totalResistance += pu.resistanceR;
-        totalInductance += pu.inductanceH;
-        if (windingCapFarads > 0) {
-          inverseWindingCapacitance += 1 / windingCapFarads;
-        } else {
-          hasDisabledWindingCapacitance = true;
-        }
+    // One delay per pickup/string pair. Keeping the matrix flat avoids any
+    // render-thread array allocation while preserving polyphonic sensing.
+    this._pickupCombDelaySamples = new Float64Array(pickups.length * 6);
+    const pickupBranches = [];
+    for (let pickupIndex = 0; pickupIndex < pickups.length; pickupIndex++) {
+      const pu = pickups[pickupIndex];
+      const source = new WdfVoltageSourceResistor(pu.resistanceR);
+      const inductor = new WdfInductor(pu.inductanceH, sr);
+      const rl = new WdfSeriesAdaptor(source, inductor);
+      const windingCapFarads = pu.windingCapFarads ?? 120e-12;
+      let branch = rl;
+      if (windingCapFarads > 0) {
+        const windingCap = new WdfCapacitor(windingCapFarads, sr);
+        branch = new WdfParallelAdaptor(rl, windingCap);
       }
+      this._pickupSources.push(source);
+      pickupBranches.push(branch);
+    }
 
-      this._seriesPickupSource = new WdfVoltageSourceResistor(totalResistance);
-      this._pickupSources.push(this._seriesPickupSource);
-      const seriesInductor = new WdfInductor(totalInductance, sr);
-      const seriesRl = new WdfSeriesAdaptor(this._seriesPickupSource, seriesInductor);
-      currentPickupNode = seriesRl;
-      if (!hasDisabledWindingCapacitance && inverseWindingCapacitance > 0) {
-        const equivalentWindingCap = new WdfCapacitor(1 / inverseWindingCapacitance, sr);
-        currentPickupNode = new WdfParallelAdaptor(seriesRl, equivalentWindingCap);
-      }
+    let currentPickupNode = pickupBranches[0];
+    if (p.isSeries && pickupBranches.length > 1) {
+      currentPickupNode = new WdfSeriesNAdaptor(pickupBranches);
     } else {
-      // Parallel pickups retain individual sources so their phase and delayed
-      // string signals interfere inside the passive network.
-      for (let pickupIndex = 0; pickupIndex < pickups.length; pickupIndex++) {
-        const pu = pickups[pickupIndex];
-        const source = new WdfVoltageSourceResistor(pu.resistanceR);
-        const inductor = new WdfInductor(pu.inductanceH, sr);
-        const rl = new WdfSeriesAdaptor(source, inductor);
-        const windingCapFarads = pu.windingCapFarads ?? 120e-12;
-        let branch = rl;
-        if (windingCapFarads > 0) {
-          const windingCap = new WdfCapacitor(windingCapFarads, sr);
-          branch = new WdfParallelAdaptor(rl, windingCap);
-        }
-
-        this._pickupSources.push(source);
-        if (!currentPickupNode) {
-          currentPickupNode = branch;
-        } else {
-          currentPickupNode = new WdfParallelAdaptor(currentPickupNode, branch);
-        }
+      for (let pickupIndex = 1; pickupIndex < pickupBranches.length; pickupIndex++) {
+        currentPickupNode = new WdfParallelAdaptor(currentPickupNode, pickupBranches[pickupIndex]);
       }
     }
+    // The rooted N-series adaptor faces the parent in the opposite reference
+    // direction from an individual pickup branch. Normalize that arbitrary
+    // global polarity while retaining each pickup's relative phase.
+    this._pickupSourcePolarity = p.isSeries && pickupBranches.length > 1 ? -1 : 1;
     this._pickupBranch = currentPickupNode;
 
     // Tone rheostat in series with its shunt capacitor.
-    this._tonePot = new WdfPotentiometer(p.tonePotMaxR, p.tonePos, p.tonePotTaper || 'linear');
+    this._tonePot = new WdfPotentiometer(
+      p.tonePotMaxR,
+      this._currentTonePos,
+      p.tonePotTaper || 'linear',
+    );
     this._toneCap = new WdfCapacitor(p.toneCapFarads, sr);
     this._toneBranch = new WdfSeriesAdaptor(this._tonePot, this._toneCap);
 
     // Three-terminal volume divider. The lower section is wiper-to-ground;
     // the complementary upper section is hot-to-wiper.
-    const wiperFraction = applyPotTaper(p.volumePos, p.volumePotTaper || 'audio');
+    const wiperFraction = applyPotTaper(this._currentVolumePos, p.volumePotTaper || 'audio');
     this._volumeTopPot = new WdfPotentiometer(p.volPotMaxR, 1 - wiperFraction, 'linear');
     this._volumePot = new WdfPotentiometer(p.volPotMaxR, wiperFraction, 'linear');
 
@@ -332,6 +427,7 @@ export class WdfCircuit {
 
   updateParams(p) {
     let rebuild = false;
+    const initializeControls = !this._hasRuntimeParams;
 
     if (p.pickups !== undefined) {
       const currentPickups = this._params.pickups;
@@ -344,8 +440,7 @@ export class WdfCircuit {
           if (
             current.inductanceH !== next.inductanceH ||
             current.resistanceR !== next.resistanceR ||
-            (current.windingCapFarads ?? 120e-12) !==
-              (next.windingCapFarads ?? 120e-12)
+            (current.windingCapFarads ?? 120e-12) !== (next.windingCapFarads ?? 120e-12)
           ) {
             pickupStructureChanged = true;
             break;
@@ -364,7 +459,10 @@ export class WdfCircuit {
       this._params.toneCapFarads = Math.max(1e-12, p.toneCapFarads);
       rebuild = true;
     }
-    if (p.trebleBleedCapFarads !== undefined && p.trebleBleedCapFarads !== this._params.trebleBleedCapFarads) {
+    if (
+      p.trebleBleedCapFarads !== undefined &&
+      p.trebleBleedCapFarads !== this._params.trebleBleedCapFarads
+    ) {
       this._params.trebleBleedCapFarads = Math.max(0, p.trebleBleedCapFarads);
       rebuild = true;
     }
@@ -372,7 +470,10 @@ export class WdfCircuit {
       this._params.cableCapFarads = Math.max(1e-12, p.cableCapFarads);
       rebuild = true;
     }
-    if (p.ampInputImpedanceOhms !== undefined && p.ampInputImpedanceOhms !== this._params.ampInputImpedanceOhms) {
+    if (
+      p.ampInputImpedanceOhms !== undefined &&
+      p.ampInputImpedanceOhms !== this._params.ampInputImpedanceOhms
+    ) {
       this._params.ampInputImpedanceOhms = Math.max(1000, p.ampInputImpedanceOhms);
       rebuild = true;
     }
@@ -393,20 +494,21 @@ export class WdfCircuit {
       rebuild = true;
     }
 
-    // Pot positions can be updated live without rebuilding the tree
+    // Pot positions are smoothed on the render thread. The initial graph
+    // snapshot applies immediately so startup does not fade from defaults.
     if (p.volumePos !== undefined) {
       this._params.volumePos = Math.max(0, Math.min(1, p.volumePos));
-      const wiperFraction = applyPotTaper(
-        this._params.volumePos,
-        this._params.volumePotTaper || 'audio'
-      );
-      if (this._volumeTopPot) this._volumeTopPot.setPosition(1 - wiperFraction);
-      if (this._volumePot) this._volumePot.setPosition(wiperFraction);
+      this._targetVolumePos = this._params.volumePos;
+      if (initializeControls) this._currentVolumePos = this._targetVolumePos;
     }
     if (p.tonePos !== undefined) {
       this._params.tonePos = Math.max(0, Math.min(1, p.tonePos));
-      if (this._tonePot) this._tonePot.setPosition(this._params.tonePos);
+      this._targetTonePos = this._params.tonePos;
+      if (initializeControls) this._currentTonePos = this._targetTonePos;
     }
+
+    if (initializeControls) this._applyControlPositions();
+    this._hasRuntimeParams = true;
 
     // Structural changes (component values, not pot positions) require a
     // full tree rebuild because WDF port resistances propagate through adaptors
@@ -415,30 +517,49 @@ export class WdfCircuit {
     }
   }
 
+  _applyControlPositions() {
+    const wiperFraction = applyPotTaper(
+      this._currentVolumePos,
+      this._params.volumePotTaper || 'audio',
+    );
+    if (this._volumeTopPot) this._volumeTopPot.setPosition(1 - wiperFraction);
+    if (this._volumePot) this._volumePot.setPosition(wiperFraction);
+    if (this._tonePot) this._tonePot.setPosition(this._currentTonePos);
+  }
+
+  _smoothControlPositions() {
+    const volumeDelta = this._targetVolumePos - this._currentVolumePos;
+    const toneDelta = this._targetTonePos - this._currentTonePos;
+    if (Math.abs(volumeDelta) < 1e-7 && Math.abs(toneDelta) < 1e-7) return;
+
+    this._currentVolumePos =
+      Math.abs(volumeDelta) < 1e-7
+        ? this._targetVolumePos
+        : this._currentVolumePos + volumeDelta * this._controlSmoothing;
+    this._currentTonePos =
+      Math.abs(toneDelta) < 1e-7
+        ? this._targetTonePos
+        : this._currentTonePos + toneDelta * this._controlSmoothing;
+    this._applyControlPositions();
+  }
+
   processSample(vin) {
     if (!this._root || !this._outputProbe) {
       return typeof vin === 'number' ? vin : vin[0] || 0;
     }
 
-    if (this._seriesPickupSource) {
-      let seriesVoltage = 0;
-      for (let i = 0; i < this._pickupConfigs.length; i++) {
-        const pu = this._pickupConfigs[i];
-        const phase = pu && pu.isOutofPhase ? -1 : 1;
-        const pickupVoltage = typeof vin === 'number' ? vin : vin[i] || 0;
-        seriesVoltage += pickupVoltage * phase;
-      }
-      this._seriesPickupSource.setVoltage(seriesVoltage);
-    } else if (typeof vin !== 'number') {
+    this._smoothControlPositions();
+
+    if (typeof vin !== 'number') {
       for (let i = 0; i < this._pickupSources.length; i++) {
         const pu = this._pickupConfigs[i];
-        const phase = pu && pu.isOutofPhase ? -1 : 1;
+        const phase = (pu && pu.isOutofPhase ? -1 : 1) * this._pickupSourcePolarity;
         this._pickupSources[i].setVoltage((vin[i] || 0) * phase);
       }
     } else {
       for (let i = 0; i < this._pickupSources.length; i++) {
         const pu = this._pickupConfigs[i];
-        const phase = pu && pu.isOutofPhase ? -1 : 1;
+        const phase = (pu && pu.isOutofPhase ? -1 : 1) * this._pickupSourcePolarity;
         this._pickupSources[i].setVoltage(vin * phase);
       }
     }
@@ -459,157 +580,33 @@ export class WdfCircuit {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// WDF Passive Tone Stack — coupled bass/mid/treble network
-//
-// Passive tone-stack loading where all three pots share one WDF network and
-// therefore reshape one another instead of behaving like independent biquads.
-// ═══════════════════════════════════════════════════════════════════════════
-
-const TONE_STACK_MODELS = {
-  fender: {
-    R_slope: 100000, C_treble: 250e-12, R_treble_pot: 250000,
-    C_bass: 100e-9, R_bass_pot: 250000,
-    C_mid: 47e-9, R_mid_pot: 25000, R_load: 1000000,
-  },
-  marshall: {
-    R_slope: 33000, C_treble: 470e-12, R_treble_pot: 220000,
-    C_bass: 22e-9, R_bass_pot: 1000000,
-    C_mid: 22e-9, R_mid_pot: 25000, R_load: 470000,
-  },
-  // Mesa Boogie Rectifier–inspired: deep V-scoop, tight low end, sizzling highs.
-  // Smaller slope resistor and larger treble cap push more high-frequency energy;
-  // larger mid cap with lower pot resistance create the characteristic mid-scoop.
-  mesa: {
-    R_slope: 39000, C_treble: 500e-12, R_treble_pot: 250000,
-    C_bass: 22e-9, R_bass_pot: 250000,
-    C_mid: 47e-9, R_mid_pot: 20000, R_load: 470000,
-  },
-  vox: {
-    R_slope: 100000, C_treble: 100e-12, R_treble_pot: 1000000,
-    C_bass: 47e-9, R_bass_pot: 1000000,
-    C_mid: 22e-9, R_mid_pot: 50000, R_load: 1000000,
-  },
-};
-
-const TONE_STACK_MAKEUP_GAIN = {
-  fender: 2.15,
-  marshall: 1.65,
-  mesa: 1.7,
-  vox: 2.1,
-};
-
-export class WdfToneStack {
-  constructor(sampleRate) {
-    this.sampleRate = sampleRate;
-    this._treblePot = null;
-    this._bassPot = null;
-    this._midPot = null;
-    this._root = null;
-    this._outputProbe = null;
-    this._makeupGain = 2.0;
-    this.build('fender');
-  }
-
-  build(model) {
-    const c = TONE_STACK_MODELS[model] || TONE_STACK_MODELS.fender;
-    this._makeupGain = TONE_STACK_MAKEUP_GAIN[model] ?? 2.0;
-    const sr = this.sampleRate;
-
-    this._treblePot = new WdfPotentiometer(c.R_treble_pot, 0.5, 'audio');
-    const trebleCap = new WdfCapacitor(c.C_treble, sr);
-    const trebleBranch = new WdfSeriesAdaptor(this._treblePot, trebleCap);
-
-    this._bassPot = new WdfPotentiometer(c.R_bass_pot, 0.5, 'audio');
-    const bassCap = new WdfCapacitor(c.C_bass, sr);
-    const bassBranch = new WdfSeriesAdaptor(this._bassPot, bassCap);
-
-    this._midPot = new WdfPotentiometer(c.R_mid_pot, 0.5, 'audio');
-    const midCap = new WdfCapacitor(c.C_mid, sr);
-    const midBranch = new WdfSeriesAdaptor(this._midPot, midCap);
-
-    const loadR = new WdfResistor(c.R_load);
-    const slopeR = new WdfResistor(c.R_slope);
-
-    const midAndLoad = new WdfParallelAdaptor(midBranch, loadR);
-    const bassAndMidLoad = new WdfParallelAdaptor(bassBranch, midAndLoad);
-    const toneNetwork = new WdfParallelAdaptor(trebleBranch, bassAndMidLoad);
-    this._outputProbe = new WdfVoltageProbe(toneNetwork);
-    this._root = new WdfSeriesAdaptor(slopeR, this._outputProbe);
-    this._autoCalibrateGain();
-  }
-
-  _autoCalibrateGain(probeFreq = 1000, numSamples = 4096) {
-    if (!this._root || !this._outputProbe) return this._makeupGain;
-    let inSumSq = 0;
-    let outSumSq = 0;
-    const settle = Math.floor(numSamples / 2);
-
-    this._root.reset();
-    for (let i = 0; i < numSamples; i++) {
-      const vin = Math.sin((2 * Math.PI * probeFreq * i) / this.sampleRate);
-      this._root.waveReflect(vin);
-      this._root.step(vin);
-      const rawOut = this._outputProbe.voltage;
-      if (i >= settle) {
-        inSumSq += vin * vin;
-        outSumSq += rawOut * rawOut;
-      }
-    }
-    this._root.reset();
-
-    const count = numSamples - settle;
-    const inRms = Math.sqrt(inSumSq / count);
-    const outRms = Math.sqrt(outSumSq / count);
-    if (outRms > 1e-6) {
-      this._makeupGain = Math.min(64, Math.max(0.125, inRms / outRms));
-    }
-    return this._makeupGain;
-  }
-
-  setControls(bass, mid, treble) {
-    if (this._bassPot) this._bassPot.setPosition(Math.max(0.001, bass));
-    if (this._midPot) this._midPot.setPosition(Math.max(0.001, mid));
-    if (this._treblePot) {
-      const clampedTreble = Math.max(0, Math.min(1, treble));
-      this._treblePot.setPosition(1 - clampedTreble);
-    }
-  }
-
-  processSample(vin) {
-    if (!this._root || !this._outputProbe) return vin;
-    this._root.waveReflect(vin);
-    this._root.step(vin);
-    return this._outputProbe.voltage * this._makeupGain;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // AudioWorklet Processor
 // ═══════════════════════════════════════════════════════════════════════════
 
-class GuitarProcessor extends AudioWorkletProcessor {
+export class GuitarProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.engine = null;
     this.outPtr = null;
     this.outBuffer = null;
+    this.stringOutPtr = null;
+    this.stringOutBuffer = null;
     this.wdf = new WdfCircuit(sampleRate);
-    this.toneStack = new WdfToneStack(sampleRate);
     this.pendingPlucks = [];
     this.scheduledEvents = [];
     this.scheduledEventIndex = 0;
     this.initializing = false;
-    this.delayLine = new DelayLine(20, sampleRate);
+    this.monoSynthDelayLine = new DelayLine(20, sampleRate);
+    this.stringDelayLines = [
+      new DelayLine(20, sampleRate),
+      new DelayLine(20, sampleRate),
+      new DelayLine(20, sampleRate),
+      new DelayLine(20, sampleRate),
+      new DelayLine(20, sampleRate),
+      new DelayLine(20, sampleRate),
+    ];
     // Per-string frequency tracking for pitch-dependent pickup comb
     this.stringFreqs = new Float32Array(6);
-
-    // Sag envelope follower state
-    this.sagEnvelope = 0;
-    this.sagAttackCoeff = Math.exp(-1 / (sampleRate * 0.010)); // 10ms attack
-    this.sagReleaseCoeff = Math.exp(-1 / (sampleRate * 0.150)); // 150ms release
-    this.sagAmount = 0.3;
-    this.sagMessage = { type: 'sag-level', level: 0 };
-    this.sagPostCountdown = 0;
 
     this.executeEvent = (msg) => {
       if (msg.type === 'pluck') {
@@ -642,9 +639,13 @@ class GuitarProcessor extends AudioWorkletProcessor {
       init(wasmBytes)
         .then((wasm) => {
           wasmMemory = wasm.memory;
-          this.engine = new DspEngine(sampleRate, Date.now() & 0xFFFFFFFF);
+          this.engine = new DspEngine(sampleRate, Date.now() & 0xffffffff);
           this.outPtr = this.engine.output_ptr();
           this.outBuffer = new Float32Array(wasmMemory.buffer, this.outPtr, 128);
+          if (typeof this.engine.string_output_ptr === 'function') {
+            this.stringOutPtr = this.engine.string_output_ptr();
+            this.stringOutBuffer = new Float32Array(wasmMemory.buffer, this.stringOutPtr, 6 * 128);
+          }
           for (const p of this.pendingPlucks) {
             this.engine.pluck(p.string_idx, p.freq, p.velocity);
           }
@@ -654,6 +655,7 @@ class GuitarProcessor extends AudioWorkletProcessor {
         .catch((err) => {
           this.initializing = false;
           console.error('WASM Init error:', err);
+          this.port.postMessage({ type: 'error', reason: 'wasm-init-failed' });
         });
     };
 
@@ -678,27 +680,13 @@ class GuitarProcessor extends AudioWorkletProcessor {
         }
       } else if (msg.type === 'pickup-position' && this.engine) {
         this.engine.set_all_pickup_positions(msg.position);
-      } else if (msg.type === 'sag-update') {
-        if (msg.sagAmount !== undefined) this.sagAmount = msg.sagAmount;
-        if (msg.releaseMs !== undefined) {
-          this.sagReleaseCoeff = Math.exp(-1 / (sampleRate * msg.releaseMs / 1000));
-        }
-      } else if (msg.type === 'tone-stack-update') {
-        // Rebuild tone stack model if changed
-        if (msg.model) {
-          this.toneStack.build(msg.model);
-        }
-        // Update bass/mid/treble pot positions
-        if (msg.bass !== undefined || msg.mid !== undefined || msg.treble !== undefined) {
-          this.toneStack.setControls(
-            msg.bass ?? 0.5,
-            msg.mid ?? 0.5,
-            msg.treble ?? 0.5
-          );
-        }
       } else if (msg.type === 'drive' && this.engine) {
         this.engine.set_drive(msg.drive);
-      } else if (msg.type === 'whammy' && this.engine) {
+      } else if (
+        msg.type === 'whammy' &&
+        this.engine &&
+        typeof this.engine.set_whammy === 'function'
+      ) {
         this.engine.set_whammy(typeof msg.semitones === 'number' ? msg.semitones : 0);
       }
     };
@@ -711,11 +699,11 @@ class GuitarProcessor extends AudioWorkletProcessor {
     if (!output || output.length === 0) return true;
 
     const outChan = output[0];
-    const inChan = (input && input.length > 0 && input[0].length > 0) ? input[0] : null;
+    const inChan = input && input.length > 0 && input[0].length > 0 ? input[0] : null;
 
     // Process scheduled events due in this render quantum
-    if (this.scheduledEventIndex < this.scheduledEvents.length) {
-      const blockEndTime = currentTime + (outChan.length / sampleRate);
+    if (this.engine && this.scheduledEventIndex < this.scheduledEvents.length) {
+      const blockEndTime = currentTime + outChan.length / sampleRate;
       while (
         this.scheduledEventIndex < this.scheduledEvents.length &&
         this.scheduledEvents[this.scheduledEventIndex].time <= blockEndTime
@@ -734,56 +722,76 @@ class GuitarProcessor extends AudioWorkletProcessor {
       this.engine.process_chunk();
     }
 
-    const pickups = this.wdf._params.pickups || [];
-
-    const hasEngine = this.engine && this.outBuffer;
+    const pickups = this.wdf._params.pickups;
+    const hasEngine = this.engine !== null && this.outBuffer !== null;
+    const hasStringOutput = hasEngine && this.stringOutBuffer !== null;
     const len = outChan.length; // usually 128
-
-    // Compute a representative period in samples for the pickup comb.
-    // Use the lowest currently-sounding string frequency for the comb period.
-    let lowestFreq = 0;
-    for (let s = 0; s < 6; s++) {
-      if (this.stringFreqs[s] > 20) {
-        if (lowestFreq === 0 || this.stringFreqs[s] < lowestFreq) {
-          lowestFreq = this.stringFreqs[s];
-        }
-      }
-    }
-    const currentPeriodSamples = lowestFreq > 20 ? sampleRate / lowestFreq : 400;
 
     const pickupInputVoltages = this.wdf._pickupInputVoltages;
     const pickupCombDelaySamples = this.wdf._pickupCombDelaySamples;
     if (pickups.length > 0) {
-      const periodMs = 1000 / (lowestFreq > 20 ? lowestFreq : 250);
       for (let pickupIndex = 0; pickupIndex < pickups.length; pickupIndex++) {
         const pickup = pickups[pickupIndex];
-        const pickupPos = Math.max(
+        // Legacy topology data describes sensing delay in milliseconds.
+        // Convert it once to an approximate normalized position, then track
+        // each string's actual period instead of filtering the mono chord.
+        const normalizedPosition = Math.max(
           0.02,
-          Math.min(0.98, (pickup.delayMs || 1.0) / (2 * periodMs))
+          Math.min(0.48, pickup.positionFraction ?? ((pickup.delayMs ?? 1.0) * 250) / 1000),
         );
-        pickupCombDelaySamples[pickupIndex] = Math.max(
-          1,
-          2 * pickupPos * currentPeriodSamples
-        );
+        for (let stringIndex = 0; stringIndex < 6; stringIndex++) {
+          const stringFrequency =
+            this.stringFreqs[stringIndex] > 20 ? this.stringFreqs[stringIndex] : 250;
+          pickupCombDelaySamples[pickupIndex * 6 + stringIndex] = Math.max(
+            1,
+            (normalizedPosition * sampleRate) / stringFrequency,
+          );
+        }
       }
     }
 
     for (let i = 0; i < len; i++) {
-      const rawWasm = hasEngine ? this.outBuffer[i] : 0;
       const rawWebAudio = inChan ? inChan[i] : 0;
-      const rawSample = rawWebAudio + rawWasm;
-
-      this.delayLine.write(rawSample);
+      const rawWasm = hasEngine ? this.outBuffer[i] : 0;
+      if (hasEngine && !hasStringOutput) {
+        this.monoSynthDelayLine.write(rawWasm);
+      }
+      if (hasStringOutput) {
+        for (let stringIndex = 0; stringIndex < 6; stringIndex++) {
+          this.stringDelayLines[stringIndex].write(this.stringOutBuffer[stringIndex * 128 + i]);
+        }
+      }
 
       if (pickups.length === 0) {
-        pickupInputVoltages[0] = rawSample;
+        let summedStrings = rawWasm;
+        if (hasStringOutput) {
+          summedStrings = 0;
+          for (let stringIndex = 0; stringIndex < 6; stringIndex++) {
+            summedStrings += this.stringOutBuffer[stringIndex * 128 + i];
+          }
+        }
+        pickupInputVoltages[0] = rawWebAudio + summedStrings;
       } else {
         for (let pickupIndex = 0; pickupIndex < pickups.length; pickupIndex++) {
           const p = pickups[pickupIndex];
-          // Subtractive pickup comb: y[n] = 0.5 * (x[n] - k * x[n - d])
-          // d = 2 * pickupPosition * N where N = period in samples for current pitch
-          const delayed = this.delayLine.readSamples(pickupCombDelaySamples[pickupIndex]);
-          const pickupSig = 0.5 * (rawSample - 0.4 * delayed);
+          // Real/multisample inputs already contain a pickup response, so they
+          // enter as DI voltage. Synthetic strings are sensed independently
+          // before their per-pickup voltages are summed.
+          let pickupSig = rawWebAudio;
+          if (hasStringOutput) {
+            for (let stringIndex = 0; stringIndex < 6; stringIndex++) {
+              const stringSample = this.stringOutBuffer[stringIndex * 128 + i];
+              const delayed = this.stringDelayLines[stringIndex].readSamples(
+                pickupCombDelaySamples[pickupIndex * 6 + stringIndex],
+              );
+              pickupSig += 0.5 * (stringSample - 0.4 * delayed);
+            }
+          } else if (hasEngine) {
+            const delayed = this.monoSynthDelayLine.readSamples(
+              Math.max(1, ((p.delayMs ?? 1.0) * sampleRate) / 1000),
+            );
+            pickupSig += 0.5 * (rawWasm - 0.4 * delayed);
+          }
           const gain = p.blendGain ?? 1.0;
           // Phase inversion is applied by the WDF voltage source so the
           // pickups interfere inside the passive network.
@@ -793,38 +801,11 @@ class GuitarProcessor extends AudioWorkletProcessor {
 
       // Pass the array of voltages to the WDF circuit model
       // The WDF circuit naturally handles parallel averaging and series boosting
-      let wdfOut = this.wdf.processSample(pickupInputVoltages);
+      const wdfOut = this.wdf.processSample(pickupInputVoltages);
 
-      // Post-WDF polynomial magnetic saturation: models the pickup coil's
-      // nonlinear response to large string displacement (magnetic saturation).
-      // 3rd-order odd polynomial: y = x - k·x³  where k is small (default 0.015).
-      // Adds subtle 2nd/3rd harmonic warmth at high velocity without audible
-      // effect on clean playing.  Configurable via wdf-update pickupSaturation.
-      const satK = this.wdf._params.pickupSaturation ?? 0.015;
-      if (satK > 0) {
-        wdfOut = wdfOut - satK * wdfOut * wdfOut * wdfOut;
-      }
-
-      // Route through the coupled passive tone stack (replaces independent biquads)
-      const toneOut = this.toneStack.processSample(wdfOut);
-
-      // Power-amp sag: envelope follower for bias modulation
-      const absSample = Math.abs(wdfOut);
-      const sagCoeff = absSample > this.sagEnvelope ? this.sagAttackCoeff : this.sagReleaseCoeff;
-      this.sagEnvelope = sagCoeff * this.sagEnvelope + (1 - sagCoeff) * absSample;
-      // Sag gain reduction: louder sustained signal → volume dips, recovers slowly
-      const sagGainReduction = 1.0 - this.sagAmount * Math.min(1.0, this.sagEnvelope * 3.0);
-
-      outChan[i] = toneOut * sagGainReduction;
-    }
-
-    // Reuse a message object and throttle feedback to avoid render-thread
-    // allocation/clone pressure every 128-sample quantum.
-    if (this.sagPostCountdown > 0) this.sagPostCountdown--;
-    if (this.sagEnvelope > 0.001 && this.sagPostCountdown === 0) {
-      this.sagMessage.level = this.sagEnvelope;
-      this.port.postMessage(this.sagMessage);
-      this.sagPostCountdown = 7;
+      // Pickup/harness processing ends here. Amp tone shaping and power-stage
+      // dynamics live later in the Web Audio graph, at their physical points.
+      outChan[i] = wdfOut;
     }
 
     // Copy to remaining channels (stereo)
@@ -832,6 +813,59 @@ class GuitarProcessor extends AudioWorkletProcessor {
       output[channel].set(outChan);
     }
 
+    return true;
+  }
+}
+
+/**
+ * Allocation-free amp tone-stack stage. It is registered separately so the
+ * main-thread graph can place it between the preamp and power amp instead of
+ * filtering the guitar before distortion.
+ */
+export class ToneStackProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.toneStack = new WdfToneStack(sampleRate);
+    this.model = 'fender';
+    this.bass = 0.5;
+    this.mid = 0.5;
+    this.treble = 0.5;
+    this.toneStack.build(this.model);
+    this.toneStack.setControls(this.bass, this.mid, this.treble, true);
+
+    this.port.onmessage = (event) => {
+      const msg = event.data;
+      if (msg.type !== 'tone-stack-update') return;
+      if (msg.model && msg.model !== this.model) {
+        this.model = msg.model;
+        this.toneStack.build(this.model);
+      }
+      if (msg.bass !== undefined) this.bass = msg.bass;
+      if (msg.mid !== undefined) this.mid = msg.mid;
+      if (msg.treble !== undefined) this.treble = msg.treble;
+      this.toneStack.setControls(this.bass, this.mid, this.treble);
+    };
+  }
+
+  process(inputs, outputs) {
+    const input = inputs[0];
+    const output = outputs[0];
+    if (!output || output.length === 0) return true;
+
+    const outChan = output[0];
+    const inChan = input && input.length > 0 ? input[0] : null;
+    const length = outChan.length;
+    if (inChan) {
+      for (let i = 0; i < length; i++) {
+        outChan[i] = this.toneStack.processSample(inChan[i]);
+      }
+    } else {
+      outChan.fill(0);
+    }
+
+    for (let channel = 1; channel < output.length; channel++) {
+      output[channel].set(outChan);
+    }
     return true;
   }
 }
@@ -870,3 +904,4 @@ class DelayLine {
 }
 
 registerProcessor('guitar-processor', GuitarProcessor);
+registerProcessor('tone-stack-processor', ToneStackProcessor);

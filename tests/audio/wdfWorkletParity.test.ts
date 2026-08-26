@@ -36,6 +36,15 @@ afterAll(() => {
 });
 
 describe('WDF Worklet Parity', () => {
+  it('registers separate guitar and post-preamp tone-stack processors', () => {
+    const register = vi.mocked(
+      (globalThis as typeof globalThis & { registerProcessor: ReturnType<typeof vi.fn> })
+        .registerProcessor,
+    );
+    expect(register).toHaveBeenCalledWith('guitar-processor', expect.any(Function));
+    expect(register).toHaveBeenCalledWith('tone-stack-processor', expect.any(Function));
+  });
+
   it('keeps primitive scattering, tapers, caching, and dirty updates bit-identical', () => {
     const tsPot = new WdfPotentiometer(500000, 0.65, 'audio');
     const jsPot = new worklet.WdfPotentiometer(500000, 0.65, 'audio');
@@ -144,6 +153,27 @@ describe('WDF Worklet Parity', () => {
     }
   });
 
+  it('smooths live guitar control changes without delaying the initial snapshot', () => {
+    const runtime = new worklet.WdfCircuit(SAMPLE_RATE) as InstanceType<
+      typeof worklet.WdfCircuit
+    > & {
+      _currentVolumePos: number;
+      _targetVolumePos: number;
+    };
+    runtime.updateParams({ volumePos: 0.8, tonePos: 0.7 });
+    expect(runtime._currentVolumePos).toBe(0.8);
+
+    runtime.updateParams({ volumePos: 0.1 });
+    expect(runtime._currentVolumePos).toBe(0.8);
+    expect(runtime._targetVolumePos).toBe(0.1);
+    runtime.processSample(0.2);
+    expect(runtime._currentVolumePos).toBeLessThan(0.8);
+    expect(runtime._currentVolumePos).toBeGreaterThan(0.1);
+
+    for (let i = 0; i < SAMPLE_RATE * 0.12; i++) runtime.processSample(0);
+    expect(runtime._currentVolumePos).toBeCloseTo(0.1, 3);
+  });
+
   it('cancels identical parallel pickups when one is out of phase', () => {
     const runtime = new worklet.WdfCircuit(SAMPLE_RATE);
     const basePickup = {
@@ -189,5 +219,81 @@ describe('WDF Worklet Parity', () => {
 
     expect(Math.sign(seriesOutput)).toBe(Math.sign(singleOutput));
     expect(Math.abs(seriesOutput)).toBeGreaterThan(Math.abs(singleOutput));
+  });
+
+  it('preserves relative phase inside an exact series pickup network', () => {
+    const runtime = new worklet.WdfCircuit(SAMPLE_RATE);
+    const pickup = {
+      inductanceH: 2.4,
+      resistanceR: 6500,
+      windingCapFarads: 120e-12,
+    };
+    runtime.updateParams({
+      pickups: [
+        { ...pickup, isOutofPhase: false },
+        { ...pickup, isOutofPhase: true },
+      ],
+      isSeries: true,
+    });
+
+    const inputs = new Float64Array(2);
+    for (let i = 0; i < 512; i++) {
+      inputs[0] = Math.sin(i * 0.13) * 0.4;
+      inputs[1] = inputs[0];
+      expect(Math.abs(runtime.processSample(inputs))).toBeLessThan(1e-12);
+    }
+  });
+
+  it('uses per-string synthetic output while leaving recorded DI spatially unfiltered', () => {
+    const Processor = (worklet as unknown as {
+      GuitarProcessor: new () => {
+        engine: { process_chunk(): void } | null;
+        outBuffer: Float32Array | null;
+        stringOutBuffer: Float32Array | null;
+        wdf: {
+          _params: { pickups: Array<{ delayMs: number; blendGain: number }> };
+          _pickupInputVoltages: Float64Array;
+          _pickupCombDelaySamples: Float64Array;
+          processSample(input: ArrayLike<number>): number;
+        };
+        process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+      };
+    }).GuitarProcessor;
+
+    const processor = new Processor();
+    const captured = new Float64Array(128);
+    let sampleIndex = 0;
+    processor.wdf = {
+      _params: { pickups: [{ delayMs: 1, blendGain: 1 }] },
+      _pickupInputVoltages: new Float64Array(1),
+      _pickupCombDelaySamples: new Float64Array(6),
+      processSample(input) {
+        captured[sampleIndex] = input[0];
+        sampleIndex++;
+        return input[0];
+      },
+    } as typeof processor.wdf;
+
+    processor.engine = { process_chunk() {} };
+    processor.outBuffer = new Float32Array(128).fill(100);
+    processor.stringOutBuffer = new Float32Array(6 * 128);
+    processor.stringOutBuffer[0] = 0.2;
+    processor.stringOutBuffer[128] = 0.1;
+
+    const syntheticOutput = new Float32Array(128);
+    processor.process([[]], [[syntheticOutput]]);
+    expect(syntheticOutput[0]).toBeCloseTo(0.15, 6);
+    expect(syntheticOutput[0]).toBeLessThan(1);
+    // A legacy 1 ms sensing delay at the 250 Hz reference pitch maps to
+    // p=0.25, then tracks each string as p/f (48 samples at 48 kHz).
+    expect(processor.wdf._pickupCombDelaySamples[0]).toBeCloseTo(48, 7);
+
+    processor.engine = null;
+    processor.outBuffer = null;
+    processor.stringOutBuffer = null;
+    const diInput = new Float32Array(128).fill(0.25);
+    const diOutput = new Float32Array(128);
+    processor.process([[diInput]], [[diOutput]]);
+    expect(diOutput[0]).toBeCloseTo(0.25, 7);
   });
 });

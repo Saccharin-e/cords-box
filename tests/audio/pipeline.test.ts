@@ -1,62 +1,184 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Graph } from '@graph/Graph';
 import { solveSignalPaths } from '@graph/solver';
-import { audioPipeline } from '@audio/pipeline';
+import {
+  TRUE_CEILING_LINEAR,
+  audioPipeline,
+  findActiveHarnessControls,
+  getPickupWdfProfile,
+  inferOutOfPhasePickupIds,
+  inferPickupSelection,
+} from '@audio/pipeline';
 import { audioEngine } from '@audio/context';
-import type { CircuitNode } from '@graph/types';
+import type { CircuitNode, ComponentType } from '@graph/types';
 
 function createMockContext() {
   const counts = { createGain: 0, createBuffer: 0, createConvolver: 0 };
-  const makeParam = () => ({ value: 0, setValueAtTime: () => {} });
-  const makeNode = () => ({
-    connect: () => makeNode(),
-    disconnect: () => {},
-    gain: makeParam(),
-    frequency: makeParam(),
-    Q: makeParam(),
-    threshold: makeParam(),
-    knee: makeParam(),
-    ratio: makeParam(),
-    attack: makeParam(),
-    release: makeParam(),
-    delayTime: makeParam(),
-    curve: null,
-    oversample: 'none',
-    type: '',
-    buffer: null,
-    normalize: true,
-    fftSize: 256,
-    getByteTimeDomainData: () => {},
+  const nodes: any[] = [];
+  const worklets: any[] = [];
+  let nextNodeId = 0;
+  const makeParam = () => ({
+    value: 0,
+    targets: [] as Array<{ value: number; time: number; timeConstant: number }>,
+    setValues: [] as Array<{ value: number; time: number }>,
+    cancelScheduledValues: () => {},
+    setValueAtTime(value: number, time: number) {
+      this.value = value;
+      this.setValues.push({ value, time });
+    },
+    setTargetAtTime(value: number, time: number, timeConstant: number) {
+      this.value = value;
+      this.targets.push({ value, time, timeConstant });
+    },
+    linearRampToValueAtTime(value: number) {
+      this.value = value;
+    },
   });
+  const makeNode = (kind = 'node') => {
+    const node: any = {
+      id: ++nextNodeId,
+      kind,
+      connections: [] as any[],
+      connect(target: any) {
+        this.connections.push(target);
+        return target;
+      },
+      disconnect(target?: any) {
+        this.connections = target
+          ? this.connections.filter((connection: any) => connection !== target)
+          : [];
+      },
+      gain: makeParam(),
+      frequency: makeParam(),
+      Q: makeParam(),
+      threshold: makeParam(),
+      knee: makeParam(),
+      ratio: makeParam(),
+      attack: makeParam(),
+      release: makeParam(),
+      delayTime: makeParam(),
+      curve: null,
+      oversample: 'none',
+      type: '',
+      buffer: null,
+      normalize: true,
+      fftSize: 256,
+      getByteTimeDomainData: () => {},
+    };
+    nodes.push(node);
+    return node;
+  };
+
+  class MockAudioWorkletNode {
+    readonly kind: string;
+    readonly connections: any[] = [];
+    onprocessorerror: (() => void) | null = null;
+    readonly port = {
+      messages: [] as any[],
+      onmessage: null as ((event: { data: any }) => void) | null,
+      postMessage: (message: any) => {
+        this.port.messages.push(message);
+      },
+      emit: (message: any) => {
+        this.port.onmessage?.({ data: message });
+      },
+    };
+
+    constructor(_context: AudioContext, name: string) {
+      this.kind = name;
+      worklets.push(this);
+    }
+
+    connect(target: any) {
+      this.connections.push(target);
+      return target;
+    }
+
+    disconnect() {
+      this.connections.length = 0;
+    }
+  }
+
   const ctx: any = {
     sampleRate: 44100,
     currentTime: 0,
+    state: 'running',
+    audioWorklet: {},
     destination: makeNode(),
     createGain: () => {
       counts.createGain += 1;
-      return makeNode();
+      return makeNode('gain');
     },
-    createBiquadFilter: () => makeNode(),
-    createDynamicsCompressor: () => makeNode(),
-    createWaveShaper: () => makeNode(),
+    createBiquadFilter: () => makeNode('biquad'),
+    createDynamicsCompressor: () => makeNode('compressor'),
+    createWaveShaper: () => makeNode('waveshaper'),
     createConvolver: () => {
       counts.createConvolver += 1;
-      return makeNode();
+      return makeNode('convolver');
     },
-    createDelay: () => makeNode(),
+    createDelay: () => makeNode('delay'),
     createOscillator: () => ({
-      ...makeNode(),
+      ...makeNode('oscillator'),
       start: () => {},
       stop: () => {},
     }),
-    createChannelMerger: () => makeNode(),
-    createAnalyser: () => makeNode(),
+    createChannelMerger: () => makeNode('merger'),
+    createAnalyser: () => makeNode('analyser'),
     createBuffer: (_channels: number, length: number, sampleRate: number) => {
       counts.createBuffer += 1;
       return { getChannelData: () => new Float32Array(length), sampleRate, length };
     },
   };
-  return { ctx, counts };
+  return { ctx, counts, nodes, worklets, MockAudioWorkletNode };
+}
+
+function addPickup(graph: Graph, id: string, type: ComponentType, label = id) {
+  graph.addComponent({ id, type, label });
+  graph.addNode({
+    id: `${id}_hot`,
+    type: 'terminal',
+    componentId: id,
+    role: 'hot',
+    signalState: 'inactive',
+  });
+  graph.addNode({
+    id: `${id}_ground`,
+    type: 'ground',
+    componentId: id,
+    role: 'ground',
+    signalState: 'inactive',
+  });
+}
+
+function addOutput(graph: Graph) {
+  graph.addComponent({ id: 'output_jack', type: 'output_jack', label: 'Output' });
+  graph.addNode({
+    id: 'output_tip',
+    type: 'jack_terminal',
+    componentId: 'output_jack',
+    role: 'tip',
+    signalState: 'inactive',
+  });
+  graph.addNode({
+    id: 'output_sleeve',
+    type: 'jack_terminal',
+    componentId: 'output_jack',
+    role: 'ground',
+    signalState: 'inactive',
+  });
+}
+
+let edgeIndex = 0;
+function connect(graph: Graph, source: string, target: string) {
+  graph.addEdge({
+    id: `test-edge-${++edgeIndex}`,
+    source,
+    target,
+    resistance: 0,
+    wireColor: '#888',
+    connectionType: 'solder',
+    wireType: 'modern_vinyl',
+  });
 }
 
 describe('Audio DSP Pipeline', () => {

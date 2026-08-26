@@ -94,8 +94,8 @@ function estimateT60(data: Float32Array, windowSec = 0.1): number {
 
 describe('Pickup position comb filter', () => {
   it('bridge pickup nulls different harmonics than neck pickup', () => {
-    // Bridge pickup (pos ~0.15) should null harmonics near 1/(2*0.15) ≈ 3.33rd
-    // Neck pickup (pos ~0.72) should null harmonics near 1/(2*0.72) ≈ 0.69th (really the ~2nd)
+    // A pickup at position p follows sin(k·π·p), so bridge and neck
+    // positions suppress different harmonic families.
     const freq = 82.41; // Low E
 
     const bridge = renderKarplusStrong(freq, 0.55, SR, {
@@ -131,7 +131,7 @@ describe('Pickup position comb filter', () => {
 
   it('comb notch frequency tracks played pitch', () => {
     // Same pickup position (0.15), different notes: the comb notch should
-    // shift to match the new pitch (because d = 2*pos*N, where N ∝ 1/freq)
+    // shift to match the new pitch (because d = pos*N, where N ∝ 1/freq)
     const pickupPos = 0.15;
     
     const lowE = renderKarplusStrong(82.41, 0.55, SR, {
@@ -143,7 +143,7 @@ describe('Pickup position comb filter', () => {
       stringIndex: 5,
     });
 
-    // The null harmonic number is approximately 1/(2*pos) ≈ 3.33 for pos=0.15
+    // The first null harmonic number is approximately 1/pos ≈ 6.67 for pos=0.15
     // This should be the same harmonic number for both pitches (just at different
     // absolute frequencies) — confirming the comb tracks the pitch.
     const lowPartials = partialEnergies(lowE, 82.41, 8);

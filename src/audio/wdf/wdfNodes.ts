@@ -292,6 +292,82 @@ export class WdfSeriesAdaptor implements WdfElement {
 }
 
 /**
+ * Adapted N-port series junction used when several complete pickup branches
+ * are wired in series. Keeping each branch intact preserves heterogeneous
+ * winding capacitance and resonance instead of collapsing them into a single
+ * approximate R/L/C equivalent.
+ */
+export class WdfSeriesNAdaptor implements WdfElement {
+  public portResistance = MIN_PORT_RESISTANCE;
+  private readonly children: WdfElement[];
+  private readonly gammas: Float64Array;
+  private readonly reflectedWaves: Float64Array;
+  private readonly lastResistances: Float64Array;
+  private reflectedSum = 0;
+
+  constructor(children: WdfElement[]) {
+    if (children.length === 0) {
+      throw new Error('WdfSeriesNAdaptor requires at least one child');
+    }
+    this.children = children.slice();
+    this.gammas = new Float64Array(children.length);
+    this.reflectedWaves = new Float64Array(children.length);
+    this.lastResistances = new Float64Array(children.length);
+    this.updateGammas();
+  }
+
+  private updateGammas(): void {
+    let resistanceSum = 0;
+    for (let i = 0; i < this.children.length; i++) {
+      resistanceSum += this.children[i].portResistance;
+    }
+    this.portResistance = Math.max(MIN_PORT_RESISTANCE, resistanceSum);
+    for (let i = 0; i < this.children.length; i++) {
+      const resistance = this.children[i].portResistance;
+      this.gammas[i] = resistance / this.portResistance;
+      this.lastResistances[i] = resistance;
+    }
+  }
+
+  private ensureGammas(): void {
+    for (let i = 0; i < this.children.length; i++) {
+      if (this.children[i].portResistance !== this.lastResistances[i]) {
+        this.updateGammas();
+        return;
+      }
+    }
+  }
+
+  waveReflect(_a: number): number {
+    let sum = 0;
+    for (let i = 0; i < this.children.length; i++) {
+      const reflected = this.children[i].waveReflect(0);
+      this.reflectedWaves[i] = reflected;
+      sum += reflected;
+    }
+    this.ensureGammas();
+    this.reflectedSum = sum;
+    return -sum;
+  }
+
+  step(a: number): void {
+    const junctionWave = this.reflectedSum + a;
+    for (let i = 0; i < this.children.length; i++) {
+      const incident = this.reflectedWaves[i] - this.gammas[i] * junctionWave;
+      this.children[i].step(incident);
+    }
+  }
+
+  reset(): void {
+    for (let i = 0; i < this.children.length; i++) {
+      this.children[i].reset();
+      this.reflectedWaves[i] = 0;
+    }
+    this.reflectedSum = 0;
+  }
+}
+
+/**
  * WDF 3-Port Parallel Adaptor
  * Connects 2 child elements in parallel to a parent port.
  *
