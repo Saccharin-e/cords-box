@@ -2,6 +2,14 @@
 
 Implement comprehensive correctness fixes, physical modeling enhancements, and performance optimizations across the Wave Digital Filter (WDF) passive guitar circuit and tone stack simulation layer.
 
+## Implementation Status
+
+Implemented in August 2026. The production path now includes the regenerated
+Rust/WASM string engine, per-string pickup sensing, exact series/phase pickup
+networks, a shared coupled tone-stack solver at the physical post-preamp
+insertion point, sample-accurate worklet events, smoothed live controls,
+worklet fallback/readiness handling, and bounded final output gain.
+
 ## User Review Required
 
 > [!IMPORTANT]
@@ -14,11 +22,12 @@ Implement comprehensive correctness fixes, physical modeling enhancements, and p
 
 ---
 
-## Open Questions
+## Resolved Decisions
 
 > [!NOTE]
-> 1. **Pickup Self-Resonance**: Should the internal WDF pickup model incorporate winding capacitance ($C_{\text{winding}} \approx 100\text{–}180\text{ pF}$) to naturally generate the resonant peak, gradually deprecating the external `PeakingBiquad`, or keep the biquad as a hybrid booster for backward compatibility?
-> 2. **Tone Stack Makeup Gain**: Should makeup gain be statically tuned per model (Fender: 2.15×, Marshall: 1.65×, Mesa: 1.70×, Vox: 2.10×) or dynamically auto-calibrated at `build()` time via a 1 kHz test probe?
+>
+> 1. **Pickup Self-Resonance**: Pickup winding capacitance is part of each WDF pickup branch. The redundant global pickup peaking filter is removed from the worklet path.
+> 2. **Tone Stack Makeup Gain**: Fixed per-model recovery is used (Fender: 2.15×, Marshall: 1.65×, Mesa: 1.70×, Vox: 2.10×). Runtime unity calibration was rejected because it erased authentic insertion loss and consumed startup work.
 
 ---
 
@@ -28,16 +37,22 @@ Implement comprehensive correctness fixes, physical modeling enhancements, and p
 src/audio/wdf/
 ├── wdfNodes.ts            # Core WDF primitives (caching, taper, fixed parallel scattering)
 ├── wdfCircuitSolver.ts    # Graph-to-WDF compiler (treble bleed, pot tapers)
-└── wdfToneStack.ts        # Coupled tone stack engine (per-model makeup gain)
+├── toneStackCore.js       # Shared allocation-free coupled tone-stack runtime
+└── wdfToneStack.ts        # Typed tone-stack entry point
 
 src/audio/
-└── processor.js           # AudioWorklet inlined WDF parity (pickup capacitance, phase, dirty gammas)
+├── pipeline.ts            # Physical amp ordering, graph inference, readiness, gain staging
+├── processor.js           # Guitar and post-preamp tone-stack AudioWorklets
+└── wasm-pkg/              # Checked-in bindings generated from dsp/src/lib.rs
+
+dsp/src/lib.rs             # Stable per-string waveguide and frame-segment API
 
 tests/audio/
 ├── wdfNodes.test.ts        # Unit tests for pot tapers and adaptor caching
 ├── wdfCircuitSolver.test.ts# Treble bleed and pot curve verification
-├── toneStackWdf.test.ts    # Calibrated tone stack model response tests
-└── wdfWorkletParity.test.ts# Parity check between TS classes and processor.js
+├── toneStackWdf.test.ts    # Independent analogue AC-reference tests
+├── wasmProduction.test.ts  # Tests the checked-in production binary
+└── wdfWorkletParity.test.ts# Runtime parity and exact event scheduling
 ```
 
 ---
@@ -68,8 +83,9 @@ tests/audio/
 #### [MODIFY] [wdfToneStack.ts](file:///home/saccharin/code/cords-box/src/audio/wdf/wdfToneStack.ts)
 
 - **Per-Model Makeup Gain (1.3)**: Implement calibrated makeup gains for `fender`, `marshall`, `mesa`, and `vox` to normalize insertion loss at neutral control positions (0.5/0.5/0.5 at 1 kHz).
-- **Auto-Calibration Probe (4.1)**: Provide an internal calibration helper to compute exact 1 kHz insertion loss compensation during `build()`.
-- **Audio Taper Controls**: Use audio-taper potentiometers for treble, mid, and bass controls matching schematic pot designations.
+- **Shared Coupled Solve**: Use one five-node trapezoidal nodal solver in TypeScript tests and the AudioWorklet so bridged FMV/Vox networks are not approximated as reducible WDF trees.
+- **Fixed Recovery**: Preserve model-specific insertion loss with bounded static makeup gain; do not run an audio probe in `build()`.
+- **Control Laws**: Use the schematic pot connections and tapers, including the distinct three-terminal Vox bass network and fixed mid shunt.
 
 ---
 
@@ -80,24 +96,30 @@ tests/audio/
 - **Inlined WDF Parity**: Update inlined `WdfPotentiometer`, `WdfSeriesAdaptor`, and `WdfParallelAdaptor` implementations to match `wdfNodes.ts` (caching, dirty gammas, corrected parallel scattering).
 - **In-Tree Phase Cancellation (2.4)**: Move pickup phase inversion into `WdfVoltageSourceResistor.setVoltage(-v)` so out-of-phase interference is solved natively within the passive network.
 - **Pickup Coil Capacitance**: Add $C_{\text{winding}}$ to `WdfCircuit._buildTree()` pickup branches.
-- **Tone Stack Parity**: Sync `WdfToneStack` inlined class with calibrated per-model makeup gains and tapers.
+- **Tone Stack Parity**: Import the shared `toneStackCore.js` implementation directly so tests and the worklet cannot drift.
+- **Physical Ordering**: Register the tone stack as its own processor and place it after the preamp and before the power stage.
+- **Exact Events**: Render the WASM engine in frame segments around scheduled pluck, bend, and damp events.
 
 ---
 
 ### Test Harness & Verification
 
 #### [MODIFY] [wdfNodes.test.ts](file:///home/saccharin/code/cords-box/tests/audio/wdfNodes.test.ts)
+
 - Add unit tests for `WdfPotentiometer` tapers (`linear`, `audio`, `reverse_audio`).
 - Add tests verifying adaptor wave caching consistency and dirty-flag gamma updates.
 
 #### [MODIFY] [wdfCircuitSolver.test.ts](file:///home/saccharin/code/cords-box/tests/audio/wdfCircuitSolver.test.ts)
+
 - Add verification for treble bleed circuit retention of high frequencies when volume pot is rolled down.
 
 #### [MODIFY] [toneStackWdf.test.ts](file:///home/saccharin/code/cords-box/tests/audio/toneStackWdf.test.ts)
+
 - Verify that all four tone stack models (`fender`, `marshall`, `mesa`, `vox`) achieve insertion loss compensation within $\pm1.5\text{ dB}$ of unity at neutral.
 - Verify coupled interaction where mid boost suppresses bass/treble.
 
 #### [MODIFY] [wdfWorkletParity.test.ts](file:///home/saccharin/code/cords-box/tests/audio/wdfWorkletParity.test.ts)
+
 - Verify bit-for-bit parity between `src/audio/wdf/` TypeScript classes and `src/audio/processor.js` AudioWorklet inlined implementation.
 
 ---
@@ -105,7 +127,9 @@ tests/audio/
 ## Verification Plan
 
 ### Automated Tests
+
 Execute the full Vitest suite and TypeScript type check:
+
 ```bash
 # Run all unit and DSP integration tests
 npm run test
@@ -118,6 +142,7 @@ npm run typecheck
 ```
 
 ### Manual Verification
+
 1. **Interactive Canvas Fretboard & Controls**: Launch `npm run dev` and adjust Volume / Tone knobs on the canvas inspector to verify smooth, musical response curves without sudden volume jumps.
 2. **Tone Stack Model Switching**: Switch between Fender, Marshall, Mesa, and Vox amp models and verify audible tonal character and balanced overall level.
 3. **Phase & Treble Bleed Inspection**: Wire dual pickups out-of-phase and test volume roll-off with and without treble bleed capacitor components.

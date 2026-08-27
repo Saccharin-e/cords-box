@@ -45,6 +45,11 @@ describe('WDF Worklet Parity', () => {
     expect(register).toHaveBeenCalledWith('tone-stack-processor', expect.any(Function));
   });
 
+  it('reports the synchronous tone-stack processor as ready', () => {
+    const processor = new worklet.ToneStackProcessor();
+    expect(processor.port.postMessage).toHaveBeenCalledWith({ type: 'ready' });
+  });
+
   it('keeps primitive scattering, tapers, caching, and dirty updates bit-identical', () => {
     const tsPot = new WdfPotentiometer(500000, 0.65, 'audio');
     const jsPot = new worklet.WdfPotentiometer(500000, 0.65, 'audio');
@@ -244,21 +249,71 @@ describe('WDF Worklet Parity', () => {
     }
   });
 
-  it('uses per-string synthetic output while leaving recorded DI spatially unfiltered', () => {
-    const Processor = (worklet as unknown as {
-      GuitarProcessor: new () => {
-        engine: { process_chunk(): void } | null;
-        outBuffer: Float32Array | null;
-        stringOutBuffer: Float32Array | null;
-        wdf: {
-          _params: { pickups: Array<{ delayMs: number; blendGain: number }> };
-          _pickupInputVoltages: Float64Array;
-          _pickupCombDelaySamples: Float64Array;
-          processSample(input: ArrayLike<number>): number;
-        };
-        process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+  it('renders around scheduled events at their exact frame offsets', () => {
+    type ScheduledProcessor = {
+      engine: {
+        begin_chunk(): void;
+        process_frames(frameCount: number): void;
+        process_chunk(): void;
+        pluck(stringIndex: number, frequency: number, velocity: number): void;
       };
-    }).GuitarProcessor;
+      outBuffer: Float32Array;
+      stringOutBuffer: Float32Array | null;
+      port: { onmessage: ((event: MessageEvent) => void) | null };
+      process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+    };
+    const Processor = (worklet as unknown as { GuitarProcessor: new () => ScheduledProcessor })
+      .GuitarProcessor;
+    const processor = new Processor();
+    const calls: string[] = [];
+    processor.engine = {
+      begin_chunk() {
+        calls.push('begin');
+      },
+      process_frames(frameCount) {
+        calls.push(`frames:${frameCount}`);
+      },
+      process_chunk() {
+        calls.push('legacy-chunk');
+      },
+      pluck() {
+        calls.push('pluck');
+      },
+    };
+    processor.outBuffer = new Float32Array(128);
+    processor.stringOutBuffer = null;
+    processor.port.onmessage?.({
+      data: {
+        type: 'pluck',
+        string_idx: 2,
+        freq: 146.83,
+        velocity: 0.7,
+        time: 110 / SAMPLE_RATE,
+      },
+    } as MessageEvent);
+
+    processor.process([[]], [[new Float32Array(128)]]);
+
+    expect(calls).toEqual(['begin', 'frames:110', 'pluck', 'frames:18']);
+  });
+
+  it('uses per-string synthetic output while leaving recorded DI spatially unfiltered', () => {
+    const Processor = (
+      worklet as unknown as {
+        GuitarProcessor: new () => {
+          engine: { process_chunk(): void } | null;
+          outBuffer: Float32Array | null;
+          stringOutBuffer: Float32Array | null;
+          wdf: {
+            _params: { pickups: Array<{ delayMs: number; blendGain: number }> };
+            _pickupInputVoltages: Float64Array;
+            _pickupCombDelaySamples: Float64Array;
+            processSample(input: ArrayLike<number>): number;
+          };
+          process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+        };
+      }
+    ).GuitarProcessor;
 
     const processor = new Processor();
     const captured = new Float64Array(128);
@@ -284,9 +339,9 @@ describe('WDF Worklet Parity', () => {
     processor.process([[]], [[syntheticOutput]]);
     expect(syntheticOutput[0]).toBeCloseTo(0.15, 6);
     expect(syntheticOutput[0]).toBeLessThan(1);
-    // A legacy 1 ms sensing delay at the 250 Hz reference pitch maps to
-    // p=0.25, then tracks each string as p/f (48 samples at 48 kHz).
-    expect(processor.wdf._pickupCombDelaySamples[0]).toBeCloseTo(48, 7);
+    // Legacy delays encoded d=2p/f, so 1 ms at the 250 Hz reference maps to
+    // p=0.125. The corrected sensing delay p/f is 24 samples at 48 kHz.
+    expect(processor.wdf._pickupCombDelaySamples[0]).toBeCloseTo(24, 7);
 
     processor.engine = null;
     processor.outBuffer = null;

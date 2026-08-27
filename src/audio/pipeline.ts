@@ -65,7 +65,8 @@ export interface ActivePickupState {
   resonantQ: number;
   isOutofPhase: boolean;
   blendGain: number; // 0.0 to 1.0 (controlled by blender pots)
-  delayTimeMs: number; // Comb filter delay (pickup position along string)
+  delayTimeMs: number; // Legacy fallback-path delay at the 250 Hz reference pitch
+  positionFraction: number; // Physical distance from the bridge, as a fraction of scale length
 }
 
 export type PickupComponentType = Extract<
@@ -365,14 +366,12 @@ const cabinetIrCache = new Map<string, AudioBuffer>();
 const roomIrCache = new Map<number, AudioBuffer>();
 
 /**
- * Koren triode model parameters per amp type.
+ * Triode-inspired transfer parameters per amp type.
  *
- * Based on Norman Koren's triode plate-current equation, these parameters
- * produce physically realistic asymmetric soft-knee saturation:
+ * These parameters produce asymmetric soft-knee saturation:
  * - Positive half: grid conduction clipping with strong even-order harmonics (2nd, 4th)
  * - Negative half: cutoff region — softer compression, preserving odd harmonics
  *
- * `mu`: amplification factor (higher = more gain before saturation)
  * `biasShift`: DC offset that controls where the operating point sits on the curve
  * `satOnset`: amplitude where saturation begins (lower = earlier breakup)
  * `asymmetry`: ratio of positive to negative clipping intensity (>1 = harder positive clip)
@@ -380,20 +379,19 @@ const roomIrCache = new Map<number, AudioBuffer>();
 const AMP_TUBE_PARAMS: Record<
   AmpModelType,
   {
-    mu: number;
     biasShift: number;
     satOnset: number;
     asymmetry: number;
   }
 > = {
   // 12AX7 Fender Blackface: very linear, gentle compression above 0.7
-  clean_twin: { mu: 100, biasShift: 0.05, satOnset: 0.72, asymmetry: 1.25 },
+  clean_twin: { biasShift: 0.05, satOnset: 0.72, asymmetry: 1.25 },
   // EL34 Marshall JCM800: earlier saturation, strong 2nd harmonic crunch
-  crunch_800: { mu: 60, biasShift: 0.12, satOnset: 0.42, asymmetry: 1.55 },
+  crunch_800: { biasShift: 0.12, satOnset: 0.42, asymmetry: 1.55 },
   // Mesa Rectifier cascaded gain: hard compression above 0.25
-  high_gain: { mu: 35, biasShift: 0.22, satOnset: 0.25, asymmetry: 1.85 },
+  high_gain: { biasShift: 0.22, satOnset: 0.25, asymmetry: 1.85 },
   // EL84 Class-A Vox AC30: prominent cutoff-region softness, chimey character
-  vox_chime: { mu: 80, biasShift: 0.08, satOnset: 0.55, asymmetry: 1.15 },
+  vox_chime: { biasShift: 0.08, satOnset: 0.55, asymmetry: 1.15 },
 };
 
 /**
@@ -699,7 +697,7 @@ function smoothParam(
 }
 
 /**
- * Koren-inspired asymmetric triode saturation waveshaper curve.
+ * Asymmetric triode-inspired saturation waveshaper curve.
  *
  * Produces physically realistic soft-knee clipping where:
  * - Positive half (grid conduction): exponential saturation onset generates
@@ -710,47 +708,43 @@ function smoothParam(
  * The asymmetry between positive and negative halves is what distinguishes tube
  * saturation from symmetric digital clipping or simple tanh() curves.
  */
-function createTubeCurve(model: AmpModelType = 'clean_twin'): Float32Array<ArrayBuffer> {
+function evaluateTubeTransfer(
+  input: number,
+  parameters: (typeof AMP_TUBE_PARAMS)[AmpModelType],
+): number {
+  const biased = input + parameters.biasShift;
+  if (biased >= 0) {
+    const drive = biased / parameters.satOnset;
+    if (drive <= 1) return biased * (1 - 0.15 * drive * drive);
+    const excess = drive - 1;
+    const ceiling = parameters.satOnset * 0.85;
+    return ceiling + (1 - ceiling) * (1 - Math.exp(-excess * parameters.asymmetry * 1.8));
+  }
+
+  const magnitude = -biased;
+  const cutoffOnset = parameters.satOnset * (1 + 0.3 / parameters.asymmetry);
+  const drive = magnitude / cutoffOnset;
+  if (drive <= 1) return biased * (1 - 0.08 * drive * drive);
+  const excess = drive - 1;
+  const ceiling = cutoffOnset * 0.92;
+  return -(ceiling + (1 - ceiling) * (1 - Math.exp(-excess * 1.2)));
+}
+
+export function createTubeCurve(model: AmpModelType = 'clean_twin'): Float32Array<ArrayBuffer> {
   const cached = tubeCurveCache.get(model);
   if (cached) return cached;
 
   const p = AMP_TUBE_PARAMS[model];
   const N = 4096; // Higher resolution for smoother saturation transitions
   const curve = new Float32Array(new ArrayBuffer(N * Float32Array.BYTES_PER_ELEMENT));
+  // Bias controls asymmetric curvature, but a memoryless WaveShaper must map
+  // silence to silence. Subtracting the quiescent point prevents each
+  // cascaded tube stage from injecting a large DC signal into the next one.
+  const quiescentOutput = evaluateTubeTransfer(0, p);
 
   for (let i = 0; i < N; i += 1) {
     const x = (i * 2) / (N - 1) - 1; // -1.0 to +1.0
-
-    // Apply bias shift (models the DC operating point of the tube)
-    const biased = x + p.biasShift;
-
-    if (biased >= 0) {
-      // Positive half — grid conduction clipping (even harmonics)
-      // Soft-knee: linear below satOnset, then exponential compression
-      const drive = biased / p.satOnset;
-      if (drive <= 1.0) {
-        // Below saturation onset: near-linear with gentle 2nd-order curve
-        curve[i] = biased * (1.0 - 0.15 * drive * drive);
-      } else {
-        // Above onset: exponential saturation approaching ceiling
-        const excess = drive - 1.0;
-        const ceiling = p.satOnset * 0.85; // Value at onset point
-        curve[i] = ceiling + (1.0 - ceiling) * (1.0 - Math.exp(-excess * p.asymmetry * 1.8));
-      }
-    } else {
-      // Negative half — cutoff clipping (odd harmonics preserved)
-      // Softer compression with a later onset and gentler knee
-      const absBiased = -biased;
-      const cutoffOnset = p.satOnset * (1.0 + 0.3 / p.asymmetry);
-      const drive = absBiased / cutoffOnset;
-      if (drive <= 1.0) {
-        curve[i] = biased * (1.0 - 0.08 * drive * drive);
-      } else {
-        const excess = drive - 1.0;
-        const ceiling = cutoffOnset * 0.92;
-        curve[i] = -(ceiling + (1.0 - ceiling) * (1.0 - Math.exp(-excess * 1.2)));
-      }
-    }
+    curve[i] = evaluateTubeTransfer(x, p) - quiescentOutput;
   }
 
   // Normalize curve to [-1, 1] range
@@ -1167,6 +1161,7 @@ export class AudioPipeline {
         resistanceR: profile.resistanceOhms,
         windingCapFarads: profile.windingCapFarads,
         delayMs: p.delayTimeMs,
+        positionFraction: p.positionFraction,
         resonantFreq: p.resonantFreq,
         resonantQ: p.resonantQ,
         isOutofPhase: p.isOutofPhase,
@@ -1480,7 +1475,11 @@ export class AudioPipeline {
     );
     this.wdfSolver.buildFromGraph(graph, result);
 
-    if (audioEngine.isWorkletReady() && ctx.audioWorklet) {
+    // If a fallback graph already exists, promote it to the worklet before
+    // taking the live-update path. On the first build, wait until cleanup has
+    // completed so a freshly constructed processor is not immediately torn
+    // down by cleanupNodes().
+    if (this.masterGain && audioEngine.isWorkletReady() && ctx.audioWorklet) {
       void this.instantiateWdfWorklet(ctx, graph);
     }
     this.postWdfUpdate(graph, result);
@@ -1491,7 +1490,7 @@ export class AudioPipeline {
       topology.pickups
         .map(
           (p) =>
-            `${p.id}|${p.type}|${p.resonantFreq}|${p.resonantQ}|${p.isOutofPhase ? 1 : 0}|${p.delayTimeMs}`,
+            `${p.id}|${p.type}|${p.resonantFreq}|${p.resonantQ}|${p.isOutofPhase ? 1 : 0}|${p.positionFraction}`,
         )
         .join(';') + `|${topology.isSeries ? 1 : 0}`;
 
@@ -1781,6 +1780,9 @@ export class AudioPipeline {
     void this.initializeSampleBank(ctx);
 
     this.lastAppliedAmpModel = null;
+    if (audioEngine.isWorkletReady() && ctx.audioWorklet) {
+      void this.instantiateWdfWorklet(ctx, graph);
+    }
     this.ensureToneStackWorklet(ctx);
     this.applyPedalboardStateToNodes(ctx);
     this.routeInputThroughTopology(ctx, 1.0);
@@ -2319,6 +2321,7 @@ export class AudioPipeline {
             isOutofPhase: false,
             blendGain: 1.0,
             delayTimeMs: 1.5,
+            positionFraction: (1.5 * 250) / 2000,
           },
         ],
         isSeries: false,
@@ -2400,6 +2403,9 @@ export class AudioPipeline {
         isOutofPhase,
         blendGain: gain,
         delayTimeMs: delayMs,
+        // Legacy delay presets used d=2p/f. Preserve their intended physical
+        // pickup locations while the worklet applies the corrected d=p/f law.
+        positionFraction: Math.max(0.02, Math.min(0.48, (delayMs * 250) / 2000)),
       };
     });
 

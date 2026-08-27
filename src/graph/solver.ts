@@ -132,9 +132,20 @@ export function solveSignalPaths(graph: Graph): SolverResult {
   const nodes = graph.getNodes();
   const edges = graph.getEdges();
 
-  // Find source nodes (pickup terminals: hot or ground leads that generate AC guitar voltage)
+  // Find source nodes from the component schema, not an arbitrary id prefix.
+  // The prefix fallback keeps older node-only fixtures/imports readable until
+  // they are migrated to complete component records.
   const sourceNodes = nodes.filter(
-    (n) => n.componentId.startsWith('pickup') && (n.role === 'hot' || n.role === 'ground'),
+    (node) => {
+      if (node.role !== 'hot' && node.role !== 'ground') return false;
+      const component = graph.getComponent(node.componentId);
+      if (!component) return node.componentId.startsWith('pickup');
+      return (
+        component.type === 'pickup_single_coil' ||
+        component.type === 'pickup_humbucker' ||
+        component.type === 'pickup_p90'
+      );
+    },
   );
 
   // Find destination nodes (output jack terminals)

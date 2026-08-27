@@ -4,6 +4,7 @@ import { solveSignalPaths } from '@graph/solver';
 import {
   TRUE_CEILING_LINEAR,
   audioPipeline,
+  createTrueCeilingCurve,
   findActiveHarnessControls,
   getPickupWdfProfile,
   inferOutOfPhasePickupIds,
@@ -181,18 +182,151 @@ function connect(graph: Graph, source: string, target: string) {
   });
 }
 
+function solverResultWith(...activeNodeIds: string[]) {
+  return {
+    activePaths: [],
+    activeNodes: new Set(activeNodeIds),
+    activeEdges: new Set<string>(),
+    deadEndNodes: new Set<string>(),
+  };
+}
+
+describe('graph-derived WDF configuration', () => {
+  it('maps pickup electrical profiles from component types, not ids or labels', () => {
+    expect(getPickupWdfProfile('pickup_humbucker')).toEqual({
+      inductanceH: 4.2,
+      resistanceOhms: 8500,
+      windingCapFarads: 160e-12,
+    });
+    expect(getPickupWdfProfile('renamed-neck-pickup')).toBe(
+      getPickupWdfProfile('pickup_single_coil'),
+    );
+  });
+
+  it('distinguishes an isolated series link from a shared parallel output net', () => {
+    const seriesGraph = new Graph('Guitar');
+    addPickup(seriesGraph, 'neck', 'pickup_single_coil');
+    addPickup(seriesGraph, 'bridge', 'pickup_single_coil');
+    addOutput(seriesGraph);
+    connect(seriesGraph, 'neck_hot', 'output_tip');
+    connect(seriesGraph, 'neck_ground', 'bridge_hot');
+    connect(seriesGraph, 'bridge_ground', 'output_sleeve');
+
+    expect(inferPickupSelection(seriesGraph, solverResultWith('neck_hot'))).toEqual({
+      activePickupIds: ['neck', 'bridge'],
+      isSeries: true,
+    });
+
+    const parallelGraph = new Graph('Guitar');
+    addPickup(parallelGraph, 'neck', 'pickup_single_coil');
+    addPickup(parallelGraph, 'bridge', 'pickup_humbucker');
+    addOutput(parallelGraph);
+    connect(parallelGraph, 'neck_hot', 'output_tip');
+    connect(parallelGraph, 'bridge_hot', 'output_tip');
+    connect(parallelGraph, 'neck_ground', 'output_sleeve');
+    connect(parallelGraph, 'bridge_ground', 'output_sleeve');
+
+    expect(
+      inferPickupSelection(parallelGraph, solverResultWith('neck_hot', 'bridge_hot', 'output_tip')),
+    ).toEqual({ activePickupIds: ['neck', 'bridge'], isSeries: false });
+  });
+
+  it('only marks a pickup out of phase when both leads reach pulled DPDT commons', () => {
+    const graph = new Graph('Guitar');
+    addPickup(graph, 'neck', 'pickup_single_coil');
+    graph.addComponent({ id: 'phase', type: 'switch_dpdt', label: 'Phase' });
+    graph.addNode({
+      id: 'phase_common_a',
+      type: 'switch_lug',
+      componentId: 'phase',
+      role: 'common',
+      signalState: 'inactive',
+    });
+    graph.addNode({
+      id: 'phase_common_b',
+      type: 'switch_lug',
+      componentId: 'phase',
+      role: 'common',
+      signalState: 'inactive',
+    });
+    graph.setSwitchState({ componentId: 'phase', currentPosition: 2, totalPositions: 2, poles: 2 });
+    connect(graph, 'neck_hot', 'phase_common_a');
+    connect(graph, 'neck_ground', 'phase_common_b');
+
+    expect(inferOutOfPhasePickupIds(graph, ['neck'])).toEqual(new Set(['neck']));
+  });
+
+  it('selects controls and capacitors attached to the solved signal path', () => {
+    const graph = new Graph('Guitar');
+    graph.addComponent({
+      id: 'volume',
+      type: 'pot_volume',
+      label: 'Master volume',
+      value: { resistance_kohms: 500, taper: 'audio', position: 0.7 },
+    });
+    graph.addComponent({
+      id: 'tone',
+      type: 'pot_tone',
+      label: 'Tone',
+      value: { resistance_kohms: 250, taper: 'linear', position: 0.4 },
+    });
+    graph.addComponent({
+      id: 'tone-cap',
+      type: 'capacitor',
+      label: 'Tone capacitor',
+      value: { capacitance_pf: 47000 },
+    });
+    graph.addComponent({
+      id: 'bleed',
+      type: 'treble_bleed',
+      label: 'Treble bleed',
+      value: { capacitance_pf: 1000 },
+    });
+    for (const id of ['volume', 'tone', 'tone-cap', 'bleed']) {
+      graph.addNode({
+        id: `${id}-node`,
+        type: id.includes('cap') || id === 'bleed' ? 'capacitor_lead' : 'potentiometer_lug',
+        componentId: id,
+        signalState: 'active',
+      });
+    }
+    connect(graph, 'tone-node', 'tone-cap-node');
+
+    const controls = findActiveHarnessControls(
+      graph,
+      solverResultWith('volume-node', 'tone-node', 'tone-cap-node', 'bleed-node'),
+    );
+    expect(controls.volumePot?.id).toBe('volume');
+    expect(controls.tonePot?.id).toBe('tone');
+    expect(controls.toneCap?.id).toBe('tone-cap');
+    expect(controls.trebleBleed?.id).toBe('bleed');
+  });
+
+  it('hard-clamps the final safety curve to the documented -1 dB ceiling', () => {
+    const curve = createTrueCeilingCurve();
+    expect(curve[0]).toBeCloseTo(-TRUE_CEILING_LINEAR, 7);
+    expect(curve[curve.length - 1]).toBeCloseTo(TRUE_CEILING_LINEAR, 7);
+    expect(Math.max(...curve)).toBeLessThanOrEqual(TRUE_CEILING_LINEAR);
+  });
+});
+
 describe('Audio DSP Pipeline', () => {
   let graph: Graph;
   let mock: ReturnType<typeof createMockContext>;
 
   beforeEach(() => {
+    audioPipeline.cleanupNodes();
     graph = new Graph('Guitar');
     mock = createMockContext();
     vi.spyOn(audioEngine, 'getContext').mockReturnValue(mock.ctx);
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 404 })),
+    );
   });
 
   afterEach(() => {
+    audioPipeline.cleanupNodes();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -279,6 +413,44 @@ describe('Audio DSP Pipeline', () => {
 
     // Impulse responses are cached: two rebuilds still only created two IRs.
     expect(mock.counts.createBuffer).toBe(2);
+  });
+
+  it('retains worklets created during the initial pipeline build', async () => {
+    vi.spyOn(audioEngine, 'isWorkletReady').mockReturnValue(true);
+    vi.stubGlobal('AudioWorkletNode', mock.MockAudioWorkletNode);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => new ArrayBuffer(8),
+      })),
+    );
+    addPickup(graph, 'custom-neck', 'pickup_single_coil');
+    addOutput(graph);
+    connect(graph, 'custom-neck_hot', 'output_tip');
+
+    audioPipeline.updatePipeline(graph, solveSignalPaths(graph));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mock.worklets.map((worklet) => worklet.kind)).toEqual([
+      'tone-stack-processor',
+      'guitar-processor',
+    ]);
+    expect(audioPipeline.getWorkletStatus()).toBe('initializing');
+    const guitarWorklet = mock.worklets.find((worklet) => worklet.kind === 'guitar-processor');
+    expect(
+      guitarWorklet?.port.messages.some((message: { type?: string }) => message.type === 'init'),
+    ).toBe(true);
+    const wdfUpdate = guitarWorklet?.port.messages.find(
+      (message: { type?: string }) => message.type === 'wdf-update',
+    );
+    expect(wdfUpdate.params.pickups[0]).toMatchObject({
+      inductanceH: 2.4,
+      resistanceR: 6500,
+      positionFraction: 0.275,
+    });
   });
 
   it('should clean up nodes on dispose', () => {

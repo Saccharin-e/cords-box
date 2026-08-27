@@ -120,6 +120,21 @@ export type WorkletToneStackModel = 'fender' | 'marshall' | 'mesa' | 'vox';
 export class WdfToneStack {
   constructor(sampleRate: number);
   build(model: WorkletToneStackModel): void;
-  setControls(bass: number, mid: number, treble: number): void;
+  setControls(bass: number, mid: number, treble: number, immediate?: boolean): void;
+  setSmoothingTime(milliseconds: number): void;
   processSample(input: number): number;
+  processBuffer(input: Float32Array, output: Float32Array): void;
+  reset(): void;
+  getModel(): WorkletToneStackModel;
+  getMakeupGain(): number;
+}
+
+export class GuitarProcessor extends AudioWorkletProcessor {
+  readonly port: MessagePort;
+  process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+}
+
+export class ToneStackProcessor extends AudioWorkletProcessor {
+  readonly port: MessagePort;
+  process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
 }

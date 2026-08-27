@@ -65,6 +65,43 @@ describe('Signal Path Solver', () => {
     expect(result.deadEndNodes.has('pickup_hot')).toBe(true);
   });
 
+  it('recognizes pickup sources by component type after custom renaming', () => {
+    graph.addComponent({
+      id: 'custom-neck-id',
+      type: 'pickup_humbucker',
+      label: 'Renamed source',
+    });
+    graph.addComponent({ id: 'custom-output-id', type: 'output_jack', label: 'Output' });
+    graph.addNode({
+      id: 'custom-hot',
+      type: 'terminal',
+      componentId: 'custom-neck-id',
+      role: 'hot',
+      signalState: 'inactive',
+    });
+    graph.addNode({
+      id: 'custom-tip',
+      type: 'jack_terminal',
+      componentId: 'custom-output-id',
+      role: 'tip',
+      signalState: 'inactive',
+    });
+    graph.addEdge({
+      id: 'custom-wire',
+      source: 'custom-hot',
+      target: 'custom-tip',
+      resistance: 0,
+      wireColor: '#888',
+      connectionType: 'solder',
+      wireType: 'modern_vinyl',
+    });
+
+    const result = solveSignalPaths(graph);
+
+    expect(result.activePaths).toHaveLength(1);
+    expect(result.activeNodes).toEqual(new Set(['custom-hot', 'custom-tip']));
+  });
+
   it('should handle multi-hop paths through switches', () => {
     const nodes: CircuitNode[] = [
       {

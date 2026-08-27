@@ -18,6 +18,47 @@ function rms(samples: Float32Array): number {
   return Math.sqrt(energy / samples.length);
 }
 
+function renderEngine(engine: DspEngine, sampleCount: number): Float32Array {
+  const rendered = new Float32Array(sampleCount);
+  let write = 0;
+  while (write < sampleCount) {
+    engine.process_chunk();
+    const output = new Float32Array(wasm.memory.buffer, engine.output_ptr(), RENDER_QUANTUM);
+    const count = Math.min(RENDER_QUANTUM, sampleCount - write);
+    rendered.set(output.subarray(0, count), write);
+    write += count;
+  }
+  return rendered;
+}
+
+function estimatePitch(samples: Float32Array, sampleRate: number, targetFrequency: number): number {
+  const start = Math.round(sampleRate * 0.25);
+  const length = Math.round(sampleRate * 0.25);
+  const minimumLag = Math.floor(sampleRate / (targetFrequency * 1.08));
+  const maximumLag = Math.ceil(sampleRate / (targetFrequency * 0.92));
+  let bestLag = minimumLag;
+  let bestCorrelation = -Infinity;
+
+  for (let lag = minimumLag; lag <= maximumLag; lag++) {
+    let cross = 0;
+    let leftEnergy = 0;
+    let rightEnergy = 0;
+    for (let index = 0; index < length - lag; index++) {
+      const left = samples[start + index];
+      const right = samples[start + index + lag];
+      cross += left * right;
+      leftEnergy += left * left;
+      rightEnergy += right * right;
+    }
+    const correlation = cross / Math.sqrt(leftEnergy * rightEnergy);
+    if (correlation > bestCorrelation) {
+      bestCorrelation = correlation;
+      bestLag = lag;
+    }
+  }
+  return sampleRate / bestLag;
+}
+
 describe('checked-in production string WASM', () => {
   it('exports the complete current control and render surface', () => {
     const engine = new DspEngine(48_000, 1);
@@ -49,6 +90,27 @@ describe('checked-in production string WASM', () => {
       expect(sum).toBeCloseTo(mixed[frame], 6);
     }
     engine.free();
+  });
+
+  it('holds representative low, middle, and high notes within 15 cents', () => {
+    const sampleRate = 48_000;
+    const cases: Array<[number, number]> = [
+      [0, 82.4069],
+      [2, 146.832],
+      [5, 659.255],
+    ];
+    for (const [stringIndex, targetFrequency] of cases) {
+      const engine = new DspEngine(sampleRate, 17 + stringIndex);
+      engine.pluck(stringIndex, targetFrequency, 0.75);
+      const rendered = renderEngine(engine, sampleRate);
+      const measuredFrequency = estimatePitch(rendered, sampleRate, targetFrequency);
+      const centsError = 1200 * Math.log2(measuredFrequency / targetFrequency);
+      expect(
+        Math.abs(centsError),
+        `${targetFrequency} Hz measured as ${measuredFrequency} Hz`,
+      ).toBeLessThan(15);
+      engine.free();
+    }
   });
 
   it('renders five seconds without non-finite samples, clipping, or RMS growth', () => {

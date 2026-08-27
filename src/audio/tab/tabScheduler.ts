@@ -309,7 +309,7 @@ export class TabScheduler {
         // Damp the previous note on this string before the new attack
         // Schedule a fast gain ramp-down ~8ms before the new note
         const dampTime = Math.max(noteStartTime - 0.008, targetAudioTime - 0.001);
-        audioPipeline.dampString(note.stringIdx, dampTime);
+        audioPipeline.dampString(note.stringIdx, 1.0, dampTime);
       }
 
       // For legato articulations (hammer/pull/slide), the pipeline's bend/glide

@@ -701,24 +701,53 @@ export class GuitarProcessor extends AudioWorkletProcessor {
     const outChan = output[0];
     const inChan = input && input.length > 0 && input[0].length > 0 ? input[0] : null;
 
-    // Process scheduled events due in this render quantum
-    if (this.engine && this.scheduledEventIndex < this.scheduledEvents.length) {
+    // Render around queued control events so they land at their exact frame
+    // inside the 128-sample quantum. Older generated engines retain the
+    // block-quantized compatibility path below.
+    let renderedWithFrameApi = false;
+    if (
+      this.engine &&
+      typeof this.engine.begin_chunk === 'function' &&
+      typeof this.engine.process_frames === 'function'
+    ) {
+      this.engine.begin_chunk();
+      let renderedFrames = 0;
       const blockEndTime = currentTime + outChan.length / sampleRate;
       while (
         this.scheduledEventIndex < this.scheduledEvents.length &&
         this.scheduledEvents[this.scheduledEventIndex].time <= blockEndTime
       ) {
-        const ev = this.scheduledEvents[this.scheduledEventIndex++];
-        this.executeEvent(ev);
+        const event = this.scheduledEvents[this.scheduledEventIndex++];
+        const eventFrame = Math.max(
+          renderedFrames,
+          Math.min(outChan.length, Math.round((event.time - currentTime) * sampleRate)),
+        );
+        if (eventFrame > renderedFrames) {
+          this.engine.process_frames(eventFrame - renderedFrames);
+          renderedFrames = eventFrame;
+        }
+        this.executeEvent(event);
       }
-      if (this.scheduledEventIndex === this.scheduledEvents.length) {
-        this.scheduledEvents.length = 0;
-        this.scheduledEventIndex = 0;
+      if (renderedFrames < outChan.length) {
+        this.engine.process_frames(outChan.length - renderedFrames);
+      }
+      renderedWithFrameApi = true;
+    } else if (this.engine && this.scheduledEventIndex < this.scheduledEvents.length) {
+      const blockEndTime = currentTime + outChan.length / sampleRate;
+      while (
+        this.scheduledEventIndex < this.scheduledEvents.length &&
+        this.scheduledEvents[this.scheduledEventIndex].time <= blockEndTime
+      ) {
+        this.executeEvent(this.scheduledEvents[this.scheduledEventIndex++]);
       }
     }
 
-    // Run WASM DSP engine chunk if active
-    if (this.engine) {
+    if (this.scheduledEventIndex === this.scheduledEvents.length) {
+      this.scheduledEvents.length = 0;
+      this.scheduledEventIndex = 0;
+    }
+
+    if (this.engine && !renderedWithFrameApi) {
       this.engine.process_chunk();
     }
 
@@ -737,7 +766,7 @@ export class GuitarProcessor extends AudioWorkletProcessor {
         // each string's actual period instead of filtering the mono chord.
         const normalizedPosition = Math.max(
           0.02,
-          Math.min(0.48, pickup.positionFraction ?? ((pickup.delayMs ?? 1.0) * 250) / 1000),
+          Math.min(0.48, pickup.positionFraction ?? ((pickup.delayMs ?? 1.0) * 250) / 2000),
         );
         for (let stringIndex = 0; stringIndex < 6; stringIndex++) {
           const stringFrequency =
@@ -845,6 +874,7 @@ export class ToneStackProcessor extends AudioWorkletProcessor {
       if (msg.treble !== undefined) this.treble = msg.treble;
       this.toneStack.setControls(this.bass, this.mid, this.treble);
     };
+    this.port.postMessage({ type: 'ready' });
   }
 
   process(inputs, outputs) {
@@ -893,7 +923,7 @@ class DelayLine {
     return this._readAt(delaySamples);
   }
   _readAt(delaySamples) {
-    let readPtr = this.ptr - delaySamples;
+    let readPtr = (this.ptr - delaySamples) % this.buffer.length;
     if (readPtr < 0) readPtr += this.buffer.length;
     const intPtr = Math.floor(readPtr);
     const frac = readPtr - intPtr;
