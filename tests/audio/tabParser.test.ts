@@ -249,4 +249,52 @@ E|----------------|
     expect(pinchNotes[0].velocity).toBe(0.9);
     expect(pinchNotes[1].fret).toBe(12);
   });
+
+  it('should parse time signatures and scale measure offsets from them', () => {
+    const sixEightTab = `
+Time: 6/8
+e|0---2---|0---2---|
+B|--------|--------|
+G|--------|--------|
+D|--------|--------|
+A|--------|--------|
+E|--------|--------|
+`;
+    const defaultTab = sixEightTab.replace('Time: 6/8\n', '');
+
+    const sixEightScore = parseAsciiTab(sixEightTab);
+    const defaultScore = parseAsciiTab(defaultTab);
+
+    expect(sixEightScore.timeSignature).toEqual([6, 8]);
+    expect(defaultScore.timeSignature).toEqual([4, 4]);
+    expect(sixEightScore.measures).toHaveLength(2);
+    expect(sixEightScore.measures[0].beats[1].offsetBeats).toBeCloseTo(1.5);
+    expect(defaultScore.measures[0].beats[1].offsetBeats).toBeCloseTo(2);
+  });
+
+  it('should attach standalone section labels to the following measure block', () => {
+    const labeledTab = `
+[Verse]
+e|0-------|
+B|--------|
+G|--------|
+D|--------|
+A|--------|
+E|--------|
+
+[Chorus]
+e|3-------|
+B|--------|
+G|--------|
+D|--------|
+A|--------|
+E|--------|
+`;
+
+    const score = parseAsciiTab(labeledTab);
+
+    expect(score.measures).toHaveLength(2);
+    expect(score.measures[0].label).toBe('Verse');
+    expect(score.measures[1].label).toBe('Chorus');
+  });
 });

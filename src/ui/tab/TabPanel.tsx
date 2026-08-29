@@ -15,11 +15,25 @@ import { useState, useEffect, useRef } from 'react';
 import { parseAsciiTab } from '@audio/tab/tabParser';
 import { tabScheduler } from '@audio/tab/tabScheduler';
 import type { TabScore } from '@audio/tab/tabTypes';
+import { getBeatsPerMeasure } from '@audio/tab/tabTypes';
 import { useCanvasStore } from '@store/canvasStore';
 import { useTuningStore } from '@store/tuningStore';
 import { Button } from '../common/Button';
 import { Slider } from '../common/Slider';
-import { Download, Edit2, Music, Sliders, Timer, Upload, X } from 'lucide-react';
+import {
+  Download,
+  Edit2,
+  Headphones,
+  ListMusic,
+  Metronome,
+  Music,
+  Repeat2,
+  Sliders,
+  Timer,
+  Upload,
+  VolumeX,
+  X,
+} from 'lucide-react';
 import { RIG_PRESETS, audioPipeline } from '@audio/index';
 
 export const TAB_PRESETS: {
@@ -75,7 +89,7 @@ E|0---------------|----------------|0---------------|-------4---5---6|`,
   },
   {
     id: 'sweet_child',
-    label: 'Guns N\' Roses - Sweet Child O\' Mine (Intro)',
+    label: "Guns N' Roses - Sweet Child O' Mine (Intro)",
     bpm: 125,
     tuningId: 'eb_standard',
     rigPresetId: 'classic_rock_crunch',
@@ -131,7 +145,7 @@ D|0-0-1-2---2---2-|2-2-1-0---0---0-|0-0-1-2---2---2-|2-2-1-0---0---0-|`,
   },
   {
     id: 'cant_stop',
-    label: 'RHCP - Can\'t Stop (Main Riff)',
+    label: "RHCP - Can't Stop (Main Riff)",
     bpm: 91,
     tuningId: 'standard_e',
     rigPresetId: 'clean_chime',
@@ -159,11 +173,22 @@ export function TabPanel() {
   const [currentBeat, setCurrentBeat] = useState(0);
   const [parsedScore, setParsedScore] = useState<TabScore | null>(null);
   const [isTextEditorOpen, setIsTextEditorOpen] = useState(false);
+  const [loopAnchorBeat, setLoopAnchorBeat] = useState<number | null>(null);
+  const [loopRegion, setLoopRegion] = useState<{ startBeat: number; endBeat: number } | null>(null);
+  const [mutedStrings, setMutedStrings] = useState<boolean[]>(() => Array(6).fill(false));
+  const [soloedStrings, setSoloedStrings] = useState<boolean[]>(() => Array(6).fill(false));
+  const [metronomeEnabled, setMetronomeEnabled] = useState(false);
+  const [countInEnabled, setCountInEnabled] = useState(false);
 
   // Window Dragging State
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef<{ pointerX: number; pointerY: number; posX: number; posY: number } | null>(null);
+  const dragStartRef = useRef<{
+    pointerX: number;
+    pointerY: number;
+    posX: number;
+    posY: number;
+  } | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -249,6 +274,8 @@ export function TabPanel() {
     const score = parseAsciiTab(textToParse, targetBpm, targetTuningId);
     setParsedScore(score);
     tabScheduler.setScore(score);
+    setLoopAnchorBeat(null);
+    setLoopRegion(null);
   };
 
   useEffect(() => {
@@ -295,12 +322,37 @@ export function TabPanel() {
     const rect = timelineRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left + timelineRef.current.scrollLeft - 50;
     const BEAT_PX = 44;
-    const clickedBeat = Math.max(0, clickX / BEAT_PX);
+    const scoreBeats = parsedScore
+      ? parsedScore.measures.length * getBeatsPerMeasure(parsedScore.timeSignature)
+      : 0;
+    const clickedBeat = Math.max(0, Math.min(scoreBeats, Math.round((clickX / BEAT_PX) * 4) / 4));
+
+    if (e.shiftKey && scoreBeats > 0) {
+      if (loopAnchorBeat === null) {
+        tabScheduler.clearLoopRegion();
+        setLoopRegion(null);
+        setLoopAnchorBeat(clickedBeat);
+      } else if (clickedBeat !== loopAnchorBeat) {
+        const startBeat = Math.min(loopAnchorBeat, clickedBeat);
+        const endBeat = Math.max(loopAnchorBeat, clickedBeat);
+        tabScheduler.setLoopRegion(startBeat, endBeat);
+        setLoopRegion({ startBeat, endBeat });
+        setLoopAnchorBeat(null);
+      }
+      return;
+    }
+
+    setLoopAnchorBeat(null);
     tabScheduler.seek(clickedBeat);
   };
 
-  const totalMeasures = parsedScore ? Math.max(4, parsedScore.measures.length) : 16;
-  const totalBeats = totalMeasures * 4;
+  const beatsPerMeasure = parsedScore ? getBeatsPerMeasure(parsedScore.timeSignature) : 4;
+  const totalMeasures = parsedScore ? Math.max(1, parsedScore.measures.length) : 16;
+  const totalBeats = parsedScore
+    ? parsedScore.measures.length * beatsPerMeasure
+    : totalMeasures * beatsPerMeasure;
+  const timelineBeats = totalMeasures * beatsPerMeasure;
+  const sections = parsedScore?.measures.filter((measure) => measure.label) ?? [];
   const BEAT_PX = 44;
   const totalDurationSec = (totalBeats * 60) / Math.max(30, bpm);
   const currentDurationSec = (currentBeat * 60) / Math.max(30, bpm);
@@ -310,6 +362,30 @@ export function TabPanel() {
     const s = Math.floor(sec % 60);
     const ms = Math.floor((sec % 1) * 10);
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms}`;
+  };
+
+  const handleClearLoop = () => {
+    tabScheduler.clearLoopRegion();
+    setLoopAnchorBeat(null);
+    setLoopRegion(null);
+  };
+
+  const handleMuteToggle = (stringIdx: number) => {
+    setMutedStrings((previous) => {
+      const next = [...previous];
+      next[stringIdx] = !next[stringIdx];
+      tabScheduler.setStringMuted(stringIdx, next[stringIdx]);
+      return next;
+    });
+  };
+
+  const handleSoloToggle = (stringIdx: number) => {
+    setSoloedStrings((previous) => {
+      const next = [...previous];
+      next[stringIdx] = !next[stringIdx];
+      tabScheduler.setStringSoloed(stringIdx, next[stringIdx]);
+      return next;
+    });
   };
 
   return (
@@ -347,9 +423,19 @@ export function TabPanel() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '15px' }}><Music size={15} /></span>
+          <span style={{ fontSize: '15px' }}>
+            <Music size={15} />
+          </span>
           <div>
-            <h3 style={{ margin: 0, fontSize: '13px', fontWeight: 800, color: '#38bdf8', letterSpacing: '0.3px' }}>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: '13px',
+                fontWeight: 800,
+                color: '#38bdf8',
+                letterSpacing: '0.3px',
+              }}
+            >
               Tab Player
             </h3>
           </div>
@@ -373,7 +459,16 @@ export function TabPanel() {
       {/* Preset Selector & Tempo Control Bar */}
       <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <label
+            style={{
+              fontSize: '11px',
+              color: '#a1a1aa',
+              fontWeight: 700,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
             <span>Preset:</span>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <span
@@ -495,6 +590,70 @@ export function TabPanel() {
         </span>
       </div>
 
+      {/* Compact per-string monitor controls */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px',
+          padding: '4px 7px',
+          backgroundColor: '#111217',
+          border: '1px solid #27272a',
+          borderRadius: '6px',
+        }}
+      >
+        {currentTuning.strings.map((string, stringIdx) => {
+          const color = STRING_COLORS[stringIdx] || '#a1a1aa';
+          const shortName = string.name.split(' ')[0] || string.name;
+          return (
+            <div
+              key={stringIdx}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '1px',
+                padding: '1px 2px 1px 5px',
+                border: `1px solid ${color}35`,
+                borderRadius: '4px',
+              }}
+            >
+              <span style={{ minWidth: '15px', fontSize: '9px', fontWeight: 800, color }}>
+                {shortName}
+              </span>
+              <Button
+                variant="icon"
+                aria-label={`${mutedStrings[stringIdx] ? 'Unmute' : 'Mute'} ${shortName} string`}
+                title={`${mutedStrings[stringIdx] ? 'Unmute' : 'Mute'} ${shortName}`}
+                aria-pressed={mutedStrings[stringIdx]}
+                onClick={() => handleMuteToggle(stringIdx)}
+                style={{
+                  padding: '2px',
+                  color: mutedStrings[stringIdx] ? '#fb7185' : '#71717a',
+                  backgroundColor: mutedStrings[stringIdx] ? '#4c0519' : 'transparent',
+                }}
+              >
+                <VolumeX size={11} />
+              </Button>
+              <Button
+                variant="icon"
+                aria-label={`${soloedStrings[stringIdx] ? 'Unsolo' : 'Solo'} ${shortName} string`}
+                title={`${soloedStrings[stringIdx] ? 'Unsolo' : 'Solo'} ${shortName}`}
+                aria-pressed={soloedStrings[stringIdx]}
+                onClick={() => handleSoloToggle(stringIdx)}
+                style={{
+                  padding: '2px',
+                  color: soloedStrings[stringIdx] ? '#fbbf24' : '#71717a',
+                  backgroundColor: soloedStrings[stringIdx] ? '#422006' : 'transparent',
+                }}
+              >
+                <Headphones size={11} />
+              </Button>
+            </div>
+          );
+        })}
+        <span style={{ marginLeft: 'auto', color: '#52525b', fontSize: '9px' }}>mute / solo</span>
+      </div>
+
       {/* ASCII Tab Textarea (Paper & Ink Style ONLY) */}
       {isTextEditorOpen && (
         <textarea
@@ -521,9 +680,78 @@ export function TabPanel() {
 
       {/* Modern Studio DAW Timeline Staff Display */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '11px', color: '#a1a1aa', fontWeight: 700 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '11px',
+            color: '#a1a1aa',
+            fontWeight: 700,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
+            {sections.length > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <ListMusic size={12} />
+                <select
+                  aria-label="Jump to section"
+                  defaultValue=""
+                  onChange={(event) => {
+                    const measureIndex = Number(event.currentTarget.value);
+                    if (Number.isFinite(measureIndex))
+                      tabScheduler.seek(measureIndex * beatsPerMeasure);
+                    event.currentTarget.value = '';
+                  }}
+                  style={{
+                    maxWidth: '130px',
+                    backgroundColor: '#14151a',
+                    color: '#c4b5fd',
+                    border: '1px solid #3f3f46',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    padding: '2px 5px',
+                  }}
+                >
+                  <option value="" disabled>
+                    Jump to section
+                  </option>
+                  {sections.map((measure) => (
+                    <option key={`${measure.index}-${measure.label}`} value={measure.index}>
+                      {measure.label} · M{measure.index + 1}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <span
+              style={{ color: loopAnchorBeat !== null ? '#a78bfa' : '#71717a', fontSize: '9px' }}
+            >
+              {loopAnchorBeat !== null
+                ? 'Shift-click the loop end'
+                : 'Shift-click two points to loop'}
+            </span>
+            {loopRegion && (
+              <Button
+                variant="icon"
+                aria-label="Clear loop region"
+                title="Clear loop region"
+                onClick={handleClearLoop}
+                style={{ padding: '2px 4px', color: '#c4b5fd', backgroundColor: '#2e1065' }}
+              >
+                <Repeat2 size={12} />
+                <X size={9} />
+              </Button>
+            )}
+          </div>
           <span style={{ color: '#a3e635', fontFamily: 'monospace', fontWeight: 800 }}>
-            <Timer size={14} /> {formatTime(currentDurationSec)} / {formatTime(totalDurationSec)} &nbsp;•&nbsp; <span style={{ color: '#f59e0b' }}>M{Math.floor(currentBeat / 4) + 1} (Beat {currentBeat.toFixed(1)})</span>
+            <Timer size={14} /> {formatTime(currentDurationSec)} / {formatTime(totalDurationSec)}{' '}
+            &nbsp;•&nbsp;{' '}
+            <span style={{ color: '#f59e0b' }}>
+              {parsedScore?.timeSignature.join('/')} · M
+              {Math.floor(currentBeat / beatsPerMeasure) + 1} (Beat {currentBeat.toFixed(1)})
+            </span>
           </span>
         </div>
 
@@ -550,12 +778,48 @@ export function TabPanel() {
           <div
             style={{
               position: 'relative',
-              width: `${totalBeats * BEAT_PX + 60}px`,
+              width: `${timelineBeats * BEAT_PX + 60}px`,
               height: '100%',
               paddingLeft: '50px',
               boxSizing: 'border-box',
             }}
           >
+            {/* Active loop selection */}
+            {loopRegion && (
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  left: `${50 + loopRegion.startBeat * BEAT_PX}px`,
+                  top: 0,
+                  width: `${(loopRegion.endBeat - loopRegion.startBeat) * BEAT_PX}px`,
+                  height: '100%',
+                  backgroundColor: 'rgba(139, 92, 246, 0.15)',
+                  borderLeft: '2px solid #a78bfa',
+                  borderRight: '2px solid #a78bfa',
+                  boxSizing: 'border-box',
+                  pointerEvents: 'none',
+                  zIndex: 3,
+                }}
+              />
+            )}
+            {loopAnchorBeat !== null && (
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  left: `${50 + loopAnchorBeat * BEAT_PX}px`,
+                  top: 0,
+                  width: '2px',
+                  height: '100%',
+                  backgroundColor: '#a78bfa',
+                  boxShadow: '0 0 8px rgba(167, 139, 250, 0.9)',
+                  pointerEvents: 'none',
+                  zIndex: 17,
+                }}
+              />
+            )}
+
             {/* Sticky Left String Headers Column */}
             <div
               style={{
@@ -607,17 +871,18 @@ export function TabPanel() {
 
             {/* Top Measure & Time Ruler Bar */}
             {Array.from({ length: totalMeasures }, (_, mIdx) => {
-              const measureBeat = mIdx * 4;
+              const measureBeat = mIdx * beatsPerMeasure;
               const measureSec = (measureBeat * 60) / Math.max(30, bpm);
+              const sectionLabel = parsedScore?.measures[mIdx]?.label;
               return (
                 <div
                   key={mIdx}
                   style={{
                     position: 'absolute',
-                    left: `${50 + mIdx * 4 * BEAT_PX}px`,
+                    left: `${50 + mIdx * beatsPerMeasure * BEAT_PX}px`,
                     top: 0,
                     height: '100%',
-                    width: `${4 * BEAT_PX}px`,
+                    width: `${beatsPerMeasure * BEAT_PX}px`,
                     borderLeft: '1px solid #3f3f46',
                     pointerEvents: 'none',
                   }}
@@ -649,6 +914,24 @@ export function TabPanel() {
                       {formatTime(measureSec)}
                     </span>
                   </div>
+                  {sectionLabel && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '18px',
+                        left: '6px',
+                        color: '#c4b5fd',
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        maxWidth: `${Math.max(30, beatsPerMeasure * BEAT_PX - 12)}px`,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {sectionLabel}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -663,7 +946,7 @@ export function TabPanel() {
                     position: 'absolute',
                     left: '50px',
                     top: `${30 + sIdx * 22}px`,
-                    width: `${totalBeats * BEAT_PX}px`,
+                    width: `${timelineBeats * BEAT_PX}px`,
                     height: '1px',
                     backgroundColor: `${color}35`,
                     borderBottom: '1px solid #18181b',
@@ -677,7 +960,7 @@ export function TabPanel() {
             {parsedScore?.measures.flatMap((m) =>
               m.beats.flatMap((b) =>
                 b.notes.map((n, nIdx) => {
-                  const absoluteBeat = m.index * 4 + b.offsetBeats;
+                  const absoluteBeat = m.index * beatsPerMeasure + b.offsetBeats;
                   const centerPx = 50 + absoluteBeat * BEAT_PX;
                   const topPx = 20 + n.stringIdx * 22;
                   const isCurrent = Math.abs(currentBeat - absoluteBeat) < 0.25;
@@ -688,41 +971,95 @@ export function TabPanel() {
                   let badgeBorder = isCurrent ? '1px solid #7dd3fc' : '1px solid #3f3f46';
 
                   if (n.articulation === 'hammer') {
-                    badgeText = n.targetFret !== undefined ? `${n.fret}h${n.targetFret}` : `${n.fret}h`;
-                    if (!isCurrent) { badgeBg = '#27272a'; badgeColor = '#fbbf24'; badgeBorder = '1px solid #d97706'; }
+                    badgeText =
+                      n.targetFret !== undefined ? `${n.fret}h${n.targetFret}` : `${n.fret}h`;
+                    if (!isCurrent) {
+                      badgeBg = '#27272a';
+                      badgeColor = '#fbbf24';
+                      badgeBorder = '1px solid #d97706';
+                    }
                   } else if (n.articulation === 'pull') {
-                    badgeText = n.targetFret !== undefined ? `${n.fret}p${n.targetFret}` : `${n.fret}p`;
-                    if (!isCurrent) { badgeBg = '#27272a'; badgeColor = '#f59e0b'; badgeBorder = '1px solid #d97706'; }
+                    badgeText =
+                      n.targetFret !== undefined ? `${n.fret}p${n.targetFret}` : `${n.fret}p`;
+                    if (!isCurrent) {
+                      badgeBg = '#27272a';
+                      badgeColor = '#f59e0b';
+                      badgeBorder = '1px solid #d97706';
+                    }
                   } else if (n.articulation === 'slide_up') {
-                    badgeText = n.targetFret !== undefined ? `${n.fret}/${n.targetFret}` : `${n.fret}/`;
-                    if (!isCurrent) { badgeBg = '#14532d'; badgeColor = '#4ade80'; badgeBorder = '1px solid #16a34a'; }
+                    badgeText =
+                      n.targetFret !== undefined ? `${n.fret}/${n.targetFret}` : `${n.fret}/`;
+                    if (!isCurrent) {
+                      badgeBg = '#14532d';
+                      badgeColor = '#4ade80';
+                      badgeBorder = '1px solid #16a34a';
+                    }
                   } else if (n.articulation === 'slide_down') {
-                    badgeText = n.targetFret !== undefined ? `${n.fret}\\${n.targetFret}` : `${n.fret}\\`;
-                    if (!isCurrent) { badgeBg = '#14532d'; badgeColor = '#4ade80'; badgeBorder = '1px solid #16a34a'; }
+                    badgeText =
+                      n.targetFret !== undefined ? `${n.fret}\\${n.targetFret}` : `${n.fret}\\`;
+                    if (!isCurrent) {
+                      badgeBg = '#14532d';
+                      badgeColor = '#4ade80';
+                      badgeBorder = '1px solid #16a34a';
+                    }
                   } else if (n.articulation === 'bend') {
-                    badgeText = n.targetFret !== undefined ? `${n.fret}b${n.targetFret}` : `${n.fret}b`;
-                    if (!isCurrent) { badgeBg = '#0c4a6e'; badgeColor = '#38bdf8'; badgeBorder = '1px solid #0284c7'; }
+                    badgeText =
+                      n.targetFret !== undefined ? `${n.fret}b${n.targetFret}` : `${n.fret}b`;
+                    if (!isCurrent) {
+                      badgeBg = '#0c4a6e';
+                      badgeColor = '#38bdf8';
+                      badgeBorder = '1px solid #0284c7';
+                    }
                   } else if (n.articulation === 'release') {
-                    badgeText = n.targetFret !== undefined ? `${n.fret}r${n.targetFret}` : `${n.fret}r`;
-                    if (!isCurrent) { badgeBg = '#0c4a6e'; badgeColor = '#7dd3fc'; badgeBorder = '1px solid #0369a1'; }
+                    badgeText =
+                      n.targetFret !== undefined ? `${n.fret}r${n.targetFret}` : `${n.fret}r`;
+                    if (!isCurrent) {
+                      badgeBg = '#0c4a6e';
+                      badgeColor = '#7dd3fc';
+                      badgeBorder = '1px solid #0369a1';
+                    }
                   } else if (n.articulation === 'vibrato') {
                     badgeText = `${n.fret}~`;
-                    if (!isCurrent) { badgeBg = '#4c1d95'; badgeColor = '#c084fc'; badgeBorder = '1px solid #7c3aed'; }
+                    if (!isCurrent) {
+                      badgeBg = '#4c1d95';
+                      badgeColor = '#c084fc';
+                      badgeBorder = '1px solid #7c3aed';
+                    }
                   } else if (n.articulation === 'mute') {
                     badgeText = 'x';
-                    if (!isCurrent) { badgeBg = '#881337'; badgeColor = '#fda4af'; badgeBorder = '1px solid #e11d48'; }
+                    if (!isCurrent) {
+                      badgeBg = '#881337';
+                      badgeColor = '#fda4af';
+                      badgeBorder = '1px solid #e11d48';
+                    }
                   } else if (n.articulation === 'harmonic') {
                     badgeText = `<${n.fret}>`;
-                    if (!isCurrent) { badgeBg = '#134e4a'; badgeColor = '#2dd4bf'; badgeBorder = '1px solid #0d9488'; }
+                    if (!isCurrent) {
+                      badgeBg = '#134e4a';
+                      badgeColor = '#2dd4bf';
+                      badgeBorder = '1px solid #0d9488';
+                    }
                   } else if (n.articulation === 'ghost') {
                     badgeText = `(${n.fret})`;
-                    if (!isCurrent) { badgeBg = '#18181b'; badgeColor = '#a1a1aa'; badgeBorder = '1px dashed #52525b'; }
+                    if (!isCurrent) {
+                      badgeBg = '#18181b';
+                      badgeColor = '#a1a1aa';
+                      badgeBorder = '1px dashed #52525b';
+                    }
                   } else if (n.articulation === 'palm_mute') {
                     badgeText = `${n.fret}pm`;
-                    if (!isCurrent) { badgeBg = '#451a03'; badgeColor = '#fb923c'; badgeBorder = '1px solid #d97706'; }
+                    if (!isCurrent) {
+                      badgeBg = '#451a03';
+                      badgeColor = '#fb923c';
+                      badgeBorder = '1px solid #d97706';
+                    }
                   } else if (n.articulation === 'tap') {
                     badgeText = `t${n.fret}`;
-                    if (!isCurrent) { badgeBg = '#312e81'; badgeColor = '#818cf8'; badgeBorder = '1px solid #6366f1'; }
+                    if (!isCurrent) {
+                      badgeBg = '#312e81';
+                      badgeColor = '#818cf8';
+                      badgeBorder = '1px solid #6366f1';
+                    }
                   }
 
                   return (
@@ -801,7 +1138,9 @@ export function TabPanel() {
             borderRadius: '6px',
             fontWeight: 700,
             fontSize: '12px',
-            boxShadow: isPlaying ? '0 0 10px rgba(220, 38, 38, 0.5)' : '0 0 10px rgba(22, 163, 74, 0.4)',
+            boxShadow: isPlaying
+              ? '0 0 10px rgba(220, 38, 38, 0.5)'
+              : '0 0 10px rgba(22, 163, 74, 0.4)',
           }}
         >
           {isPlaying ? 'Pause' : 'Play Tab'}
@@ -821,6 +1160,46 @@ export function TabPanel() {
           Stop
         </Button>
 
+        <Button
+          variant="icon"
+          aria-label={`${metronomeEnabled ? 'Disable' : 'Enable'} metronome`}
+          title={`${metronomeEnabled ? 'Disable' : 'Enable'} metronome`}
+          aria-pressed={metronomeEnabled}
+          onClick={() => {
+            const enabled = !metronomeEnabled;
+            setMetronomeEnabled(enabled);
+            tabScheduler.setMetronomeEnabled(enabled);
+          }}
+          style={{
+            padding: '6px',
+            color: metronomeEnabled ? '#38bdf8' : '#a1a1aa',
+            backgroundColor: metronomeEnabled ? '#082f49' : '#27272a',
+            border: `1px solid ${metronomeEnabled ? '#0284c7' : '#3f3f46'}`,
+          }}
+        >
+          <Metronome size={14} />
+        </Button>
+
+        <Button
+          variant="icon"
+          aria-label={`${countInEnabled ? 'Disable' : 'Enable'} count-in`}
+          title={`${countInEnabled ? 'Disable' : 'Enable'} one-measure count-in`}
+          aria-pressed={countInEnabled}
+          onClick={() => {
+            const enabled = !countInEnabled;
+            setCountInEnabled(enabled);
+            tabScheduler.setCountInEnabled(enabled);
+          }}
+          style={{
+            padding: '6px',
+            color: countInEnabled ? '#fbbf24' : '#a1a1aa',
+            backgroundColor: countInEnabled ? '#422006' : '#27272a',
+            border: `1px solid ${countInEnabled ? '#d97706' : '#3f3f46'}`,
+          }}
+        >
+          <Timer size={14} />
+        </Button>
+
         {/* MIDI File Ingestion & Live Web MIDI Controller */}
         <label
           style={{
@@ -838,7 +1217,9 @@ export function TabPanel() {
             marginLeft: 'auto',
           }}
         >
-          <span><Download size={14} /> Import .MID</span>
+          <span>
+            <Download size={14} /> Import .MID
+          </span>
           <input
             type="file"
             accept=".mid,.midi"

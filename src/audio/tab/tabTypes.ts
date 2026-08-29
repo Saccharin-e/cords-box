@@ -43,6 +43,8 @@ export interface TabBeat {
 export interface TabMeasure {
   /** Measure index (0-based) */
   index: number;
+  /** Optional section name parsed from a preceding [Label] marker */
+  label?: string;
   /** Beats contained in this measure */
   beats: TabBeat[];
 }
@@ -58,4 +60,18 @@ export interface TabScore {
   tuningId: string;
   /** Measures list */
   measures: TabMeasure[];
+}
+
+/** Convert a time signature into quarter-note beat units per measure. */
+export function getBeatsPerMeasure(timeSignature: [number, number]): number {
+  const [numerator, denominator] = timeSignature;
+  if (
+    !Number.isFinite(numerator) ||
+    !Number.isFinite(denominator) ||
+    numerator <= 0 ||
+    denominator <= 0
+  ) {
+    return 4;
+  }
+  return numerator * (4 / denominator);
 }

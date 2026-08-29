@@ -21,7 +21,7 @@
  */
 
 import type { TabScore, TabMeasure, TabBeat, TabNote, ArticulationType } from './tabTypes';
-
+import { getBeatsPerMeasure } from './tabTypes';
 
 /** A raw event parsed from a single string's content before merging into beats. */
 interface RawStringEvent {
@@ -135,7 +135,8 @@ function parseStringSegment(
     if (ch === 'r') {
       const targetResult = readFret(seg, col + 1);
       if (targetResult) {
-        const relOrigin = lastBendOriginFret !== undefined ? lastBendOriginFret + 2 : targetResult.fret + 2;
+        const relOrigin =
+          lastBendOriginFret !== undefined ? lastBendOriginFret + 2 : targetResult.fret + 2;
         events.push({
           col,
           stringIdx,
@@ -178,9 +179,15 @@ function parseStringSegment(
       if (techPos < seg.length) {
         const techChar = seg[techPos];
 
-        if (techChar === 'h' || techChar === 'p' || techChar === 'b' ||
-            techChar === '/' || techChar === '\\' || techChar === 'r' ||
-            techChar === 't') {
+        if (
+          techChar === 'h' ||
+          techChar === 'p' ||
+          techChar === 'b' ||
+          techChar === '/' ||
+          techChar === '\\' ||
+          techChar === 'r' ||
+          techChar === 't'
+        ) {
           // Map technique character to articulation
           if (techChar === 'h') articulation = 'hammer';
           else if (techChar === 'p') articulation = 'pull';
@@ -281,6 +288,7 @@ function findPalmMuteRanges(segments: string[]): [number, number][] {
 function mergeEventsIntoBeats(
   allEvents: RawStringEvent[],
   segLen: number,
+  beatsPerMeasure: number,
 ): TabBeat[] {
   if (allEvents.length === 0) return [];
 
@@ -298,12 +306,12 @@ function mergeEventsIntoBeats(
     }
   }
 
-  // Convert column positions to beat offsets within a 4-beat measure
+  // Convert column positions to beat offsets within the parsed time signature.
   const effectiveLen = Math.max(1, segLen);
   const beats: TabBeat[] = [];
 
   for (const [col, events] of beatMap) {
-    const offsetBeats = (col / effectiveLen) * 4.0;
+    const offsetBeats = (col / effectiveLen) * beatsPerMeasure;
     const notes: TabNote[] = events.map((ev) => ({
       stringIdx: ev.stringIdx,
       fret: ev.fret,
@@ -321,7 +329,7 @@ function mergeEventsIntoBeats(
   // --- Duration derivation pass ---
   // For each note, find the next event on the same string and compute duration
   // as the gap between their offsetBeats. Last note on a string extends to
-  // the measure boundary (4.0 beats), capped at 2.0 beats.
+  // the measure boundary, capped at 2.0 beats.
   const MAX_DURATION = 2.0;
 
   // Build a per-string timeline of beat offsets for quick lookup
@@ -354,7 +362,7 @@ function mergeEventsIntoBeats(
         duration = timeline[idx + 1] - beat.offsetBeats;
       } else {
         // Last event on this string: extend to measure end
-        duration = 4.0 - beat.offsetBeats;
+        duration = beatsPerMeasure - beat.offsetBeats;
       }
 
       note.durationBeats = Math.min(MAX_DURATION, Math.max(0.1, duration));
@@ -371,13 +379,38 @@ export function parseAsciiTab(
 ): TabScore {
   const lines = rawText.split(/\r?\n/).map((l) => l.trimEnd());
 
+  let timeSignature: [number, number] = [4, 4];
+  for (const line of lines) {
+    if (/^\s*[a-gA-G][b#]?(?:[1-6])?\s*\|/.test(line)) break;
+    const match = line.trim().match(/^(?:Time\s*:\s*)?(\d+)\s*\/\s*(\d+)$/i);
+    if (!match) continue;
+    const numerator = Number(match[1]);
+    const denominator = Number(match[2]);
+    if (numerator > 0 && denominator > 0) {
+      timeSignature = [numerator, denominator];
+      break;
+    }
+  }
+  const beatsPerMeasure = getBeatsPerMeasure(timeSignature);
+
   // Group lines into blocks of 6 tab lines
-  const tabBlocks: { stringIdx: number; header: string; content: string }[][] = [];
+  const tabBlocks: {
+    strings: { stringIdx: number; header: string; content: string }[];
+    label?: string;
+  }[] = [];
   let currentBlock: { stringIdx: number; header: string; content: string }[] = [];
   let detectedTuningId = tuningId;
+  let pendingLabel: string | undefined;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (currentBlock.length === 0) {
+      const labelMatch = line.trim().match(/^\[([^\]\r\n]+)\]$/);
+      if (labelMatch) {
+        pendingLabel = labelMatch[1].trim();
+        continue;
+      }
+    }
     // Match string headers like e|, E4|, Eb|, D#|, B|, B3|, Bb|, G|, Gb|, D|, Db|, A|, Ab|, E|, E2|
     const match = line.match(/^([a-gA-G][b#]?(?:[1-6])?)\s*\|(.*)/);
     if (match) {
@@ -401,8 +434,9 @@ export function parseAsciiTab(
           }
         }
 
-        tabBlocks.push(currentBlock);
+        tabBlocks.push({ strings: currentBlock, label: pendingLabel });
         currentBlock = [];
+        pendingLabel = undefined;
       }
     }
   }
@@ -411,12 +445,13 @@ export function parseAsciiTab(
   let globalMeasureIdx = 0;
 
   for (const block of tabBlocks) {
+    let blockLabel = block.label;
     // Split each string by measure bar '|' and filter out whitespace-only segments
-    const stringBarSegments: string[][] = block.map((b) => b.content.split('|'));
+    const stringBarSegments: string[][] = block.strings.map((b) => b.content.split('|'));
     const maxSegments = Math.max(...stringBarSegments.map((s) => s.length));
 
     for (let m = 0; m < maxSegments; m++) {
-      const measureSegments = block.map((_, idx) => stringBarSegments[idx]?.[m] ?? '');
+      const measureSegments = block.strings.map((_, idx) => stringBarSegments[idx]?.[m] ?? '');
       // Check if all segments in this column are empty
       if (measureSegments.every((s) => s.trim() === '')) continue;
 
@@ -435,13 +470,15 @@ export function parseAsciiTab(
       }
 
       // Merge into beats with real durations
-      const beats = mergeEventsIntoBeats(allEvents, segLen);
+      const beats = mergeEventsIntoBeats(allEvents, segLen, beatsPerMeasure);
 
       if (beats.length > 0) {
         measures.push({
           index: globalMeasureIdx++,
+          ...(blockLabel ? { label: blockLabel } : {}),
           beats,
         });
+        blockLabel = undefined;
       }
     }
   }
@@ -450,7 +487,7 @@ export function parseAsciiTab(
     title: 'ASCII Tab',
     tuningId: detectedTuningId,
     tempoBpm: defaultBpm,
-    timeSignature: [4, 4],
+    timeSignature,
     measures,
   };
 }

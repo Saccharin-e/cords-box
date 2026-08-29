@@ -11,6 +11,7 @@
  */
 
 import type { TabScore, TabNote } from './tabTypes';
+import { getBeatsPerMeasure } from './tabTypes';
 import { audioEngine, audioPipeline } from '@audio/index';
 import { getTuningFrequencies, useTuningStore } from '@store/tuningStore';
 
@@ -30,6 +31,8 @@ export class TabScheduler {
   private score: TabScore | null = null;
   private isPlaying = false;
   private isLooping = true;
+  private loopStartBeat: number | null = null;
+  private loopEndBeat: number | null = null;
   private bpm = 120;
   private currentBeat = 0;
   private timerId: number | null = null;
@@ -42,6 +45,13 @@ export class TabScheduler {
   private flatEvents: FlatEvent[] = [];
   /** Index into flatEvents for the next event to schedule. */
   private nextEventIndex = 0;
+
+  private mutedStrings = new Set<number>();
+  private soloedStrings = new Set<number>();
+
+  private metronomeEnabled = false;
+  private countInEnabled = false;
+  private nextMetronomeBeat = 0;
 
   /** Track what's currently ringing per string (0-5) for damping/legato. */
   private ringingNotes = new Map<number, RingingNote>();
@@ -58,6 +68,9 @@ export class TabScheduler {
     this.bpm = score.tempoBpm || 120;
     this.currentBeat = 0;
     this.nextEventIndex = 0;
+    this.nextMetronomeBeat = 0;
+    this.loopStartBeat = null;
+    this.loopEndBeat = null;
     this.ringingNotes.clear();
     this.openFreqs = getTuningFrequencies(score.tuningId || 'standard_e');
     if (score.tuningId) {
@@ -84,7 +97,7 @@ export class TabScheduler {
     if (!this.score) return;
 
     for (const measure of this.score.measures) {
-      const measureStartBeat = measure.index * 4.0;
+      const measureStartBeat = measure.index * getBeatsPerMeasure(this.score.timeSignature);
       for (const beat of measure.beats) {
         this.flatEvents.push({
           absoluteBeat: measureStartBeat + beat.offsetBeats,
@@ -107,9 +120,10 @@ export class TabScheduler {
     this.currentBeat = targetBeat;
 
     // Find the first event at or after the target beat
-    this.nextEventIndex = this.flatEvents.findIndex((e) => e.absoluteBeat >= targetBeat);
-    if (this.nextEventIndex < 0) this.nextEventIndex = this.flatEvents.length;
+    this.nextEventIndex = this.findEventIndexAtOrAfter(targetBeat);
+    this.nextMetronomeBeat = this.firstWholeBeatAtOrAfter(targetBeat);
 
+    this.dampAllStrings();
     this.ringingNotes.clear();
 
     if (this.isPlaying) {
@@ -125,6 +139,89 @@ export class TabScheduler {
 
   public setLooping(loop: boolean): void {
     this.isLooping = loop;
+    if (loop) {
+      const region = this.getActiveLoopRegion();
+      if (region && (this.currentBeat < region.startBeat || this.currentBeat >= region.endBeat)) {
+        this.seek(region.startBeat);
+      }
+    }
+  }
+
+  public setLoopRegion(startBeat: number, endBeat: number): void {
+    if (!Number.isFinite(startBeat) || !Number.isFinite(endBeat) || startBeat === endBeat) {
+      throw new RangeError('Loop region requires two distinct, finite beat positions.');
+    }
+
+    const totalBeats = this.getTotalBeats();
+    const lowerBeat = Math.min(startBeat, endBeat);
+    const upperBeat = Math.max(startBeat, endBeat);
+    const normalizedStart = Math.max(0, Math.min(totalBeats, lowerBeat));
+    const normalizedEnd = Math.max(0, Math.min(totalBeats, upperBeat));
+
+    if (normalizedEnd <= normalizedStart) {
+      throw new RangeError('Loop region must overlap the score.');
+    }
+
+    this.loopStartBeat = normalizedStart;
+    this.loopEndBeat = normalizedEnd;
+    const targetBeat =
+      this.currentBeat >= normalizedStart && this.currentBeat < normalizedEnd
+        ? this.currentBeat
+        : normalizedStart;
+    this.seek(targetBeat);
+  }
+
+  public clearLoopRegion(): void {
+    this.loopStartBeat = null;
+    this.loopEndBeat = null;
+  }
+
+  public getLoopRegion(): { startBeat: number; endBeat: number } | null {
+    if (this.loopStartBeat === null || this.loopEndBeat === null) return null;
+    return { startBeat: this.loopStartBeat, endBeat: this.loopEndBeat };
+  }
+
+  public setStringMuted(stringIdx: number, muted: boolean): void {
+    if (!this.isValidStringIndex(stringIdx)) return;
+    if (muted) {
+      this.mutedStrings.add(stringIdx);
+      audioPipeline.dampString(stringIdx, 0.5);
+      this.ringingNotes.delete(stringIdx);
+    } else {
+      this.mutedStrings.delete(stringIdx);
+    }
+  }
+
+  public setStringSoloed(stringIdx: number, soloed: boolean): void {
+    if (!this.isValidStringIndex(stringIdx)) return;
+    if (soloed) {
+      this.soloedStrings.add(stringIdx);
+      for (let idx = 0; idx < 6; idx++) {
+        if (!this.soloedStrings.has(idx)) {
+          audioPipeline.dampString(idx, 0.5);
+          this.ringingNotes.delete(idx);
+        }
+      }
+    } else {
+      this.soloedStrings.delete(stringIdx);
+    }
+  }
+
+  public isStringMuted(stringIdx: number): boolean {
+    return this.mutedStrings.has(stringIdx);
+  }
+
+  public isStringSoloed(stringIdx: number): boolean {
+    return this.soloedStrings.has(stringIdx);
+  }
+
+  public setMetronomeEnabled(enabled: boolean): void {
+    this.metronomeEnabled = enabled;
+    if (enabled) this.nextMetronomeBeat = this.firstWholeBeatAtOrAfter(this.currentBeat);
+  }
+
+  public setCountInEnabled(enabled: boolean): void {
+    this.countInEnabled = enabled;
   }
 
   public subscribeNotePlay(cb: (note: TabNote) => void): () => void {
@@ -147,14 +244,31 @@ export class TabScheduler {
     const ctx = audioEngine.getContext();
     if (!ctx) return;
 
+    const activeRegion = this.getActiveLoopRegion();
+    if (
+      activeRegion &&
+      (this.currentBeat < activeRegion.startBeat || this.currentBeat >= activeRegion.endBeat)
+    ) {
+      this.currentBeat = activeRegion.startBeat;
+    }
+
+    const secondsPerBeat = 60.0 / this.bpm;
+    const countInBeats =
+      this.countInEnabled && this.score ? getBeatsPerMeasure(this.score.timeSignature) : 0;
+    const countInStartTime = ctx.currentTime + 0.05;
+
     this.isPlaying = true;
-    this.startAudioTime = ctx.currentTime + 0.05;
+    this.startAudioTime = countInStartTime + countInBeats * secondsPerBeat;
     this.startBeatOffset = this.currentBeat;
     this.ringingNotes.clear();
 
     // Find the first event at or after the current beat
-    this.nextEventIndex = this.flatEvents.findIndex((e) => e.absoluteBeat >= this.currentBeat);
-    if (this.nextEventIndex < 0) this.nextEventIndex = this.flatEvents.length;
+    this.nextEventIndex = this.findEventIndexAtOrAfter(this.currentBeat);
+    this.nextMetronomeBeat = this.firstWholeBeatAtOrAfter(this.currentBeat);
+
+    if (countInBeats > 0) {
+      this.scheduleCountIn(ctx, countInStartTime, countInBeats, secondsPerBeat);
+    }
 
     // Lookahead Audio Scheduler Loop
     this.timerId = window.setInterval(() => this.schedulerLoop(), 25);
@@ -168,13 +282,23 @@ export class TabScheduler {
       let liveBeat = this.startBeatOffset + elapsedSec * beatsPerSec;
 
       const totalBeats = this.getTotalBeats();
-      if (liveBeat >= totalBeats && totalBeats > 0) {
+      const loopRegion = this.getActiveLoopRegion();
+      const playbackEndBeat = loopRegion?.endBeat ?? totalBeats;
+      if (liveBeat >= playbackEndBeat && playbackEndBeat > 0) {
         if (this.isLooping) {
+          const loopStartBeat = loopRegion?.startBeat ?? 0;
+          const loopLength = playbackEndBeat - loopStartBeat;
+          const wrappedBeat =
+            loopLength > 0
+              ? loopStartBeat + ((liveBeat - playbackEndBeat) % loopLength)
+              : loopStartBeat;
           this.startAudioTime = ctxNow;
-          this.startBeatOffset = 0;
-          this.nextEventIndex = 0;
+          this.startBeatOffset = wrappedBeat;
+          this.nextEventIndex = this.findEventIndexAtOrAfter(wrappedBeat);
+          this.nextMetronomeBeat = this.firstWholeBeatAtOrAfter(wrappedBeat);
+          this.dampAllStrings();
           this.ringingNotes.clear();
-          liveBeat = 0;
+          liveBeat = wrappedBeat;
         } else {
           this.stop();
           return;
@@ -231,15 +355,33 @@ export class TabScheduler {
     const secondsPerBeat = 60.0 / this.bpm;
     const lookaheadSec = 0.15; // Schedule 150ms ahead
     const totalBeats = this.getTotalBeats();
+    const loopRegion = this.getActiveLoopRegion();
 
     if (totalBeats <= 0) return;
+
+    if (this.metronomeEnabled) {
+      this.scheduleMetronomeClicks(
+        ctx,
+        secondsPerBeat,
+        loopRegion?.startBeat ?? 0,
+        loopRegion?.endBeat ?? totalBeats,
+      );
+    }
 
     while (this.nextEventIndex < this.flatEvents.length) {
       const event = this.flatEvents[this.nextEventIndex];
 
+      if (loopRegion && event.absoluteBeat < loopRegion.startBeat) {
+        this.nextEventIndex++;
+        continue;
+      }
+      if (loopRegion && event.absoluteBeat >= loopRegion.endBeat) {
+        break;
+      }
+
       // Compute exact audio time for this event
-      const eventAudioTime = this.startAudioTime +
-        (event.absoluteBeat - this.startBeatOffset) * secondsPerBeat;
+      const eventAudioTime =
+        this.startAudioTime + (event.absoluteBeat - this.startBeatOffset) * secondsPerBeat;
 
       // If this event is beyond our lookahead window, stop scheduling
       if (eventAudioTime > ctx.currentTime + lookaheadSec) {
@@ -259,16 +401,15 @@ export class TabScheduler {
    * Schedule a single event's notes for playback.
    * Handles damping previous notes, legato transitions, and target freq passthrough.
    */
-  private scheduleEvent(
-    event: FlatEvent,
-    targetAudioTime: number,
-    secondsPerBeat: number,
-  ): void {
+  private scheduleEvent(event: FlatEvent, targetAudioTime: number, secondsPerBeat: number): void {
     // Legato articulations: don't damp the previous note, glide pitch instead
     const LEGATO_ARTS = new Set(['hammer', 'pull', 'slide_up', 'slide_down', 'release']);
 
+    const playableNotes = event.notes.filter((note) => this.shouldPlayString(note.stringIdx));
+    if (playableNotes.length === 0) return;
+
     // Sort notes by string index descending (Low E to High E) for natural downstroke strum
-    const sortedNotes = [...event.notes].sort((a, b) => b.stringIdx - a.stringIdx);
+    const sortedNotes = [...playableNotes].sort((a, b) => b.stringIdx - a.stringIdx);
 
     sortedNotes.forEach((note, idx) => {
       const openFreq = this.openFreqs[note.stringIdx] ?? 110.0;
@@ -296,11 +437,17 @@ export class TabScheduler {
       }
 
       // Natural strum / rake sweep stagger: ~16ms per string on rakes, ~6ms on chords
-      const isRake = sortedNotes.some((n) => n.articulation === 'mute') && sortedNotes.some((n) => n.articulation !== 'mute');
+      const isRake =
+        sortedNotes.some((n) => n.articulation === 'mute') &&
+        sortedNotes.some((n) => n.articulation !== 'mute');
       const staggerSec = isRake ? 0.016 : 0.006;
       const strumDelay = idx * staggerSec;
       const noteStartTime = targetAudioTime + strumDelay;
-      const noteDurationSeconds = note.durationBeats * secondsPerBeat;
+      const loopRegion = this.getActiveLoopRegion();
+      const durationBeats = loopRegion
+        ? Math.min(note.durationBeats, Math.max(0, loopRegion.endBeat - event.absoluteBeat))
+        : note.durationBeats;
+      const noteDurationSeconds = durationBeats * secondsPerBeat;
 
       // --- Per-string damping/legato logic ---
       const isLegato = LEGATO_ARTS.has(note.articulation);
@@ -323,7 +470,7 @@ export class TabScheduler {
         freq,
         note.velocity,
         note.stringIdx,
-        event.notes.length,
+        playableNotes.length,
         noteStartTime,
         note.articulation,
         targetFreq,
@@ -332,7 +479,7 @@ export class TabScheduler {
 
       // Track this note as ringing on its string
       this.ringingNotes.set(note.stringIdx, {
-        endBeat: event.absoluteBeat + note.durationBeats,
+        endBeat: event.absoluteBeat + durationBeats,
         fret: note.fret,
       });
 
@@ -349,9 +496,88 @@ export class TabScheduler {
     });
   }
 
-  private getTotalBeats(): number {
+  public getTotalBeats(): number {
     if (!this.score || this.score.measures.length === 0) return 0;
-    return this.score.measures.length * 4.0;
+    return this.score.measures.length * getBeatsPerMeasure(this.score.timeSignature);
+  }
+
+  private getActiveLoopRegion(): { startBeat: number; endBeat: number } | null {
+    if (!this.isLooping || this.loopStartBeat === null || this.loopEndBeat === null) return null;
+    return { startBeat: this.loopStartBeat, endBeat: this.loopEndBeat };
+  }
+
+  private findEventIndexAtOrAfter(beat: number): number {
+    const index = this.flatEvents.findIndex((event) => event.absoluteBeat >= beat);
+    return index < 0 ? this.flatEvents.length : index;
+  }
+
+  private firstWholeBeatAtOrAfter(beat: number): number {
+    return Math.ceil(beat - 1e-9);
+  }
+
+  private isValidStringIndex(stringIdx: number): boolean {
+    return Number.isInteger(stringIdx) && stringIdx >= 0 && stringIdx < 6;
+  }
+
+  private shouldPlayString(stringIdx: number): boolean {
+    if (this.mutedStrings.has(stringIdx)) return false;
+    return this.soloedStrings.size === 0 || this.soloedStrings.has(stringIdx);
+  }
+
+  private scheduleCountIn(
+    ctx: AudioContext,
+    startTime: number,
+    countInBeats: number,
+    secondsPerBeat: number,
+  ): void {
+    for (let beat = 0; beat < countInBeats; beat++) {
+      this.scheduleMetronomeClick(ctx, startTime + beat * secondsPerBeat, beat === 0);
+    }
+  }
+
+  private scheduleMetronomeClicks(
+    ctx: AudioContext,
+    secondsPerBeat: number,
+    startBeat: number,
+    endBeat: number,
+  ): void {
+    const lookaheadEndTime = ctx.currentTime + 0.15;
+    const beatsPerMeasure = this.score ? getBeatsPerMeasure(this.score.timeSignature) : 4;
+    this.nextMetronomeBeat = Math.max(
+      this.nextMetronomeBeat,
+      this.firstWholeBeatAtOrAfter(startBeat),
+    );
+
+    while (this.nextMetronomeBeat < endBeat) {
+      const clickTime =
+        this.startAudioTime + (this.nextMetronomeBeat - this.startBeatOffset) * secondsPerBeat;
+      if (clickTime > lookaheadEndTime) break;
+
+      if (clickTime >= ctx.currentTime - 0.05) {
+        const measurePosition = this.nextMetronomeBeat / beatsPerMeasure;
+        const isAccent = Math.abs(measurePosition - Math.round(measurePosition)) < 1e-6;
+        this.scheduleMetronomeClick(ctx, clickTime, isAccent);
+      }
+      this.nextMetronomeBeat += 1;
+    }
+  }
+
+  /** A tiny click connected directly to the context output, separate from guitar voices. */
+  private scheduleMetronomeClick(ctx: AudioContext, targetTime: number, accent: boolean): void {
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const startTime = Math.max(ctx.currentTime, targetTime);
+    const duration = accent ? 0.045 : 0.03;
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(accent ? 1320 : 880, startTime);
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.exponentialRampToValueAtTime(accent ? 0.24 : 0.14, startTime + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start(startTime);
+    oscillator.stop(startTime + duration + 0.005);
   }
 
   private notifyState(): void {
