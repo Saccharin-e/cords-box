@@ -4,7 +4,9 @@ import { solveSignalPaths } from '@graph/solver';
 import {
   TRUE_CEILING_LINEAR,
   audioPipeline,
+  computeVoiceAwarePowerSagGain,
   createTrueCeilingCurve,
+  deriveSynthPluckArticulation,
   findActiveHarnessControls,
   getPickupWdfProfile,
   inferOutOfPhasePickupIds,
@@ -192,6 +194,32 @@ function solverResultWith(...activeNodeIds: string[]) {
 }
 
 describe('graph-derived WDF configuration', () => {
+  it('maps source articulation and harmonic nodes into one synth pluck payload', () => {
+    expect(deriveSynthPluckArticulation('palm_mute', 220, 2)).toMatchObject({
+      frequency: 220,
+      pickPosition: 0.1,
+      pickHardness: 0.88,
+    });
+    expect(deriveSynthPluckArticulation('ghost', 220, 2).pickHardness).toBeLessThan(
+      deriveSynthPluckArticulation('none', 220, 2).pickHardness,
+    );
+    expect(deriveSynthPluckArticulation('harmonic', 659.26, 0, 329.63)).toMatchObject({
+      frequency: 329.63,
+      harmonicNodeRatio: 0.5,
+      harmonicStrength: 0.9,
+    });
+    expect(deriveSynthPluckArticulation('pinch_harmonic', 659.26, 0).harmonicNodeRatio).toBe(
+      1 / 3,
+    );
+  });
+
+  it('sags a six-string load more than a matched-energy single note', () => {
+    const singleGain = computeVoiceAwarePowerSagGain(1, 0.05, 0.5);
+    const chordGain = computeVoiceAwarePowerSagGain(6, 0.05, 0.5);
+    expect(chordGain).toBeLessThan(singleGain - 0.1);
+    expect(chordGain).toBeGreaterThan(0.7);
+  });
+
   it('maps pickup electrical profiles from component types, not ids or labels', () => {
     expect(getPickupWdfProfile('pickup_humbucker')).toEqual({
       inductanceH: 4.2,
@@ -329,6 +357,48 @@ describe('Audio DSP Pipeline', () => {
     audioPipeline.cleanupNodes();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('keeps synthesized vibrato cycling for the scheduled sustain duration', () => {
+    const messages: Array<{
+      type: string;
+      targetFreq?: number;
+      time?: number;
+    }> = [];
+    const target = audioPipeline as unknown as {
+      wdfWorkletNode: { port: { postMessage(message: (typeof messages)[number]): void } } | null;
+      triggerSynthesizedGuitar(
+        ctx: AudioContext,
+        frequency: number,
+        velocity: number,
+        startTime: number,
+        articulation: string,
+        targetFrequency: number | undefined,
+        stringIndex: number,
+        sustainDurationSeconds: number,
+      ): boolean;
+    };
+    target.wdfWorkletNode = {
+      port: { postMessage: (message) => messages.push(message) },
+    };
+
+    expect(
+      target.triggerSynthesizedGuitar(
+        mock.ctx,
+        220,
+        0.7,
+        1,
+        'vibrato',
+        undefined,
+        2,
+        0.72,
+      ),
+    ).toBe(true);
+    const bends = messages.filter((message) => message.type === 'bend');
+    expect(bends.length).toBeGreaterThan(8);
+    expect(bends.some((message) => (message.time ?? 0) > 1.5)).toBe(true);
+    expect(bends.at(-1)).toMatchObject({ targetFreq: 220, time: 1.72 });
+    target.wdfWorkletNode = null;
   });
 
   it('should handle updatePipeline gracefully when AudioContext is inactive', () => {

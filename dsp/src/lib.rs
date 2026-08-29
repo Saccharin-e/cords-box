@@ -92,6 +92,7 @@ struct StringVoice {
     tension_decay: f32,
     energy: f32,
     energy_smoothing: f32,
+    cycle_length: usize,
     samples_alive: u64,
     minimum_active_samples: u64,
     active: bool,
@@ -120,6 +121,7 @@ impl StringVoice {
             tension_decay: 0.0,
             energy: 0.0,
             energy_smoothing: 0.0,
+            cycle_length: 0,
             samples_alive: 0,
             minimum_active_samples: 0,
             active: false,
@@ -136,6 +138,7 @@ impl StringVoice {
         self.dispersion_h.reset();
         self.dispersion_v.reset();
         self.energy = 0.0;
+        self.cycle_length = 0;
         self.samples_alive = 0;
         self.is_gliding = false;
     }
@@ -207,6 +210,69 @@ impl StringVoice {
         self.loop_gain = self
             .loop_gain
             .min(round_trip_gain(release_t60, self.frequency.max(20.0)));
+    }
+
+    /// Briefly enforce the touched-string periodicity at a harmonic node.
+    /// Averaging delay-line taps separated by the node travel distance keeps
+    /// partials at multiples of the requested overtone while cancelling the
+    /// fundamental and the partials that would move beneath the player's
+    /// lightly touching finger.
+    fn apply_harmonic_damping(&mut self, node_ratio: f32, strength: f32) {
+        if !self.active || self.cycle_length < 8 || !node_ratio.is_finite() {
+            return;
+        }
+        let overtone = (1.0 / node_ratio.clamp(0.08, 0.5)).round() as usize;
+        let overtone = overtone.clamp(2, 10).min(self.cycle_length / 2);
+        let segment_length = self.cycle_length / overtone;
+        if segment_length == 0 {
+            return;
+        }
+        let strength = strength.clamp(0.0, 1.0);
+        Self::project_harmonic_taps(
+            &mut self.delay_line_h,
+            self.cycle_length,
+            segment_length,
+            overtone,
+            strength,
+        );
+        Self::project_harmonic_taps(
+            &mut self.delay_line_v,
+            self.cycle_length,
+            segment_length,
+            overtone,
+            strength,
+        );
+    }
+
+    fn project_harmonic_taps(
+        delay_line: &mut [f32; BUFFER_SIZE],
+        cycle_length: usize,
+        segment_length: usize,
+        overtone: usize,
+        strength: f32,
+    ) {
+        let residual = 1.0 - strength;
+        for tap in 0..segment_length {
+            let mut average = 0.0;
+            for phase in 0..overtone {
+                average += delay_line[tap + phase * segment_length];
+            }
+            average /= overtone as f32;
+            for phase in 0..overtone {
+                let index = tap + phase * segment_length;
+                delay_line[index] = delay_line[index] * residual + average * strength;
+            }
+        }
+        // A rounded period may leave a few samples outside the equal tap
+        // groups. They cannot satisfy the node constraint, so the touch pulse
+        // damps them directly.
+        for sample in delay_line
+            .iter_mut()
+            .take(cycle_length)
+            .skip(segment_length * overtone)
+        {
+            *sample *= residual;
+        }
     }
 
     #[inline(always)]
@@ -332,6 +398,7 @@ impl GuitarString {
         voice.tension_envelope = velocity;
         voice.tension_decay = (-1.0 / (0.160 * sample_rate)).exp();
         voice.energy_smoothing = (-1.0 / (0.050 * sample_rate)).exp();
+        voice.cycle_length = cycle_length;
         voice.minimum_active_samples = (0.250 * sample_rate) as u64;
         voice.active = true;
 
@@ -430,6 +497,14 @@ impl GuitarString {
     fn damp(&mut self, amount: f32) {
         self.current.damp(amount);
         self.pending.damp(amount);
+    }
+
+    fn apply_harmonic_damping(&mut self, node_ratio: f32, strength: f32) {
+        if self.crossfade_position < self.crossfade_length && self.pending.active {
+            self.pending.apply_harmonic_damping(node_ratio, strength);
+        } else {
+            self.current.apply_harmonic_damping(node_ratio, strength);
+        }
     }
 
     fn start_glide(&mut self, target_frequency: f32, duration_ms: f32, sample_rate: f32) {
@@ -550,14 +625,19 @@ impl DspEngine {
         }
     }
 
+    /// Apply the momentary node touch used for natural and pinch harmonics to
+    /// the voice most recently excited on this string.
+    pub fn apply_harmonic_damping(&mut self, string_idx: usize, node_ratio: f32, strength: f32) {
+        if let Some(string) = self.strings.get_mut(string_idx) {
+            string.apply_harmonic_damping(node_ratio, strength);
+        }
+    }
+
     pub fn bend(&mut self, string_idx: usize, target_frequency: f32, duration_ms: f32) {
         if let Some(string) = self.strings.get_mut(string_idx) {
             string.start_glide(target_frequency, duration_ms, self.sample_rate);
         }
     }
-
-    /// Deprecated compatibility no-op. Pickup sensing is owned by the worklet.
-    pub fn set_pickup_position(&mut self, _string_idx: usize, _position: f32) {}
 
     /// Deprecated compatibility no-op. Pickup sensing is owned by the worklet.
     pub fn set_all_pickup_positions(&mut self, _position: f32) {}

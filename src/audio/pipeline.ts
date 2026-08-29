@@ -16,6 +16,7 @@ import type { SolverResult } from '@graph/solver';
 import type { Graph } from '@graph/Graph';
 import type { Component, ComponentType, PotTaper } from '@graph/types';
 import { useCircuitStore } from '@store/circuitStore';
+import { useTuningStore } from '@store/tuningStore';
 import dspWasmUrl from './wasm-pkg/dsp_bg.wasm?url';
 
 export type InputSourceType = 'pluck' | 'strum' | 'mic';
@@ -38,6 +39,68 @@ export const GUITAR_STRINGS: Record<string, number> = {
   B3: 246.94, // B
   E4: 329.63, // High E
 };
+
+export interface SynthPluckArticulation {
+  frequency: number;
+  pickPosition: number;
+  pickHardness: number;
+  harmonicNodeRatio?: number;
+  harmonicStrength?: number;
+}
+
+/** Translate tab/UI articulation into the single enriched worklet pluck. */
+export function deriveSynthPluckArticulation(
+  articulation: string,
+  frequency: number,
+  stringIndex: number,
+  openFrequency: number =
+    useTuningStore.getState().currentPreset.strings[stringIndex]?.openFreq ?? 110,
+): SynthPluckArticulation {
+  if (articulation === 'palm_mute' || articulation === 'mute') {
+    return {
+      frequency,
+      pickPosition: articulation === 'mute' ? 0.06 : 0.1,
+      pickHardness: articulation === 'mute' ? 0.96 : 0.88,
+    };
+  }
+  if (articulation === 'ghost') {
+    return { frequency, pickPosition: 0.42, pickHardness: 0.22 };
+  }
+  if (articulation === 'harmonic') {
+    // The scheduler supplies the audible harmonic pitch. Recover the open
+    // string waveguide frequency and the physical node used by <5>/<7>/<12>.
+    const overtone = Math.max(2, Math.min(10, Math.round(frequency / openFrequency)));
+    return {
+      frequency: frequency / overtone,
+      pickPosition: 0.28,
+      pickHardness: 0.42,
+      harmonicNodeRatio: 1 / overtone,
+      harmonicStrength: 0.9,
+    };
+  }
+  if (articulation === 'pinch_harmonic') {
+    return {
+      frequency,
+      pickPosition: 0.055,
+      pickHardness: 1,
+      harmonicNodeRatio: 1 / 3,
+      harmonicStrength: 0.97,
+    };
+  }
+  return { frequency, pickPosition: 0.35, pickHardness: 0.65 };
+}
+
+/** Static power-supply droop target driven by the worklet's smoothed load. */
+export function computeVoiceAwarePowerSagGain(
+  activeVoiceCount: number,
+  summedStringEnergy: number,
+  loadEnvelope: number = summedStringEnergy * 10,
+): number {
+  const signalLoad = Math.max(0, Math.min(1, loadEnvelope));
+  const voiceLoad = Math.max(0, Math.min(1, (activeVoiceCount - 1) / 5));
+  const reduction = 0.08 * signalLoad + 0.18 * voiceLoad * (0.35 + 0.65 * signalLoad);
+  return 1.05 * (1 - reduction);
+}
 
 export const GUITAR_CHORDS: Record<string, readonly number[]> = {
   E_MAJOR: [82.41, 123.47, 164.81, 207.65, 246.94, 329.63],
@@ -1030,7 +1093,12 @@ export class AudioPipeline {
       this.wdfWorkletStatus = 'initializing';
       workletNode.onprocessorerror = () => this.handleGuitarWorkletError(workletNode);
       workletNode.port.onmessage = (event) => {
-        const message = event.data as { type?: string };
+        const message = event.data as {
+          type?: string;
+          activeVoiceCount?: number;
+          stringEnergy?: number;
+          loadEnvelope?: number;
+        };
         if (message.type === 'ready') {
           if (this.wdfWorkletNode !== workletNode) return;
           this.wdfWorkletStatus = 'ready';
@@ -1040,6 +1108,17 @@ export class AudioPipeline {
           this.emitStateChange();
         } else if (message.type === 'error') {
           this.handleGuitarWorkletError(workletNode);
+        } else if (message.type === 'voice-load' && this.wdfWorkletNode === workletNode) {
+          const powerAmpGain = this.activeNodes.get('power-amp-gain') as GainNode | undefined;
+          if (powerAmpGain) {
+            const targetGain = computeVoiceAwarePowerSagGain(
+              message.activeVoiceCount ?? 0,
+              message.stringEnergy ?? 0,
+              message.loadEnvelope,
+            );
+            const timeConstant = targetGain < powerAmpGain.gain.value ? 0.012 : 0.12;
+            powerAmpGain.gain.setTargetAtTime(targetGain, ctx.currentTime, timeConstant);
+          }
         }
       };
 
@@ -2107,14 +2186,27 @@ export class AudioPipeline {
     articulation: string = 'none',
     targetFreq?: number,
     stringIndex: number = 0,
+    sustainDurationSeconds?: number,
   ): boolean {
     if (this.wdfWorkletNode) {
-      // Always pluck at the starting frequency
+      const synthArticulation = deriveSynthPluckArticulation(
+        articulation,
+        freq,
+        stringIndex,
+      );
+      // A single enriched pluck message owns both source articulation and the
+      // per-string post-waveguide mode. Older engines still accept its plain
+      // frequency/velocity subset.
       this.wdfWorkletNode.port.postMessage({
         type: 'pluck',
         string_idx: stringIndex,
-        freq: freq,
+        freq: synthArticulation.frequency,
         velocity: velocity,
+        articulation,
+        pick_position: synthArticulation.pickPosition,
+        pick_hardness: synthArticulation.pickHardness,
+        harmonic_node_ratio: synthArticulation.harmonicNodeRatio,
+        harmonic_strength: synthArticulation.harmonicStrength,
         time: startTime,
       });
 
@@ -2158,30 +2250,32 @@ export class AudioPipeline {
           });
         }
       } else if (articulation === 'vibrato') {
-        // Vibrato: schedule multiple small bends
+        // Repeat the wrist cycle for the scheduler-provided sustain, then
+        // return to centre exactly at note-off.
         const vibratoDepth = 1.015; // ~25 cents
-        const cycleSec = 0.08;
+        const halfCycleSec = 0.08;
         const baseTime = startTime && startTime > ctx.currentTime ? startTime : ctx.currentTime;
-        this.wdfWorkletNode.port.postMessage({
-          type: 'bend',
-          string_idx: stringIndex,
-          targetFreq: freq * vibratoDepth,
-          durationMs: 80,
-          time: baseTime,
-        });
-        this.wdfWorkletNode.port.postMessage({
-          type: 'bend',
-          string_idx: stringIndex,
-          targetFreq: freq / vibratoDepth,
-          durationMs: 80,
-          time: baseTime + cycleSec,
-        });
+        const sustain = Math.max(halfCycleSec * 2, sustainDurationSeconds ?? 0.8);
+        const endTime = baseTime + sustain;
+        let bendTime = baseTime;
+        let bendUp = true;
+        while (bendTime < endTime - 0.001) {
+          this.wdfWorkletNode.port.postMessage({
+            type: 'bend',
+            string_idx: stringIndex,
+            targetFreq: bendUp ? freq * vibratoDepth : freq / vibratoDepth,
+            durationMs: halfCycleSec * 1000,
+            time: bendTime,
+          });
+          bendUp = !bendUp;
+          bendTime += halfCycleSec;
+        }
         this.wdfWorkletNode.port.postMessage({
           type: 'bend',
           string_idx: stringIndex,
           targetFreq: freq,
-          durationMs: 80,
-          time: baseTime + cycleSec * 2,
+          durationMs: 40,
+          time: endTime,
         });
       } else if (targetFreq && targetFreq !== freq) {
         // Direct retune glide
@@ -2481,6 +2575,7 @@ export class AudioPipeline {
     startTime?: number,
     articulation: string = 'none',
     targetFreq?: number,
+    sustainDurationSeconds?: number,
   ): Promise<void> {
     let ctx = audioEngine.getContext();
     if (!ctx) {
@@ -2542,6 +2637,7 @@ export class AudioPipeline {
               articulation,
               targetFreq,
               _stringIndex,
+              sustainDurationSeconds,
             );
           }
         }
@@ -2555,6 +2651,7 @@ export class AudioPipeline {
         articulation,
         targetFreq,
         _stringIndex,
+        sustainDurationSeconds,
       );
     }
   }

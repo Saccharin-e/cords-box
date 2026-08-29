@@ -607,16 +607,71 @@ export class GuitarProcessor extends AudioWorkletProcessor {
     ];
     // Per-string frequency tracking for pitch-dependent pickup comb
     this.stringFreqs = new Float32Array(6);
+    // The string-major WASM output stays separated through articulation and
+    // pickup sensing. These states are allocated once and reused in process().
+    this.filteredStringBuffer = new Float32Array(6 * 128);
+    this.stringArticulationModes = new Uint8Array(6); // 0 normal, 1 palm mute, 2 dead
+    this.stringArticulationEnvelopes = new Float32Array(6);
+    this.stringArticulationEnvelopes.fill(1);
+    this.stringMuteLowpass = new Float32Array(6);
+    this.stringDeadLowpass = new Float32Array(6);
+    this.stringDeadBandpass = new Float32Array(6);
+    this.muteLowpassCoefficient = 1 - Math.exp((-2 * Math.PI * 1100) / sampleRate);
+    this.muteEnvelopeDecay = Math.exp(Math.log(0.001) / (0.2 * sampleRate));
+    this.deadBandpassCoefficient = 2 * Math.sin((Math.PI * 900) / sampleRate);
+    this.deadBandpassDamping = 0.5;
+    this.deadEnvelopeDecay = Math.exp(Math.log(0.001) / (0.065 * sampleRate));
+    this.voiceLoadEnvelope = 0;
+    this.voiceLoadBlockCounter = 0;
+    this.voiceLoadMessage = {
+      type: 'voice-load',
+      activeVoiceCount: 0,
+      stringEnergy: 0,
+      loadEnvelope: 0,
+    };
+
+    this.executePluck = (msg) => {
+      if (!this.engine) {
+        this.pendingPlucks.push(msg);
+        return;
+      }
+      const hasArticulation =
+        Number.isFinite(msg.pick_position) && Number.isFinite(msg.pick_hardness);
+      if (hasArticulation && typeof this.engine.pluck_articulated === 'function') {
+        this.engine.pluck_articulated(
+          msg.string_idx,
+          msg.freq,
+          msg.velocity,
+          msg.pick_position,
+          msg.pick_hardness,
+        );
+      } else {
+        this.engine.pluck(msg.string_idx, msg.freq, msg.velocity);
+      }
+      if (
+        Number.isFinite(msg.harmonic_node_ratio) &&
+        typeof this.engine.apply_harmonic_damping === 'function'
+      ) {
+        this.engine.apply_harmonic_damping(
+          msg.string_idx,
+          msg.harmonic_node_ratio,
+          Number.isFinite(msg.harmonic_strength) ? msg.harmonic_strength : 0.88,
+        );
+      }
+    };
 
     this.executeEvent = (msg) => {
       if (msg.type === 'pluck') {
-        if (this.engine) {
-          this.engine.pluck(msg.string_idx, msg.freq, msg.velocity);
-        } else {
-          this.pendingPlucks.push(msg);
-        }
+        this.executePluck(msg);
         if (msg.string_idx >= 0 && msg.string_idx < 6) {
           this.stringFreqs[msg.string_idx] = msg.freq;
+          const articulationMode =
+            msg.articulation === 'mute' ? 2 : msg.articulation === 'palm_mute' ? 1 : 0;
+          this.stringArticulationModes[msg.string_idx] = articulationMode;
+          this.stringArticulationEnvelopes[msg.string_idx] = 1;
+          this.stringMuteLowpass[msg.string_idx] = 0;
+          this.stringDeadLowpass[msg.string_idx] = 0;
+          this.stringDeadBandpass[msg.string_idx] = 0;
         }
       } else if (msg.type === 'bend') {
         if (this.engine) {
@@ -647,7 +702,7 @@ export class GuitarProcessor extends AudioWorkletProcessor {
             this.stringOutBuffer = new Float32Array(wasmMemory.buffer, this.stringOutPtr, 6 * 128);
           }
           for (const p of this.pendingPlucks) {
-            this.engine.pluck(p.string_idx, p.freq, p.velocity);
+            this.executePluck(p);
           }
           this.pendingPlucks = [];
           this.port.postMessage({ type: 'ready' });
@@ -690,6 +745,32 @@ export class GuitarProcessor extends AudioWorkletProcessor {
         this.engine.set_whammy(typeof msg.semitones === 'number' ? msg.semitones : 0);
       }
     };
+  }
+
+  filterStringSample(stringIndex, input) {
+    const mode = this.stringArticulationModes[stringIndex];
+    if (mode === 1) {
+      const lowpass =
+        this.stringMuteLowpass[stringIndex] +
+        this.muteLowpassCoefficient * (input - this.stringMuteLowpass[stringIndex]);
+      const envelope = this.stringArticulationEnvelopes[stringIndex] * this.muteEnvelopeDecay;
+      this.stringMuteLowpass[stringIndex] = lowpass;
+      this.stringArticulationEnvelopes[stringIndex] = envelope;
+      return lowpass * envelope;
+    }
+    if (mode === 2) {
+      let lowpass = this.stringDeadLowpass[stringIndex];
+      let bandpass = this.stringDeadBandpass[stringIndex];
+      lowpass += this.deadBandpassCoefficient * bandpass;
+      const highpass = input - lowpass - this.deadBandpassDamping * bandpass;
+      bandpass += this.deadBandpassCoefficient * highpass;
+      const envelope = this.stringArticulationEnvelopes[stringIndex] * this.deadEnvelopeDecay;
+      this.stringDeadLowpass[stringIndex] = lowpass;
+      this.stringDeadBandpass[stringIndex] = bandpass;
+      this.stringArticulationEnvelopes[stringIndex] = envelope;
+      return bandpass * envelope * 1.6;
+    }
+    return input;
   }
 
   process(inputs, outputs) {
@@ -787,7 +868,13 @@ export class GuitarProcessor extends AudioWorkletProcessor {
       }
       if (hasStringOutput) {
         for (let stringIndex = 0; stringIndex < 6; stringIndex++) {
-          this.stringDelayLines[stringIndex].write(this.stringOutBuffer[stringIndex * 128 + i]);
+          const stringOffset = stringIndex * 128 + i;
+          const filtered = this.filterStringSample(
+            stringIndex,
+            this.stringOutBuffer[stringOffset],
+          );
+          this.filteredStringBuffer[stringOffset] = filtered;
+          this.stringDelayLines[stringIndex].write(filtered);
         }
       }
 
@@ -796,7 +883,7 @@ export class GuitarProcessor extends AudioWorkletProcessor {
         if (hasStringOutput) {
           summedStrings = 0;
           for (let stringIndex = 0; stringIndex < 6; stringIndex++) {
-            summedStrings += this.stringOutBuffer[stringIndex * 128 + i];
+            summedStrings += this.filteredStringBuffer[stringIndex * 128 + i];
           }
         }
         pickupInputVoltages[0] = rawWebAudio + summedStrings;
@@ -809,7 +896,7 @@ export class GuitarProcessor extends AudioWorkletProcessor {
           let pickupSig = rawWebAudio;
           if (hasStringOutput) {
             for (let stringIndex = 0; stringIndex < 6; stringIndex++) {
-              const stringSample = this.stringOutBuffer[stringIndex * 128 + i];
+              const stringSample = this.filteredStringBuffer[stringIndex * 128 + i];
               const delayed = this.stringDelayLines[stringIndex].readSamples(
                 pickupCombDelaySamples[pickupIndex * 6 + stringIndex],
               );
@@ -835,6 +922,33 @@ export class GuitarProcessor extends AudioWorkletProcessor {
       // Pickup/harness processing ends here. Amp tone shaping and power-stage
       // dynamics live later in the Web Audio graph, at their physical points.
       outChan[i] = wdfOut;
+    }
+
+    if (
+      this.engine &&
+      typeof this.engine.active_voice_count === 'function' &&
+      typeof this.engine.string_energy === 'function'
+    ) {
+      const activeVoiceCount = this.engine.active_voice_count();
+      let summedStringEnergy = 0;
+      for (let stringIndex = 0; stringIndex < 6; stringIndex++) {
+        summedStringEnergy += this.engine.string_energy(stringIndex);
+      }
+      const instantaneousLoad = Math.min(
+        1,
+        summedStringEnergy * 10 + Math.max(0, activeVoiceCount - 1) * 0.08,
+      );
+      const followerCoefficient = instantaneousLoad > this.voiceLoadEnvelope ? 0.35 : 0.04;
+      this.voiceLoadEnvelope +=
+        followerCoefficient * (instantaneousLoad - this.voiceLoadEnvelope);
+      this.voiceLoadBlockCounter++;
+      if (this.voiceLoadBlockCounter >= 8) {
+        this.voiceLoadBlockCounter = 0;
+        this.voiceLoadMessage.activeVoiceCount = activeVoiceCount;
+        this.voiceLoadMessage.stringEnergy = summedStringEnergy;
+        this.voiceLoadMessage.loadEnvelope = this.voiceLoadEnvelope;
+        this.port.postMessage(this.voiceLoadMessage);
+      }
     }
 
     // Copy to remaining channels (stereo)

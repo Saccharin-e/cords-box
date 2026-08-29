@@ -6,6 +6,11 @@ export class DspEngine {
     [Symbol.dispose](): void;
     active_voice_count(): number;
     /**
+     * Apply the momentary node touch used for natural and pinch harmonics to
+     * the voice most recently excited on this string.
+     */
+    apply_harmonic_damping(string_idx: number, node_ratio: number, strength: number): void;
+    /**
      * Reset the append cursor for one Web Audio render quantum.
      */
     begin_chunk(): void;
@@ -34,10 +39,6 @@ export class DspEngine {
     set_drive(drive: number): void;
     set_pick_hardness(string_idx: number, hardness: number): void;
     set_pick_position(string_idx: number, position: number): void;
-    /**
-     * Deprecated compatibility no-op. Pickup sensing is owned by the worklet.
-     */
-    set_pickup_position(_string_idx: number, _position: number): void;
     set_whammy(semitones: number): void;
     string_energy(string_idx: number): number;
     /**
@@ -52,6 +53,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_dspengine_free: (a: number, b: number) => void;
     readonly dspengine_active_voice_count: (a: number) => number;
+    readonly dspengine_apply_harmonic_damping: (a: number, b: number, c: number, d: number) => void;
     readonly dspengine_begin_chunk: (a: number) => void;
     readonly dspengine_bend: (a: number, b: number, c: number, d: number) => void;
     readonly dspengine_damp: (a: number, b: number, c: number) => void;
@@ -65,7 +67,6 @@ export interface InitOutput {
     readonly dspengine_set_drive: (a: number, b: number) => void;
     readonly dspengine_set_pick_hardness: (a: number, b: number, c: number) => void;
     readonly dspengine_set_pick_position: (a: number, b: number, c: number) => void;
-    readonly dspengine_set_pickup_position: (a: number, b: number, c: number) => void;
     readonly dspengine_set_whammy: (a: number, b: number) => void;
     readonly dspengine_string_energy: (a: number, b: number) => number;
     readonly dspengine_string_output_ptr: (a: number) => number;

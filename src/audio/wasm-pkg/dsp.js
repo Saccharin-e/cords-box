@@ -19,6 +19,16 @@ export class DspEngine {
         return ret >>> 0;
     }
     /**
+     * Apply the momentary node touch used for natural and pinch harmonics to
+     * the voice most recently excited on this string.
+     * @param {number} string_idx
+     * @param {number} node_ratio
+     * @param {number} strength
+     */
+    apply_harmonic_damping(string_idx, node_ratio, strength) {
+        wasm.dspengine_apply_harmonic_damping(this.__wbg_ptr, string_idx, node_ratio, strength);
+    }
+    /**
      * Reset the append cursor for one Web Audio render quantum.
      */
     begin_chunk() {
@@ -113,14 +123,6 @@ export class DspEngine {
      */
     set_pick_position(string_idx, position) {
         wasm.dspengine_set_pick_position(this.__wbg_ptr, string_idx, position);
-    }
-    /**
-     * Deprecated compatibility no-op. Pickup sensing is owned by the worklet.
-     * @param {number} _string_idx
-     * @param {number} _position
-     */
-    set_pickup_position(_string_idx, _position) {
-        wasm.dspengine_set_pickup_position(this.__wbg_ptr, _string_idx, _position);
     }
     /**
      * @param {number} semitones

@@ -297,6 +297,158 @@ describe('WDF Worklet Parity', () => {
     expect(calls).toEqual(['begin', 'frames:110', 'pluck', 'frames:18']);
   });
 
+  it('uses the enriched pluck without creating a divergent message path', () => {
+    const Processor = (
+      worklet as unknown as {
+        GuitarProcessor: new () => {
+          engine: {
+            pluck: ReturnType<typeof vi.fn>;
+            pluck_articulated: ReturnType<typeof vi.fn>;
+            apply_harmonic_damping: ReturnType<typeof vi.fn>;
+          } | null;
+          port: { onmessage: ((event: MessageEvent) => void) | null };
+        };
+      }
+    ).GuitarProcessor;
+    const processor = new Processor();
+    processor.engine = {
+      pluck: vi.fn(),
+      pluck_articulated: vi.fn(),
+      apply_harmonic_damping: vi.fn(),
+    };
+    processor.port.onmessage?.({
+      data: {
+        type: 'pluck',
+        string_idx: 0,
+        freq: 82.4069,
+        velocity: 0.7,
+        articulation: 'harmonic',
+        pick_position: 0.28,
+        pick_hardness: 0.42,
+        harmonic_node_ratio: 0.5,
+        harmonic_strength: 0.9,
+      },
+    } as MessageEvent);
+
+    expect(processor.engine.pluck).not.toHaveBeenCalled();
+    expect(processor.engine.pluck_articulated).toHaveBeenCalledWith(
+      0,
+      82.4069,
+      0.7,
+      0.28,
+      0.42,
+    );
+    expect(processor.engine.apply_harmonic_damping).toHaveBeenCalledWith(0, 0.5, 0.9);
+  });
+
+  it('makes palm-muted live strings darker and faster-decaying at matched input level', () => {
+    type FilterProcessor = {
+      engine: { process_chunk(): void; pluck_articulated(...args: number[]): void } | null;
+      outBuffer: Float32Array | null;
+      stringOutBuffer: Float32Array | null;
+      wdf: {
+        _params: { pickups: unknown[] };
+        _pickupInputVoltages: Float64Array;
+        _pickupCombDelaySamples: Float64Array;
+        processSample(input: ArrayLike<number>): number;
+      };
+      port: { onmessage: ((event: MessageEvent) => void) | null };
+      process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+    };
+    const Processor = (worklet as unknown as { GuitarProcessor: new () => FilterProcessor })
+      .GuitarProcessor;
+
+    const render = (articulation: 'none' | 'palm_mute') => {
+      const processor = new Processor();
+      processor.engine = { process_chunk() {}, pluck_articulated() {} };
+      processor.outBuffer = new Float32Array(128);
+      processor.stringOutBuffer = new Float32Array(6 * 128);
+      for (let i = 0; i < 128; i++) {
+        processor.stringOutBuffer[i] =
+          Math.sin((2 * Math.PI * 300 * i) / SAMPLE_RATE) +
+          0.5 * Math.sin((2 * Math.PI * 6000 * i) / SAMPLE_RATE);
+      }
+      processor.wdf = {
+        _params: { pickups: [] },
+        _pickupInputVoltages: new Float64Array(1),
+        _pickupCombDelaySamples: new Float64Array(6),
+        processSample(input) {
+          return input[0];
+        },
+      };
+      processor.port.onmessage?.({
+        data: {
+          type: 'pluck',
+          string_idx: 0,
+          freq: 220,
+          velocity: 0.7,
+          articulation,
+          pick_position: articulation === 'palm_mute' ? 0.1 : 0.35,
+          pick_hardness: articulation === 'palm_mute' ? 0.88 : 0.65,
+        },
+      } as MessageEvent);
+      const first = new Float32Array(128);
+      processor.process([[]], [[first]]);
+      let last = first;
+      for (let block = 0; block < 39; block++) {
+        last = new Float32Array(128);
+        processor.process([[]], [[last]]);
+      }
+      return { first, last };
+    };
+
+    const blockRms = (samples: Float32Array) =>
+      Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
+    const brightness = (samples: Float32Array) => {
+      let differenceEnergy = 0;
+      for (let i = 1; i < samples.length; i++) {
+        const difference = samples[i] - samples[i - 1];
+        differenceEnergy += difference * difference;
+      }
+      return Math.sqrt(differenceEnergy / (samples.length - 1)) / blockRms(samples);
+    };
+
+    const normal = render('none');
+    const muted = render('palm_mute');
+    expect(brightness(muted.first)).toBeLessThan(brightness(normal.first) * 0.8);
+    expect(blockRms(muted.last)).toBeLessThan(blockRms(muted.first) * 0.45);
+    expect(blockRms(normal.last)).toBeCloseTo(blockRms(normal.first), 5);
+  });
+
+  it('publishes a smoothed six-string load for the power-sag follower', () => {
+    type LoadProcessor = {
+      engine: {
+        process_chunk(): void;
+        active_voice_count(): number;
+        string_energy(stringIndex: number): number;
+      } | null;
+      outBuffer: Float32Array | null;
+      stringOutBuffer: Float32Array | null;
+      port: { postMessage: ReturnType<typeof vi.fn> };
+      process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean;
+    };
+    const Processor = (worklet as unknown as { GuitarProcessor: new () => LoadProcessor })
+      .GuitarProcessor;
+    const processor = new Processor();
+    processor.engine = {
+      process_chunk() {},
+      active_voice_count: () => 6,
+      string_energy: () => 0.01,
+    };
+    processor.outBuffer = new Float32Array(128);
+    processor.stringOutBuffer = null;
+    for (let block = 0; block < 8; block++) {
+      processor.process([[]], [[new Float32Array(128)]]);
+    }
+    expect(processor.port.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'voice-load',
+        activeVoiceCount: 6,
+        stringEnergy: expect.closeTo(0.06, 6),
+      }),
+    );
+  });
+
   it('uses per-string synthetic output while leaving recorded DI spatially unfiltered', () => {
     const Processor = (
       worklet as unknown as {

@@ -18,6 +18,27 @@ function rms(samples: Float32Array): number {
   return Math.sqrt(energy / samples.length);
 }
 
+function spectralEnergy(
+  samples: Float32Array,
+  sampleRate: number,
+  frequency: number,
+  startSeconds = 0.08,
+  durationSeconds = 0.45,
+): number {
+  const start = Math.floor(startSeconds * sampleRate);
+  const length = Math.min(Math.floor(durationSeconds * sampleRate), samples.length - start);
+  let real = 0;
+  let imaginary = 0;
+  for (let i = 0; i < length; i++) {
+    const window = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / Math.max(1, length - 1));
+    const phase = (2 * Math.PI * frequency * i) / sampleRate;
+    const sample = samples[start + i] * window;
+    real += sample * Math.cos(phase);
+    imaginary -= sample * Math.sin(phase);
+  }
+  return (real * real + imaginary * imaginary) / (length * length);
+}
+
 function renderEngine(engine: DspEngine, sampleCount: number): Float32Array {
   const rendered = new Float32Array(sampleCount);
   let write = 0;
@@ -67,7 +88,31 @@ describe('checked-in production string WASM', () => {
     expect(engine.process_frames).toBeTypeOf('function');
     expect(engine.string_output_ptr).toBeTypeOf('function');
     expect(engine.pluck_articulated).toBeTypeOf('function');
+    expect(engine.apply_harmonic_damping).toBeTypeOf('function');
     engine.free();
+  });
+
+  it('suppresses the fundamental after a 12th-fret harmonic node touch', () => {
+    const sampleRate = 48_000;
+    const fundamental = 82.4069;
+    const plain = new DspEngine(sampleRate, 71);
+    const harmonic = new DspEngine(sampleRate, 71);
+    plain.pluck_articulated(0, fundamental, 0.7, 0.28, 0.42);
+    harmonic.pluck_articulated(0, fundamental, 0.7, 0.28, 0.42);
+    harmonic.apply_harmonic_damping(0, 0.5, 0.9);
+
+    const plainOutput = renderEngine(plain, sampleRate);
+    const harmonicOutput = renderEngine(harmonic, sampleRate);
+    const plainRatio =
+      spectralEnergy(plainOutput, sampleRate, fundamental) /
+      spectralEnergy(plainOutput, sampleRate, fundamental * 2);
+    const harmonicFundamental = spectralEnergy(harmonicOutput, sampleRate, fundamental);
+    const harmonicOctave = spectralEnergy(harmonicOutput, sampleRate, fundamental * 2);
+
+    expect(harmonicFundamental / harmonicOctave).toBeLessThan(plainRatio * 0.2);
+    expect(harmonicFundamental).toBeLessThan(harmonicOctave);
+    plain.free();
+    harmonic.free();
   });
 
   it('publishes independent string-major buffers that sum to the legacy output', () => {

@@ -262,7 +262,7 @@ export class TabScheduler {
   private scheduleEvent(
     event: FlatEvent,
     targetAudioTime: number,
-    _secondsPerBeat: number,
+    secondsPerBeat: number,
   ): void {
     // Legato articulations: don't damp the previous note, glide pitch instead
     const LEGATO_ARTS = new Set(['hammer', 'pull', 'slide_up', 'slide_down', 'release']);
@@ -300,6 +300,7 @@ export class TabScheduler {
       const staggerSec = isRake ? 0.016 : 0.006;
       const strumDelay = idx * staggerSec;
       const noteStartTime = targetAudioTime + strumDelay;
+      const noteDurationSeconds = note.durationBeats * secondsPerBeat;
 
       // --- Per-string damping/legato logic ---
       const isLegato = LEGATO_ARTS.has(note.articulation);
@@ -326,6 +327,7 @@ export class TabScheduler {
         noteStartTime,
         note.articulation,
         targetFreq,
+        noteDurationSeconds,
       );
 
       // Track this note as ringing on its string
@@ -337,9 +339,8 @@ export class TabScheduler {
       // Schedule note-off damp at the note's duration end time.
       // Skip for legato articulations — the next note on the string will
       // glide pitch rather than re-attack, so we don't want to silence it.
-      if (!isLegato && note.articulation !== 'vibrato') {
-        const secondsPerBeat = 60.0 / this.bpm;
-        const noteEndTime = noteStartTime + note.durationBeats * secondsPerBeat;
+      if (!isLegato) {
+        const noteEndTime = noteStartTime + noteDurationSeconds;
         // Soft release damp (amount 0.3) for natural note decay
         audioPipeline.dampString(note.stringIdx, 0.3, noteEndTime);
       }
