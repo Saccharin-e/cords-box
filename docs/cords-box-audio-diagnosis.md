@@ -1,5 +1,9 @@
 # cords-box audio pipeline: diagnosis report (v4 — Final Resolution)
 
+**Status:** Resolved
+
+**Resolution:** The AudioWorklet is initialized and routed, and live circuit parameters now reach both synthesized and recorded-audio paths.
+
 Final findings and verification status across [`Saccharin-e/cords-box`](https://github.com/Saccharin-e/cords-box) (`develop` branch), covering commits `17aa4fb` through `ced002a`, `be0c7af`, and `01d881a`.
 
 ## Status Summary

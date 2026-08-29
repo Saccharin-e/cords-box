@@ -1,3 +1,9 @@
+# Historical Bug Report: WASM Audio Initialization
+
+**Status:** Resolved
+
+**Resolution:** The main thread now transfers the WASM module bytes to the AudioWorklet, which initializes `DspEngine`, binds its output buffers, drains queued plucks, and reports readiness.
+
 I cloned and read through the audio DSP layer (`src/audio/`, plus the Rust source in `dsp/src/lib.rs`). The short answer: the physical-modeling synth code you wrote is actually pretty good — the bug isn't in the DSP math, it's in the wiring that's supposed to turn it on.
 
 ## How a note is supposed to get to your speakers

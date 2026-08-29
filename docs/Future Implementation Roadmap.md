@@ -45,31 +45,21 @@ The project has shipped a production-quality foundation across all architectural
 ## 1. Short-Term — DSP Precision & Tab Engine Refinement
 > **Target:** v1.1 – v1.3 | Reconciled against [docs/DSP_SPEC.md](DSP_SPEC.md) Task Matrix.
 
-### 1.1 Upgrade Fractional Delay: Linear Interpolation → Allpass / Lagrange
-- **Current state**: `dsp/src/lib.rs` reads delay lines using linear interpolation (`idx1*(1-fract) + idx2*fract` at lines 368–382). While computationally cheap, linear interpolation introduces high-frequency damping at non-integer delay lengths.
-- **Tasks**:
-  - Implement a 1st-order Thiran allpass fractional delay filter or a 3rd/4th-order Lagrange FIR interpolator in `dsp/src/lib.rs`.
-  - Add explicit bounds check (`delay_samples >= order`) to guarantee numerical stability during high-pitch bends.
-  - Add a Vitest spec in `tests/audio/` measuring frequency response flatness and pitch accuracy across fractional delays.
+### 1.1 Fractional Delay Precision — Completed
+- **Current state**: `dsp/src/lib.rs` uses first-order Lagrange/Farrow fractional-delay interpolation with circular-buffer wrapping. `wasmProduction.test.ts` verifies production-WASM pitch accuracy; this is not a Thiran allpass implementation.
+- **Remaining follow-up**: Add a standalone swept magnitude/flatness test if the interpolation order or topology changes.
 
-### 1.2 Tab Scheduler `damp()` Integration & Open-String Target Fixes
-- **Current state**: The Rust WASM engine exposes `damp(string_idx, amount)`, but `tabScheduler.ts` does not yet invoke `damp()` for note-off events or rests. Additionally, open string (fret 0) targets in hammer-ons/pull-offs require explicit validation.
-- **Tasks**:
-  - Wire `tabScheduler.ts` note-off / rest lifecycle to issue `damp()` calls with smooth decay ramps (preventing clicks).
-  - Verify that `tabParser.ts` cleanly treats `targetFret: 0` as a valid open-string legato/pull-off target rather than a missing parameter.
-  - Add notation support for pinch harmonics (`<n>` / `P.H.`) in `tabParser.ts`.
+### 1.2 Tab Scheduler Damping & Articulation — Completed
+- **Current state**: `tabScheduler.ts` issues smooth `damp()` events for release, rests, and mutes; `tabParser.ts` accepts fret 0 as a hammer/pull/slide target and supports pinch-harmonic notation and damping.
 
 ### 1.3 Whammy Bar / Global Pitch Modulation
-- **Current state**: `bend()` in `dsp/src/lib.rs` is per-string only. Real tremolo bridges alter the tension across all 6 strings simultaneously.
-- **Tasks**:
-  - Expose `set_global_pitch_bend(semitones: f32)` or `whammy_bar(tension_delta: f32)` on `DspEngine` in `dsp/src/lib.rs`.
-  - Connect whammy modulation to UI controls and MIDI pitch wheel events in `webMidiManager.ts`.
+- **Current state**: The Rust engine exports `set_whammy(semitones)` and the AudioWorklet accepts the corresponding `whammy` message, applying the bend across active strings.
+- **Remaining task**: Connect whammy modulation to a UI control and MIDI pitch wheel events in `webMidiManager.ts`.
 
 ### 1.4 WDF Topology Invariant Assertions & Non-Linear Pickup Stage
-- **Current state**: Pickup RLC modeling is linear; adaptor port resistances must strictly match children.
+- **Current state**: The passive pickup RLC solve remains linear by design, with the completed polynomial response stage applied after it. Adaptor port resistances must still strictly match their children.
 - **Tasks**:
   - Add debug-mode invariant checks ensuring `WdfSeriesAdaptor` / `WdfParallelAdaptor` port resistances never drift.
-  - Implement an optional post-solve polynomial magnetic saturation stage in `processor.js` / `wdfNodes.ts` to model string excursion non-linearities under heavy pick velocity.
 
 ---
 
@@ -134,11 +124,14 @@ The project has shipped a production-quality foundation across all architectural
 | P0 | WDF passive circuit & tone stack solver in AudioWorklet | `src/audio/processor.js` | ✅ Shipped |
 | P0 | Guitar Tab parser & lookahead scheduler | `src/audio/tab/` | ✅ Shipped |
 | P0 | Web MIDI manager, parser, and exporter | `src/audio/midi/` | ✅ Shipped |
-| P1 | **Upgrade linear interpolation → allpass/Lagrange fractional delay** | `dsp/src/lib.rs` | 🔲 Open |
-| P1 | **Tab scheduler → `damp()` note-off wiring & fret 0 fixes** | `src/audio/tab/` | 🔲 Open |
-| P1 | **Whammy bar / global bridge pitch bend** | `dsp/src/lib.rs` | 🔲 Open |
+| P1 | Fractional-delay interpolation (first-order Lagrange/Farrow) | `dsp/src/lib.rs` | ✅ Shipped |
+| P1 | Tab scheduler damping, fret 0 targets, and pinch harmonics | `src/audio/tab/` | ✅ Shipped |
+| P1 | Whammy/global bridge pitch-bend engine and worklet API | `dsp/src/lib.rs`, `src/audio/processor.js` | ✅ Shipped |
+| P1 | **Whammy UI and MIDI pitch-wheel control** | `src/ui/`, `src/audio/midi/` | 🔲 Open |
 | P2 | **Alternate tunings & Bass instrument family presets** | `src/store/`, `src/ui/` | 🔲 Open |
-| P2 | **Non-linear pickup response (polynomial flux stage)** | `src/audio/wdf/` | 🔲 Open |
+| P2 | Non-linear pickup response (polynomial saturation stage) | `src/audio/wdf/` | ✅ Shipped |
+| P2 | **JS fallback parity with WASM articulation and whammy behavior** | `src/audio/karplusStrong.ts` | 🔲 Open |
+| P2 | **External six-channel hexaphonic routing** | `src/audio/processor.js`, `src/audio/pipeline.ts` | 🔲 Open |
 | P3 | **OMR (Optical Tab Recognition) WebGPU inference** | `src/omr/` | 🔲 Planned |
 | P3 | **Interactive BOM & 1-click affiliate cart generator** | `src/ui/` | 🔲 Planned |
 

@@ -1,12 +1,16 @@
 ---
 name: audio-dsp-engine
-description: Implements the audio DSP layer in src/audio — Web Audio API / AudioWorklet code that turns live circuit-graph state into filter and gain stages. Use when adding or modifying audio nodes, AudioWorklet processors, or real-time signal-path logic.
+description: Implements the audio DSP layer in src/audio and dsp — the Rust/WASM string engine plus Web Audio and AudioWorklet processing that turns live circuit and performance state into the complete instrument, amplifier, cabinet, and effects signal path. Use when adding or modifying DSP, audio nodes, AudioWorklet processors, or real-time signal-path logic.
 ---
 
 # Audio DSP Layer (src/audio)
 
-This layer turns the current circuit graph into live audio processing: pickups → switches → tone
-pots → volume → output, rendered as a real Web Audio graph the user can hear.
+This layer turns string excitation, the current circuit graph, amplifier settings, and pedal state
+into the complete live signal path. It is not just a thin mapping of pickup and pot properties:
+the path includes the Rust/WASM physical string model, the pickup and guitar-harness WDF solve,
+compressor and overdrive, cascaded tube-preamp waveshaping, a WDF-solved passive tone stack for
+the selected amp model, power-amp processing, a modal-resonance cabinet impulse response, and the
+chorus, delay, and room-reverb stages before final output.
 
 ## Real-time thread rules
 
@@ -18,12 +22,18 @@ pots → volume → output, rendered as a real Web Audio graph the user can hear
 - Communicate between the main thread and the worklet with `port.postMessage` /
   `MessageChannel` (or a `SharedArrayBuffer` for parameter automation), never by closing over a
   mutable JS object shared with the main thread.
-- If a computation is genuinely too heavy for JS on the audio thread, that's what the C++ → WASM
-  DSP core is for — don't try to force a heavy computation into plain JS inside the worklet as a
+- If a computation is genuinely too heavy for JS on the audio thread, that's what the Rust → WASM
+  DSP core (`dsp/src/lib.rs`, built with `wasm-pack` / `npm run build:wasm`) is for — don't try to
+  force a heavy computation into plain JS inside the worklet as a
   workaround.
 
 ## Mapping graph → audio graph
 
+- Keep the full processing topology in mind when changing graph-to-audio mapping:
+  `Rust/WASM strings → pickup/harness WDF → compressor/overdrive → tube preamp → per-amp WDF tone
+  stack → power amp → modal cabinet IR → chorus/delay/reverb → output`. Circuit properties directly
+  drive the pickup/harness portion, while amp, cabinet, and pedal state configure the downstream
+  stages; a change near the front of the chain can materially affect every later nonlinear stage.
 - The audio graph should be **derived from** circuit-graph state (see the
   `circuit-graph-engine` skill), not maintained as a separate hand-edited structure. When the
   store's graph changes (a wire added/removed, a pot value changed), rebuild or patch only the

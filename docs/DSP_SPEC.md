@@ -34,7 +34,8 @@ Two coupled physical models drive the sound, both real-time in the browser:
 1. A **digital waveguide string model** (Rust, compiled to WASM) — dual
    H/V polarization delay lines, a cascaded dispersion allpass filter
    derived from each string's actual diameter/tension (Fletcher
-   inharmonicity, not a generic frequency-only heuristic), a loop filter
+   inharmonicity, not a generic frequency-only heuristic), first-order
+   Lagrange/Farrow fractional-delay interpolation, a loop filter
    with fundamental-gain compensation, per-string persistent excitation
    noise (not a fixed seed — each pluck is independently random), a
    `bend()`/glide path for pitch bends, a `damp()` path for note-off/
@@ -54,11 +55,11 @@ document describes for winds. There's no separate "feedback loop
 ### 1.2 Domain Architecture (actual signal chain)
 
 ```
-[ EXCITATION ]        [ STRING RESONATOR ]         [ PICKUP / TONE-STACK ]      [ AMP / CAB ]
+[ EXCITATION ]        [ STRING RESONATOR ]         [ PICKUP / HARNESS ]         [ AMP / CAB ]
 per-string PRNG   →   Digital Waveguide       →    WDF passive circuit    →    Tube waveshaper
-noise burst,           (H/V planes, cascaded         solver (pickup R/L/C,       + per-model tone
-pick position,         dispersion allpass,           volume/tone pots,           stack (WDF) +
-bend()/damp() as       loop filter w/ gain            per-model tone stack)      modal-resonance
+noise burst,           (H/V planes, cascaded         solver (pickup R/L/C,       + per-model passive
+pick position,         dispersion allpass,           volume/tone pots)           tone stack (WDF) +
+bend()/damp() as       loop filter w/ gain                                       modal-resonance
 external control        compensation, sympathetic                                cabinet IR
                         string coupling)
 ```
@@ -71,12 +72,11 @@ external control        compensation, sympathetic                               
   render quantum — 128 samples, ≈2.7ms at 48kHz — not a generic "<1ms"
   figure. `DspEngine::process_chunk()` must stay well under that per call
   across however many strings are active plus the WDF/tone-stack solve.
-* **Sample-accurate tuning**: `dsp/src/lib.rs` currently reads delay lines
-  with **linear interpolation** (`idx1*(1-fract) + idx2*fract`,
-  ~line 368-382), not a Thiran allpass or Lagrange FIR interpolator. Linear
-  interpolation is simpler but has more high-frequency smearing than either
-  of those — this is a real, honest gap versus the source document's
-  fractional-delay rigor, and a legitimate thing to fix (see §4).
+* **Sample-accurate tuning**: `dsp/src/lib.rs` reads delay lines with a
+  **first-order Lagrange/Farrow fractional-delay interpolator**. It is
+  continuous across the circular-buffer boundary and avoids the pitch
+  quantization of integer-delay reads. This is the implementation to preserve
+  and test; it is not a Thiran allpass.
 * **Energy conservation**: this one *does* map directly and is already
   correctly implemented — the WDF adaptors in `wdfNodes.ts` /
   `processor.js` (`WdfSeriesAdaptor`, `WdfParallelAdaptor`) are
@@ -193,13 +193,23 @@ doesn't exist here).
 // dsp/src/lib.rs, #[wasm_bindgen] impl DspEngine
 pub fn new(sample_rate: f32, seed: u32) -> Self
 pub fn pluck(&mut self, string_idx: usize, freq: f32, velocity: f32)
+pub fn pluck_articulated(&mut self, string_idx: usize, freq: f32, velocity: f32,
+                        pick_position: f32, pick_hardness: f32)
+pub fn set_pick_position(&mut self, string_idx: usize, position: f32)
+pub fn set_pick_hardness(&mut self, string_idx: usize, hardness: f32)
 pub fn damp(&mut self, string_idx: usize, amount: f32)
+pub fn apply_harmonic_damping(&mut self, string_idx: usize, node_ratio: f32, strength: f32)
 pub fn bend(&mut self, string_idx: usize, target_freq: f32, duration_ms: f32)
-pub fn set_pickup_position(&mut self, string_idx: usize, position: f32)
+pub fn set_whammy(&mut self, semitones: f32)
 pub fn set_all_pickup_positions(&mut self, position: f32)
 pub fn set_drive(&mut self, drive: f32)
+pub fn begin_chunk(&mut self)
+pub fn process_frames(&mut self, frame_count: usize)
 pub fn process_chunk(&mut self)
 pub fn output_ptr(&self) -> *const f32
+pub fn string_output_ptr(&self) -> *const f32
+pub fn active_voice_count(&self) -> usize
+pub fn string_energy(&self, string_idx: usize) -> f32
 ```
 
 This is the real contract — there's no `IFractionalDelay`/
@@ -228,16 +238,13 @@ resistances each sample; reflection coefficients sum correctly) — no
 separate stability guard needs to be bolted on, just preserved when adding
 new topologies.
 
-### 3.3 Pickup model — currently linear, no non-linearity modeled
+### 3.3 Pickup model — linear circuit solve plus non-linear response
 
-The source document's polynomial magnetic-flux non-linearity (Horner-scheme,
-25dB+ V/H ratio guard) does **not** exist here yet. The actual pickup model
-(`WdfCircuit` in `processor.js`) is a fully **linear** R/L/C network solve —
-physically accurate for the electronics, but it doesn't model the pickup's
-nonlinear response to large string excursion (magnetic saturation at high
-displacement). This was flagged as a real, if minor, realism gap earlier in
-this project's audit. If pursued, it should slot in as a post-linear-solve
-polynomial stage in `processor.js`/`wdfNodes.ts` — see §4.
+`WdfCircuit` keeps the pickup's R/L/C electronics as a linear passive solve,
+then the signal path applies the polynomial saturation response used for large
+string excursions. Keeping the non-linearity outside the passive adaptor tree
+preserves the WDF port-resistance invariants while adding the pickup-response
+behavior after the solve.
 
 ### 3.4 Actual stability/error constraints worth guarding
 
@@ -247,11 +254,9 @@ polynomial stage in `processor.js`/`wdfNodes.ts` — see §4.
   explicit error — there's no runtime assertion for this today. Worth
   adding a debug-mode check, not currently present.
 * **Fractional delay bounds**: `base_delay_samples` in `dsp/src/lib.rs`
-  must stay large enough that the linear interpolation read never indexes
-  before the write head — this is handled implicitly by the existing delay
-  line sizing, but there's no explicit `D > N - 1`-style guard the way the
-  source document mandates for Thiran filters, since a different
-  interpolation method is in use (see §4 if that changes).
+  must remain within the circular delay-line capacity. The current
+  first-order Lagrange/Farrow read wraps both neighboring samples explicitly;
+  Thiran order constraints do not apply because this is not a Thiran filter.
 
 ---
 
@@ -267,12 +272,18 @@ polynomial stage in `processor.js`/`wdfNodes.ts` — see §4.
 | Per-string persistent PRNG (decorrelated pick attacks) | `dsp/src/lib.rs` | ✅ Done |
 | Bend/glide + note damping API | `dsp/src/lib.rs` (`bend`, `damp`) | ✅ Done |
 | Modal-resonance cabinet IR | `pipeline.ts` | ✅ Done |
-| **Upgrade linear interpolation → allpass/Lagrange fractional delay** | `dsp/src/lib.rs` (~line 368-382) | 🔲 Open — this is the source doc's Thiran emphasis, honestly applicable here |
-| **Non-linear pickup response (polynomial flux stage)** | `processor.js` / `wdfNodes.ts` | 🔲 Open, low priority |
-| **Whammy bar / global pitch bend across all active strings at once** | `dsp/src/lib.rs`, no method exists | 🔲 Open — `bend()` is per-string only; a real trem bar moves every string's pitch together via the bridge |
-| **Open-string (fret 0) as a valid hammer/pull/slide target** | `tabParser.ts` | 🔲 Open — confirm `targetFret: 0` isn't treated as "no target" |
-| **Tab scheduler → `damp()` wiring** | `tabScheduler.ts` | 🔲 Open — the API exists now (see above); the scheduler doesn't call it yet for note-off/rests |
-| Pinch-harmonic notation support | `tabParser.ts` | 🔲 Open, nice-to-have |
+| Fractional-delay interpolation (first-order Lagrange/Farrow; not Thiran) | `dsp/src/lib.rs` | ✅ Done |
+| Non-linear pickup response (polynomial saturation stage) | `processor.js` / `wdfNodes.ts` | ✅ Done |
+| Whammy bar / global pitch bend API and worklet message (`set_whammy`) | `dsp/src/lib.rs` / `processor.js` | ✅ Done |
+| Open-string (fret 0) hammer/pull/slide targets | `tabParser.ts` | ✅ Done |
+| Tab scheduler → `damp()` wiring for release, rests, and mutes | `tabScheduler.ts` | ✅ Done |
+| Pinch-harmonic notation and harmonic damping | `tabParser.ts` / `dsp/src/lib.rs` | ✅ Done |
+| Articulated plucks (`pluck_articulated`, pick position, pick hardness) | `dsp/src/lib.rs` / `processor.js` | ✅ Done |
+| Per-string WASM output separation (`string_output_ptr`) for pickup sensing | `dsp/src/lib.rs` / `processor.js` | ✅ Done |
+| Voice/energy telemetry (`active_voice_count`, `string_energy`) feeding amp sag | `dsp/src/lib.rs` / `processor.js` / `pipeline.ts` | ✅ Done |
+| **Expose `set_whammy` through a UI control and MIDI pitch wheel** | `src/ui/` / `webMidiManager.ts` | 🔲 Open — the engine/worklet path is complete, but no producer sends the message |
+| **Keep the reachable JS fallback behavior in parity with WASM articulation** | `karplusStrong.ts` / `pipeline.ts` | 🔲 Open — articulated hardness, harmonic damping, per-string PRNG, sympathetic coupling, and whammy behavior still differ |
+| **External six-channel hexaphonic routing** | `processor.js` / `pipeline.ts` | 🔲 Open — per-string WASM buffers exist internally, but Web Audio output is still mixed |
 
 ## 5. Rejected Patterns & Guards (adapted)
 
@@ -298,12 +309,11 @@ polynomial stage in `processor.js`/`wdfNodes.ts` — see §4.
   `wdfWorkletParity.test.ts`, `toneStackWdf.test.ts`, `tabParser.test.ts`,
   `karplusStrong.test.ts`, `pickupComb.test.ts`, `tubeCurve.test.ts`,
   `pipeline.test.ts`, `midiParser.test.ts` cover the DSP surface.
-* There's no built-in magnitude/flatness assertion harness for the
-  interpolator (nothing plays the role of the source doc's `ag-verify
-  --filter thiran --order 6 --omega 0`) — if the linear-interpolation
-  upgrade in §4 happens, add a Vitest spec that checks interpolated pitch
-  accuracy and high-frequency rolloff directly, the same pattern the
-  existing `wdfResonance.test.ts` already uses for the circuit side.
+* `wasmProduction.test.ts` exercises the production WASM engine, including
+  fractional-delay pitch accuracy, articulated plucks, per-string output,
+  whammy behavior, and voice/energy telemetry. There is still no standalone
+  swept magnitude/flatness harness comparable to the source document's
+  `ag-verify` example; add one if interpolation order or topology changes.
 * For anything level/gain-related, measure RMS in vs. out directly with a
   small offline script (Node, no browser needed) rather than trusting ear
   alone — that's exactly how the tone-stack makeup-gain and cabinet-IR

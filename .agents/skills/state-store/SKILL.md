@@ -1,12 +1,28 @@
 ---
 name: state-store
-description: Implements the Zustand state store in src/store — the single source of truth for the circuit graph, subscribed by both the UI and audio layers. Use when adding store slices, actions, or selectors, or when wiring a new consumer to the store.
+description: Implements the six Zustand stores in src/store for circuit data, canvas/UI state, keybindings, projects, saved slots, and tuning. Use when adding store state, actions, or selectors, coordinating circuit and canvas updates, or wiring a new consumer to a store.
 ---
 
-# State Store (src/store)
+# State Stores (src/store)
 
-One Zustand store holds the circuit graph (netlist) and is the single source of truth that the
-canvas, inspector, and audio DSP layer all read from.
+State is divided among six Zustand stores, each with a distinct owner:
+
+- `canvasStore.ts` owns canvas instances and presentation state: layout, pan/zoom, selection,
+  wiring interaction, panels, grid/theme settings, clipboard, and canvas history.
+- `circuitStore.ts` owns the electrical graph/netlist, solver result, diagnostics, graph selection,
+  graph history, and circuit import/export operations.
+- `keybindingsStore.ts` owns customizable keyboard shortcuts, shortcut settings, and recording
+  state, persisted in local storage.
+- `projectStore.ts` owns the active project and editor/home lifecycle, project metadata, and
+  tutorial state, and coordinates project-level loading and saving.
+- `slotStore.ts` owns the six saved circuit/layout slots, the active slot, and slot save, load,
+  rename, and reset operations persisted in local storage.
+- `tuningStore.ts` owns the selected tuning preset and the corresponding per-string frequencies.
+
+`circuitStore` and `canvasStore` are the pair most likely to require coordinated updates: the
+electrical graph and its visual representation have separate state and history. Be careful to
+update or restore both through the existing synchronization paths; do not silently assume a change
+to either store is mirrored automatically.
 
 ## Conventions
 
@@ -20,14 +36,14 @@ canvas, inspector, and audio DSP layer all read from.
 - **Validate before committing**: run new/changed graph data through the project's Zod schema
   before it lands in the store, so nothing downstream (audio, export, lint) ever has to handle a
   malformed graph.
-- **One direction of truth**: the store is upstream of both the audio layer and the UI layer —
-  neither should maintain its own shadow copy of graph state that can drift from the store.
+- **Explicit ownership**: stores are upstream of their consumers. Do not add shadow state in the
+  audio or UI layers, and do not put one concern into a convenient but unrelated store.
 
-## Adding a new slice
+## Adding state
 
-- Keep new slices scoped to one concern (e.g. "selection state" separate from "graph data")
-  rather than growing a single flat store object — this keeps selectors narrow and makes it
-  obvious what a given piece of state is for.
+- Put new state in the store that owns that concern. If it spans the electrical graph and visual
+  layout, define the synchronization and history behavior explicitly rather than growing an
+  implicit cross-store dependency.
 - If a new slice needs to be read by the audio layer (see `audio-dsp-engine`), expose it via a
   selector rather than having the audio code import store internals directly.
 
