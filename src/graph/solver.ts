@@ -248,6 +248,10 @@ function findPath(
  * Update signal states for all nodes based on the solver result.
  * Active path nodes get 'active', dead ends get 'inactive',
  * ground-connected nodes get 'grounded'.
+ *
+ * After the initial assignment, ground state is BFS-propagated through
+ * zero-resistance edges so that tone-cap ground leads and similar
+ * connections are correctly marked even when they don't carry pickup signal.
  */
 export function updateSignalStates(graph: Graph, result: SolverResult): void {
   for (const node of graph.getNodes()) {
@@ -258,6 +262,42 @@ export function updateSignalStates(graph: Graph, result: SolverResult): void {
       mutableNode.signalState = 'grounded';
     } else {
       mutableNode.signalState = 'inactive';
+    }
+  }
+
+  // Propagate 'grounded' through zero-resistance edges from known ground nodes
+  const edges = graph.getEdges();
+  const groundQueue: string[] = [];
+  const visited = new Set<string>();
+
+  for (const node of graph.getNodes()) {
+    if (node.signalState === 'grounded') {
+      groundQueue.push(node.id);
+      visited.add(node.id);
+    }
+  }
+
+  // Build low-resistance adjacency for propagation
+  const lowRAdjacency = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (edge.resistance >= 1) continue;
+    if (!lowRAdjacency.has(edge.source)) lowRAdjacency.set(edge.source, []);
+    if (!lowRAdjacency.has(edge.target)) lowRAdjacency.set(edge.target, []);
+    lowRAdjacency.get(edge.source)!.push(edge.target);
+    lowRAdjacency.get(edge.target)!.push(edge.source);
+  }
+
+  while (groundQueue.length > 0) {
+    const current = groundQueue.shift()!;
+    for (const neighbor of lowRAdjacency.get(current) ?? []) {
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        const neighborNode = graph.getNode(neighbor);
+        if (neighborNode && neighborNode.signalState === 'inactive') {
+          (neighborNode as CircuitNode).signalState = 'grounded';
+          groundQueue.push(neighbor);
+        }
+      }
     }
   }
 }

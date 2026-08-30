@@ -107,4 +107,79 @@ describe('Circuit Linter & Validation Suite', () => {
     expect(formatted).toContain('Truth Table for sw1');
     expect(formatted).toContain('Position 1:');
   });
+
+  it('should detect transitive dead shorts through low-resistance path', () => {
+    // hot → intermediate → ground (all low-resistance edges)
+    graph.addNode({
+      id: 'pu_hot',
+      type: 'terminal',
+      componentId: 'pu1',
+      role: 'hot',
+      signalState: 'active',
+    });
+    graph.addNode({
+      id: 'mid_node',
+      type: 'terminal',
+      componentId: 'sw1',
+      role: 'common',
+      signalState: 'inactive',
+    });
+    graph.addNode({
+      id: 'gnd',
+      type: 'ground',
+      componentId: 'gnd1',
+      role: 'ground',
+      signalState: 'grounded',
+    });
+    graph.addEdge({
+      id: 'e1',
+      source: 'pu_hot',
+      target: 'mid_node',
+      resistance: 0,
+      wireColor: '#000000',
+      connectionType: 'solder',
+      wireType: 'modern_vinyl',
+    });
+    graph.addEdge({
+      id: 'e2',
+      source: 'mid_node',
+      target: 'gnd',
+      resistance: 0.001,
+      wireColor: '#000000',
+      connectionType: 'solder',
+      wireType: 'modern_vinyl',
+    });
+
+    const diagnostics = lintCircuit(graph);
+    const transitiveShort = diagnostics.find((d) => d.code === 'TRANSITIVE_DEAD_SHORT');
+    expect(transitiveShort).toBeDefined();
+    expect(transitiveShort?.severity).toBe('error');
+    expect(transitiveShort?.nodeIds).toContain('pu_hot');
+    expect(transitiveShort?.nodeIds).toContain('gnd');
+  });
+
+  it('should detect open circuits on inactive pickup hot nodes', () => {
+    // A pickup wired to nothing — signalState is 'inactive' (not 'active')
+    graph.addNode({
+      id: 'pu_hot',
+      type: 'terminal',
+      componentId: 'pu1',
+      role: 'hot',
+      signalState: 'inactive',
+    });
+    graph.addNode({
+      id: 'jack_tip',
+      type: 'jack_terminal',
+      componentId: 'jack1',
+      role: 'tip',
+      signalState: 'inactive',
+    });
+
+    const diagnostics = lintCircuit(graph);
+    const openDiag = diagnostics.find(
+      (d) => d.code === 'OPEN_CIRCUIT' && d.nodeIds.includes('pu_hot'),
+    );
+    expect(openDiag).toBeDefined();
+    expect(openDiag?.severity).toBe('warning');
+  });
 });

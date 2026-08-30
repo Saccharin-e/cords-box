@@ -150,10 +150,8 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
 
   solve: () => {
     const graph = get().graph;
-    const result = solveSignalPaths(graph);
-    const prev = get().solverResult;
-    const solverResult = prev && solverResultsEqual(prev, result) ? prev : result;
-    audioPipeline.updatePipeline(graph, result);
+    const solverResult = solveSignalPaths(graph);
+    audioPipeline.updatePipeline(graph, solverResult);
     set((s) => ({
       solverResult,
       diagnostics: lintCircuit(graph),
@@ -178,20 +176,3 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
     get().clearSelection();
   },
 }));
-
-function setsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
-  if (a.size !== b.size) return false;
-  for (const item of a) {
-    if (!b.has(item)) return false;
-  }
-  return true;
-}
-
-function solverResultsEqual(a: SolverResult, b: SolverResult): boolean {
-  return (
-    a.activePaths.length === b.activePaths.length &&
-    setsEqual(a.activeNodes, b.activeNodes) &&
-    setsEqual(a.activeEdges, b.activeEdges) &&
-    setsEqual(a.deadEndNodes, b.deadEndNodes)
-  );
-}

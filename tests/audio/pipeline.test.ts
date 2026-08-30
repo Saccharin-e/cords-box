@@ -519,7 +519,7 @@ describe('Audio DSP Pipeline', () => {
     expect(wdfUpdate.params.pickups[0]).toMatchObject({
       inductanceH: 2.4,
       resistanceR: 6500,
-      positionFraction: 0.275,
+      positionFraction: 0.48,
     });
   });
 

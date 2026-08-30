@@ -489,7 +489,7 @@ describe('WDF Worklet Parity', () => {
 
     const syntheticOutput = new Float32Array(128);
     processor.process([[]], [[syntheticOutput]]);
-    expect(syntheticOutput[0]).toBeCloseTo(0.15, 6);
+    expect(syntheticOutput[0]).toBeCloseTo(0.45, 6);
     expect(syntheticOutput[0]).toBeLessThan(1);
     // Legacy delays encoded d=2p/f, so 1 ms at the 250 Hz reference maps to
     // p=0.125. The corrected sensing delay p/f is 24 samples at 48 kHz.

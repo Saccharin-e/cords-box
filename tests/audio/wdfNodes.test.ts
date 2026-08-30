@@ -78,20 +78,20 @@ describe('WDF Engine Primitives', () => {
     expect(potLinear.portResistance).toBeCloseTo(250000, 1);
 
     const potAudio = new WdfPotentiometer(500000, 0.5, 'audio');
-    // 0.5^2 = 0.25 -> 500k * 0.25 = 125k
-    expect(potAudio.portResistance).toBeCloseTo(125000, 1);
+    // 0.5^2.5 ≈ 0.17678 -> 500k * 0.17678 ≈ 88388
+    expect(potAudio.portResistance).toBeCloseTo(88388, -1);
 
     const potRevAudio = new WdfPotentiometer(500000, 0.5, 'reverse_audio');
-    // 1 - (1-0.5)^2 = 0.75 -> 500k * 0.75 = 375k
-    expect(potRevAudio.portResistance).toBeCloseTo(375000, 1);
+    // 1 - (1-0.5)^2.5 ≈ 0.82322 -> 500k * 0.82322 ≈ 411612
+    expect(potRevAudio.portResistance).toBeCloseTo(411612, -1);
 
     // Dynamic position change with taper
     potAudio.setPosition(0.8);
-    // 0.8^2 = 0.64 -> 500k * 0.64 = 320k
-    expect(potAudio.portResistance).toBeCloseTo(320000, 1);
+    // 0.8^2.5 ≈ 0.57244 -> 500k * 0.57244 ≈ 286217
+    expect(potAudio.portResistance).toBeCloseTo(286217, -1);
 
     potLinear.setTaper('audio');
-    expect(potLinear.portResistance).toBeCloseTo(125000, 1);
+    expect(potLinear.portResistance).toBeCloseTo(88388, -1);
 
     potLinear.setPosition(0);
     expect(potLinear.portResistance).toBe(0.001);

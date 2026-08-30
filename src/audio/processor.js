@@ -9,8 +9,8 @@ const MIN_PORT_RESISTANCE = 0.001;
 
 function applyPotTaper(position, taper) {
   const clamped = Math.min(1, Math.max(0, position));
-  if (taper === 'audio') return clamped * clamped;
-  if (taper === 'reverse_audio') return 1 - (1 - clamped) * (1 - clamped);
+  if (taper === 'audio') return Math.pow(clamped, 2.5);
+  if (taper === 'reverse_audio') return 1 - Math.pow(1 - clamped, 2.5);
   return clamped;
 }
 
@@ -679,6 +679,9 @@ export class GuitarProcessor extends AudioWorkletProcessor {
         }
         if (msg.string_idx >= 0 && msg.string_idx < 6) {
           this.stringFreqs[msg.string_idx] = msg.targetFreq;
+          // Clear any lingering articulation mode (mute/dead-note) so the
+          // bent note rings naturally — e.g. mute → hammer-on sequence.
+          this.stringArticulationModes[msg.string_idx] = 0;
         }
       } else if (msg.type === 'damp') {
         if (this.engine && typeof msg.string_idx === 'number') {
@@ -733,8 +736,9 @@ export class GuitarProcessor extends AudioWorkletProcessor {
         } else {
           this.executeEvent(msg);
         }
-      } else if (msg.type === 'pickup-position' && this.engine) {
-        this.engine.set_all_pickup_positions(msg.position);
+      } else if (msg.type === 'pickup-position') {
+        // Deprecated no-op — pickup sensing is owned by the worklet's
+        // per-pickup comb filter via 'wdf-update' positionFraction.
       } else if (msg.type === 'drive' && this.engine) {
         this.engine.set_drive(msg.drive);
       } else if (
@@ -900,7 +904,7 @@ export class GuitarProcessor extends AudioWorkletProcessor {
               const delayed = this.stringDelayLines[stringIndex].readSamples(
                 pickupCombDelaySamples[pickupIndex * 6 + stringIndex],
               );
-              pickupSig += 0.5 * (stringSample - 0.4 * delayed);
+              pickupSig += 1.5 * (stringSample - 0.4 * delayed);
             }
           } else if (hasEngine) {
             const delayed = this.monoSynthDelayLine.readSamples(

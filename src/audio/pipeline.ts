@@ -2188,6 +2188,12 @@ export class AudioPipeline {
     stringIndex: number = 0,
     sustainDurationSeconds?: number,
   ): boolean {
+    // Block pluck until worklet is fully ready to avoid the drifted
+    // karplusStrong.ts fallback path (missing articulated hardness,
+    // harmonic damping, per-string PRNG, etc.).
+    if (!this.wdfWorkletNode && this.wdfWorkletStatus === 'initializing') {
+      return false;
+    }
     if (this.wdfWorkletNode) {
       const synthArticulation = deriveSynthPluckArticulation(
         articulation,
@@ -2415,7 +2421,7 @@ export class AudioPipeline {
             isOutofPhase: false,
             blendGain: 1.0,
             delayTimeMs: 1.5,
-            positionFraction: (1.5 * 250) / 2000,
+            positionFraction: (1.5 * 250) / 1000,
           },
         ],
         isSeries: false,
@@ -2497,9 +2503,9 @@ export class AudioPipeline {
         isOutofPhase,
         blendGain: gain,
         delayTimeMs: delayMs,
-        // Legacy delay presets used d=2p/f. Preserve their intended physical
-        // pickup locations while the worklet applies the corrected d=p/f law.
-        positionFraction: Math.max(0.02, Math.min(0.48, (delayMs * 250) / 2000)),
+        // The worklet applies d=p/f. Convert legacy delayMs presets
+        // (which were authored for d=2p/f) to the corrected law: p = d*f.
+        positionFraction: Math.max(0.02, Math.min(0.48, (delayMs * 250) / 1000)),
       };
     });
 
@@ -2536,7 +2542,10 @@ export class AudioPipeline {
       smoothParam(this.outputGainNode.gain, topology.masterVolume, now);
     }
 
-    const seriesBoost = topology.isSeries && topology.pickups.length > 1 ? 1.4 : 1.0;
+    // Series boost is handled naturally by the WDF adaptor tree
+    // (WdfSeriesNAdaptor). Only the fallback KS path (line ~2713) applies
+    // the manual 1.4× boost since it lacks a WDF circuit.
+    const seriesBoost = 1.0;
     for (const pickup of topology.pickups) {
       const branchGain = this.pickupBranchGains.get(pickup.id);
       if (!branchGain) continue;

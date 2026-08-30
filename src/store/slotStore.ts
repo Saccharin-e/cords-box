@@ -169,6 +169,7 @@ export const useSlotStore = create<SlotStoreState>((set, get) => ({
         name: customName && customName.trim() ? customName.trim() : slot.name,
         updatedAt: Date.now(),
         isCustom: true,
+        presetTemplateId: undefined,
         data: {
           instances: JSON.parse(JSON.stringify(instances)),
           components: JSON.parse(JSON.stringify(components)),

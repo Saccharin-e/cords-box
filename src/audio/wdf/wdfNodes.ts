@@ -33,9 +33,9 @@ export function applyPotTaper(position: number, taper: PotTaper): number {
   const clamped = Math.min(1, Math.max(0, position));
   switch (taper) {
     case 'audio':
-      return clamped * clamped;
+      return Math.pow(clamped, 2.5);
     case 'reverse_audio':
-      return 1 - (1 - clamped) * (1 - clamped);
+      return 1 - Math.pow(1 - clamped, 2.5);
     default:
       return clamped;
   }
@@ -92,8 +92,8 @@ export class WdfVoltageSourceResistor implements WdfElement {
  *
  * Taper types:
  *   'linear'        — R = maxR × pos          (B-taper, typical tone pots)
- *   'audio'         — R = maxR × pos²          (A-taper, typical volume pots)
- *   'reverse_audio' — R = maxR × (1-(1-pos)²)  (C-taper, some treble pots)
+ *   'audio'         — R = maxR × pos^2.5        (A-taper, typical volume pots)
+ *   'reverse_audio' — R = maxR × (1-(1-pos)^2.5)  (C-taper, some treble pots)
  */
 export class WdfPotentiometer implements WdfElement {
   public portResistance: number;
