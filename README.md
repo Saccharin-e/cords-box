@@ -30,7 +30,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 ## Scripts
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `npm run dev` | Start Vite development server |
 | `npm run build` | Type-check and build production bundle |
 | `npm run test` | Run headless Vitest test suite |
@@ -52,7 +52,7 @@ See [docs/SDD.md](docs/SDD.md) and [docs/DSP_SPEC.md](docs/DSP_SPEC.md) for full
 
 ## Project Structure
 
-```
+```text
 ├── dsp/            # Rust WebAssembly Digital Waveguide engine (lib.rs)
 ├── docs/           # Specifications (DSP_SPEC.md, SDD.md, SRS.md, Roadmap, Charter)
 ├── public/         # Static assets & Black & Green Guitars sample bank
