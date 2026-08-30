@@ -1,2 +1,8 @@
-# Ignore IDE/agent artifact directories
-/home/saccharin/.gemini/**
+# Dependencies & Build Output
+node_modules/
+dist/
+coverage/
+
+# IDE & Agent Artifacts / Config
+.gemini/
+.agents/
