@@ -38,9 +38,9 @@ Two coupled physical models drive the sound, both real-time in the browser:
    Lagrange/Farrow fractional-delay interpolation, a loop filter
    with fundamental-gain compensation, per-string persistent excitation
    noise (not a fixed seed — each pluck is independently random), a
-   `bend()`/glide path for pitch bends, a `damp()` path for note-off/
-   release, and light sympathetic coupling between strings via a shared
-   bridge term.
+   `bend()`/glide path for pitch bends, and a `damp()` path for note-off/
+   release. The six strings are rendered independently; a shared-bridge
+   sympathetic-coupling path is not currently present.
 2. A **Wave Digital Filter (WDF) passive circuit solver** (TypeScript,
    duplicated into the AudioWorklet since worklets can't import external
    modules) — a real adaptor-tree solution of the pickup R/L/C network,
@@ -60,8 +60,7 @@ per-string PRNG   →   Digital Waveguide       →    WDF passive circuit    �
 noise burst,           (H/V planes, cascaded         solver (pickup R/L/C,       + per-model passive
 pick position,         dispersion allpass,           volume/tone pots)           tone stack (WDF) +
 bend()/damp() as       loop filter w/ gain                                       modal-resonance
-external control        compensation, sympathetic                                cabinet IR
-                        string coupling)
+external control        compensation)                                             cabinet IR
 ```
 (`dsp/src/lib.rs` → `src/audio/processor.js` `WdfCircuit`/`WdfToneStack` →
 `src/audio/pipeline.ts` tube/cabinet stages.)
@@ -238,13 +237,14 @@ resistances each sample; reflection coefficients sum correctly) — no
 separate stability guard needs to be bolted on, just preserved when adding
 new topologies.
 
-### 3.3 Pickup model — linear circuit solve plus non-linear response
+### 3.3 Pickup model — currently linear
 
-`WdfCircuit` keeps the pickup's R/L/C electronics as a linear passive solve,
-then the signal path applies the polynomial saturation response used for large
-string excursions. Keeping the non-linearity outside the passive adaptor tree
-preserves the WDF port-resistance invariants while adding the pickup-response
-behavior after the solve.
+`WdfCircuit` models the pickup's R/L/C electronics as a linear passive solve,
+and `processor.js` currently sends that result downstream without a separate
+pickup-response waveshaper. The tube and pedal stages later in `pipeline.ts`
+are nonlinear, but they are not a magnetic pickup-saturation model. A
+post-solve polynomial response remains open work; it should stay outside the
+passive adaptor tree so the WDF port-resistance invariants remain intact.
 
 ### 3.4 Actual stability/error constraints worth guarding
 
@@ -268,12 +268,12 @@ behavior after the solve.
 | Loop filter fundamental-gain compensation | `dsp/src/lib.rs` | ✅ Done |
 | Subtractive pickup-position comb, pitch-tracked | `processor.js` | ✅ Done |
 | WDF-solved passive tone stack, per-model makeup gain | `processor.js` / `wdfToneStack.ts` | ✅ Done |
-| Sympathetic string coupling | `dsp/src/lib.rs` | ✅ Done |
+| **Sympathetic string coupling through a shared bridge term** | `dsp/src/lib.rs` | 🔲 Open — strings are currently processed independently |
 | Per-string persistent PRNG (decorrelated pick attacks) | `dsp/src/lib.rs` | ✅ Done |
 | Bend/glide + note damping API | `dsp/src/lib.rs` (`bend`, `damp`) | ✅ Done |
 | Modal-resonance cabinet IR | `pipeline.ts` | ✅ Done |
 | Fractional-delay interpolation (first-order Lagrange/Farrow; not Thiran) | `dsp/src/lib.rs` | ✅ Done |
-| Non-linear pickup response (polynomial saturation stage) | `processor.js` / `wdfNodes.ts` | ✅ Done |
+| **Non-linear pickup response (polynomial saturation stage)** | `processor.js` / `wdfNodes.ts` | 🔲 Open — the current pickup/harness path is linear |
 | Whammy bar / global pitch bend API and worklet message (`set_whammy`) | `dsp/src/lib.rs` / `processor.js` | ✅ Done |
 | Open-string (fret 0) hammer/pull/slide targets | `tabParser.ts` | ✅ Done |
 | Tab scheduler → `damp()` wiring for release, rests, and mutes | `tabScheduler.ts` | ✅ Done |
@@ -282,7 +282,7 @@ behavior after the solve.
 | Per-string WASM output separation (`string_output_ptr`) for pickup sensing | `dsp/src/lib.rs` / `processor.js` | ✅ Done |
 | Voice/energy telemetry (`active_voice_count`, `string_energy`) feeding amp sag | `dsp/src/lib.rs` / `processor.js` / `pipeline.ts` | ✅ Done |
 | **Expose `set_whammy` through a UI control and MIDI pitch wheel** | `src/ui/` / `webMidiManager.ts` | 🔲 Open — the engine/worklet path is complete, but no producer sends the message |
-| **Keep the reachable JS fallback behavior in parity with WASM articulation** | `karplusStrong.ts` / `pipeline.ts` | 🔲 Open — articulated hardness, harmonic damping, per-string PRNG, sympathetic coupling, and whammy behavior still differ |
+| **Keep the reachable JS fallback behavior in parity with WASM articulation** | `karplusStrong.ts` / `pipeline.ts` | 🔲 Open — articulated hardness, harmonic damping, per-string PRNG, and whammy behavior still differ |
 | **External six-channel hexaphonic routing** | `processor.js` / `pipeline.ts` | 🔲 Open — per-string WASM buffers exist internally, but Web Audio output is still mixed |
 
 ## 5. Rejected Patterns & Guards (adapted)

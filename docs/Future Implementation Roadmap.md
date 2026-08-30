@@ -26,7 +26,7 @@ The project has shipped a production-quality foundation across all architectural
 - Headless Graph engine (`Graph.ts`, `solver.ts`) with netlist traversal, path-finding, switch state resolution, and potentiometer taper curves
 
 ### Audio DSP Layer ✅
-- **Digital Waveguide Physical Modeling Engine (Rust / WASM)**: Dual H/V polarization delay lines, cascaded dispersion allpass filter with Fletcher inharmonicity, fundamental-gain compensation loop filter, per-string persistent PRNG noise excitation, `bend()` / `damp()` control APIs, and sympathetic string coupling via shared bridge term (`dsp/src/lib.rs`).
+- **Digital Waveguide Physical Modeling Engine (Rust / WASM)**: Dual H/V polarization delay lines, cascaded dispersion allpass filter with Fletcher inharmonicity, fundamental-gain compensation loop filter, per-string persistent PRNG noise excitation, and `bend()` / `damp()` control APIs (`dsp/src/lib.rs`). Shared-bridge sympathetic coupling remains future work.
 - **Wave Digital Filter (WDF) AudioWorklet**: Off-thread per-sample circuit solver (`src/audio/processor.js`, `src/audio/wdf/wdfNodes.ts`, `wdfCircuitSolver.ts`) running real adaptor trees for pickup R/L/C, volume/tone networks, and per-amp-model passive tone stacks (Fender, Marshall, Mesa, Vox topologies) with makeup gain and live parameter sync via `'wdf-update'`.
 - **Hybrid Sound Engine**: Physical modeling string synthesis paired with CC0 Black & Green Guitars DI sample bank (48kHz 24-bit, `sampleBank.ts`).
 - **Guitar Tablature Engine**: Headless ASCII tab parser (`tabParser.ts`), time-accurate lookahead playback scheduler (`tabScheduler.ts`), and articulation handling (hammer-on, pull-off, slide, bend, release, vibrato, palm-mute).
@@ -57,9 +57,10 @@ The project has shipped a production-quality foundation across all architectural
 - **Remaining task**: Connect whammy modulation to a UI control and MIDI pitch wheel events in `webMidiManager.ts`.
 
 ### 1.4 WDF Topology Invariant Assertions & Non-Linear Pickup Stage
-- **Current state**: The passive pickup RLC solve remains linear by design, with the completed polynomial response stage applied after it. Adaptor port resistances must still strictly match their children.
+- **Current state**: The pickup RLC solve and its current output path are linear; adaptor port resistances must strictly match their children. Tube and pedal saturation downstream do not substitute for a magnetic pickup-response model.
 - **Tasks**:
   - Add debug-mode invariant checks ensuring `WdfSeriesAdaptor` / `WdfParallelAdaptor` port resistances never drift.
+  - Add an optional post-solve polynomial magnetic-saturation stage without placing nonlinearity inside the passive adaptor tree.
 
 ---
 
@@ -129,7 +130,8 @@ The project has shipped a production-quality foundation across all architectural
 | P1 | Whammy/global bridge pitch-bend engine and worklet API | `dsp/src/lib.rs`, `src/audio/processor.js` | ✅ Shipped |
 | P1 | **Whammy UI and MIDI pitch-wheel control** | `src/ui/`, `src/audio/midi/` | 🔲 Open |
 | P2 | **Alternate tunings & Bass instrument family presets** | `src/store/`, `src/ui/` | 🔲 Open |
-| P2 | Non-linear pickup response (polynomial saturation stage) | `src/audio/wdf/` | ✅ Shipped |
+| P2 | **Sympathetic string coupling through a shared bridge term** | `dsp/src/lib.rs` | 🔲 Open |
+| P2 | **Non-linear pickup response (polynomial saturation stage)** | `src/audio/wdf/` | 🔲 Open |
 | P2 | **JS fallback parity with WASM articulation and whammy behavior** | `src/audio/karplusStrong.ts` | 🔲 Open |
 | P2 | **External six-channel hexaphonic routing** | `src/audio/processor.js`, `src/audio/pipeline.ts` | 🔲 Open |
 | P3 | **OMR (Optical Tab Recognition) WebGPU inference** | `src/omr/` | 🔲 Planned |
