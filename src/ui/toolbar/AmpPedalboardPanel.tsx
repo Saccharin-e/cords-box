@@ -25,12 +25,19 @@ export function AmpPedalboardPanel() {
   const [activeTab, setActiveTab] = useState<'amp' | 'pedals' | 'cabinet'>('amp');
 
   // Amp & Pedalboard State
-  const [state, setState] = useState<AmpPedalboardState>(() => audioPipeline.getAmpPedalboardState());
+  const [state, setState] = useState<AmpPedalboardState>(() =>
+    audioPipeline.getAmpPedalboardState(),
+  );
 
   // Dragging State (Global Window Listeners)
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef<{ pointerX: number; pointerY: number; posX: number; posY: number } | null>(null);
+  const dragStartRef = useRef<{
+    pointerX: number;
+    pointerY: number;
+    posX: number;
+    posY: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -65,7 +72,13 @@ export function AmpPedalboardPanel() {
   function handlePointerDown(e: React.PointerEvent) {
     e.stopPropagation();
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('a')) return;
+    if (
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('select') ||
+      target.closest('a')
+    )
+      return;
 
     setIsDragging(true);
     dragStartRef.current = {
@@ -117,8 +130,20 @@ export function AmpPedalboardPanel() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* Drag Handle Grip Icon */}
-          <div style={{ display: 'flex', alignItems: 'center', cursor: isDragging ? 'grabbing' : 'grab' }}>
-            <svg width="12" height="16" viewBox="0 0 12 16" fill="none" style={{ opacity: 0.5, marginRight: 2 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              cursor: isDragging ? 'grabbing' : 'grab',
+            }}
+          >
+            <svg
+              width="12"
+              height="16"
+              viewBox="0 0 12 16"
+              fill="none"
+              style={{ opacity: 0.5, marginRight: 2 }}
+            >
               <circle cx="3" cy="3" r="1.5" fill="#a1a1aa" />
               <circle cx="9" cy="3" r="1.5" fill="#a1a1aa" />
               <circle cx="3" cy="8" r="1.5" fill="#a1a1aa" />
@@ -141,23 +166,25 @@ export function AmpPedalboardPanel() {
           </span>
         </div>
 
-          <Button
-            variant="icon"
-            aria-label="Close Panel"
-            onClick={toggleAmpPanel}
-            style={{
-              color: '#a1a1aa',
-              fontSize: 14,
-              padding: '2px 4px',
-              borderRadius: 4,
-            }}
-          >
-            <X size={14} />
-          </Button>
-        </div>
+        <Button
+          variant="icon"
+          aria-label="Close Panel"
+          onClick={toggleAmpPanel}
+          style={{
+            color: '#a1a1aa',
+            fontSize: 14,
+            padding: '2px 4px',
+            borderRadius: 4,
+          }}
+        >
+          <X size={14} />
+        </Button>
+      </div>
 
       {/* Mode Tabs */}
-      <div style={{ display: 'flex', gap: 4, backgroundColor: '#09090b', padding: 3, borderRadius: 6 }}>
+      <div
+        style={{ display: 'flex', gap: 4, backgroundColor: '#09090b', padding: 3, borderRadius: 6 }}
+      >
         <Button
           onClick={() => setActiveTab('amp')}
           style={{
@@ -175,8 +202,25 @@ export function AmpPedalboardPanel() {
             gap: 6,
           }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="4" y1="21" x2="4" y2="14" />
+            <line x1="4" y1="10" x2="4" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12" y2="3" />
+            <line x1="20" y1="21" x2="20" y2="16" />
+            <line x1="20" y1="12" x2="20" y2="3" />
+            <line x1="1" y1="14" x2="7" y2="14" />
+            <line x1="9" y1="8" x2="15" y2="8" />
+            <line x1="17" y1="16" x2="23" y2="16" />
           </svg>
           <span>Amp Head</span>
         </Button>
@@ -197,7 +241,16 @@ export function AmpPedalboardPanel() {
             gap: 6,
           }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <rect x="4" y="4" width="16" height="16" rx="2" />
             <circle cx="9" cy="9" r="2" />
             <circle cx="15" cy="9" r="2" />
@@ -222,7 +275,16 @@ export function AmpPedalboardPanel() {
             gap: 6,
           }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <rect x="3" y="3" width="18" height="18" rx="2" />
             <circle cx="12" cy="12" r="4" />
             <line x1="6" y1="6" x2="6" y2="6.01" />
@@ -237,7 +299,9 @@ export function AmpPedalboardPanel() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {/* Amp Model Selector */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600 }}>Amp Architecture Model:</label>
+            <label style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600 }}>
+              Amp Architecture Model:
+            </label>
             <select
               value={state.ampModel}
               onChange={(e) => updateState({ ampModel: e.target.value as AmpModelType })}
@@ -294,7 +358,17 @@ export function AmpPedalboardPanel() {
               color="#ef4444"
             />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#09090b', padding: '6px 10px', borderRadius: 6, border: '1px solid #27272a' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: '#09090b',
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid #27272a',
+            }}
+          >
             <Slider
               label="Speaker Volume Boost (+0..+12dB)"
               min={0.8}
@@ -312,7 +386,15 @@ export function AmpPedalboardPanel() {
 
       {/* Tab Content 2: Stompbox Pedalboard */}
       {activeTab === 'pedals' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 320, overflowY: 'auto' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            maxHeight: 320,
+            overflowY: 'auto',
+          }}
+        >
           {/* Compressor Pedal */}
           <PedalCard
             title="Dyna Compressor"
@@ -458,7 +540,9 @@ export function AmpPedalboardPanel() {
       {activeTab === 'cabinet' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600 }}>Speaker Cabinet Impulse Model:</label>
+            <label style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600 }}>
+              Speaker Cabinet Impulse Model:
+            </label>
             <select
               value={state.cabModel}
               onChange={(e) => updateState({ cabModel: e.target.value as CabinetModelType })}
@@ -480,7 +564,17 @@ export function AmpPedalboardPanel() {
             </select>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', backgroundColor: '#09090b', borderRadius: 6, border: '1px solid #27272a' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              padding: '8px 10px',
+              backgroundColor: '#09090b',
+              borderRadius: 6,
+              border: '1px solid #27272a',
+            }}
+          >
             <Slider
               label="Microphone Position / Distance"
               min={0}
@@ -495,7 +589,17 @@ export function AmpPedalboardPanel() {
           </div>
 
           {/* Signal Chain: Cable Length & Amp Input Impedance */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', backgroundColor: '#09090b', borderRadius: 6, border: '1px solid #27272a' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              padding: '8px 10px',
+              backgroundColor: '#09090b',
+              borderRadius: 6,
+              border: '1px solid #27272a',
+            }}
+          >
             <Slider
               label="Cable Length"
               min={1}
@@ -509,8 +613,20 @@ export function AmpPedalboardPanel() {
             />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', backgroundColor: '#09090b', borderRadius: 6, border: '1px solid #27272a' }}>
-            <div style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600, marginBottom: 4 }}>Amp Input Impedance:</div>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              padding: '8px 10px',
+              backgroundColor: '#09090b',
+              borderRadius: 6,
+              border: '1px solid #27272a',
+            }}
+          >
+            <div style={{ fontSize: 11, color: '#a1a1aa', fontWeight: 600, marginBottom: 4 }}>
+              Amp Input Impedance:
+            </div>
             <select
               value={state.ampInputImpedanceOhms}
               onChange={(e) => updateState({ ampInputImpedanceOhms: parseInt(e.target.value) })}
@@ -634,7 +750,9 @@ function PedalCard({
       </div>
 
       {enabled && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}>
+        <div
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}
+        >
           {children}
         </div>
       )}

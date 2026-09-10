@@ -29,26 +29,26 @@ export interface GuitarStringDef {
 
 export const GUITAR_STRINGS: GuitarStringDef[] = [
   { index: 0, name: 'E4 (High E)', openFreq: 329.63, openMidi: 64, thickness: 1.0, isWound: false },
-  { index: 1, name: 'B3',          openFreq: 246.94, openMidi: 59, thickness: 1.4, isWound: false },
-  { index: 2, name: 'G3',          openFreq: 196.00, openMidi: 55, thickness: 1.8, isWound: false },
-  { index: 3, name: 'D3',          openFreq: 146.83, openMidi: 50, thickness: 2.4, isWound: true },
-  { index: 4, name: 'A2',          openFreq: 110.00, openMidi: 45, thickness: 3.0, isWound: true },
-  { index: 5, name: 'E2 (Low E)',  openFreq: 82.41,  openMidi: 40, thickness: 3.8, isWound: true },
+  { index: 1, name: 'B3', openFreq: 246.94, openMidi: 59, thickness: 1.4, isWound: false },
+  { index: 2, name: 'G3', openFreq: 196.0, openMidi: 55, thickness: 1.8, isWound: false },
+  { index: 3, name: 'D3', openFreq: 146.83, openMidi: 50, thickness: 2.4, isWound: true },
+  { index: 4, name: 'A2', openFreq: 110.0, openMidi: 45, thickness: 3.0, isWound: true },
+  { index: 5, name: 'E2 (Low E)', openFreq: 82.41, openMidi: 40, thickness: 3.8, isWound: true },
 ];
 
 export const BASS_4_STRINGS: GuitarStringDef[] = [
-  { index: 0, name: 'G2 (High G)', openFreq: 98.00, openMidi: 43, thickness: 2.0, isWound: true },
-  { index: 1, name: 'D2',          openFreq: 73.42, openMidi: 38, thickness: 2.8, isWound: true },
-  { index: 2, name: 'A1',          openFreq: 55.00, openMidi: 33, thickness: 3.8, isWound: true },
-  { index: 3, name: 'E1 (Low E)',  openFreq: 41.20, openMidi: 28, thickness: 4.8, isWound: true },
+  { index: 0, name: 'G2 (High G)', openFreq: 98.0, openMidi: 43, thickness: 2.0, isWound: true },
+  { index: 1, name: 'D2', openFreq: 73.42, openMidi: 38, thickness: 2.8, isWound: true },
+  { index: 2, name: 'A1', openFreq: 55.0, openMidi: 33, thickness: 3.8, isWound: true },
+  { index: 3, name: 'E1 (Low E)', openFreq: 41.2, openMidi: 28, thickness: 4.8, isWound: true },
 ];
 
 export const BASS_5_STRINGS: GuitarStringDef[] = [
-  { index: 0, name: 'G2 (High G)', openFreq: 98.00, openMidi: 43, thickness: 2.0, isWound: true },
-  { index: 1, name: 'D2',          openFreq: 73.42, openMidi: 38, thickness: 2.8, isWound: true },
-  { index: 2, name: 'A1',          openFreq: 55.00, openMidi: 33, thickness: 3.8, isWound: true },
-  { index: 3, name: 'E1',          openFreq: 41.20, openMidi: 28, thickness: 4.8, isWound: true },
-  { index: 4, name: 'B0 (Low B)',  openFreq: 30.87, openMidi: 23, thickness: 5.6, isWound: true },
+  { index: 0, name: 'G2 (High G)', openFreq: 98.0, openMidi: 43, thickness: 2.0, isWound: true },
+  { index: 1, name: 'D2', openFreq: 73.42, openMidi: 38, thickness: 2.8, isWound: true },
+  { index: 2, name: 'A1', openFreq: 55.0, openMidi: 33, thickness: 3.8, isWound: true },
+  { index: 3, name: 'E1', openFreq: 41.2, openMidi: 28, thickness: 4.8, isWound: true },
+  { index: 4, name: 'B0 (Low B)', openFreq: 30.87, openMidi: 23, thickness: 5.6, isWound: true },
 ];
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -152,8 +152,8 @@ const FretCell = memo(function FretCell({
           backgroundImage: isVibrating
             ? 'linear-gradient(180deg, #fef08a 0%, #f59e0b 50%, #d97706 100%)'
             : isWound
-            ? 'linear-gradient(180deg, #f4f4f5 0%, #a1a1aa 40%, #71717a 75%, #3f3f46 100%), repeating-linear-gradient(90deg, rgba(0,0,0,0.4) 0px, rgba(0,0,0,0.4) 1px, transparent 1px, transparent 3px)'
-            : 'linear-gradient(180deg, #ffffff 0%, #e4e4e7 45%, #a1a1aa 80%, #52525b 100%)',
+              ? 'linear-gradient(180deg, #f4f4f5 0%, #a1a1aa 40%, #71717a 75%, #3f3f46 100%), repeating-linear-gradient(90deg, rgba(0,0,0,0.4) 0px, rgba(0,0,0,0.4) 1px, transparent 1px, transparent 3px)'
+              : 'linear-gradient(180deg, #ffffff 0%, #e4e4e7 45%, #a1a1aa 80%, #52525b 100%)',
           backgroundBlendMode: isWound ? 'overlay' : 'normal',
           boxShadow: isVibrating
             ? '0 0 10px #fbbf24, 0 0 16px #f59e0b, 0 3px 6px rgba(0,0,0,0.9)'
@@ -195,11 +195,7 @@ const FretCell = memo(function FretCell({
             width: isActivePlay ? 24 : 18,
             height: isActivePlay ? 24 : 18,
             borderRadius: '50%',
-            backgroundColor: isActivePlay
-              ? '#f59e0b'
-              : isFrettedByChord
-              ? '#0284c7'
-              : '#3f3f46',
+            backgroundColor: isActivePlay ? '#f59e0b' : isFrettedByChord ? '#0284c7' : '#3f3f46',
             backgroundImage: isActivePlay
               ? 'radial-gradient(circle at 35% 35%, #fef08a 0%, #f59e0b 60%, #b45309 100%)'
               : 'none',
@@ -250,7 +246,12 @@ export function PlayableFretboardPanel() {
   // Panel Dragging / Moveable State (Global Window Listeners)
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef<{ pointerX: number; pointerY: number; posX: number; posY: number } | null>(null);
+  const dragStartRef = useRef<{
+    pointerX: number;
+    pointerY: number;
+    posX: number;
+    posY: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -286,7 +287,12 @@ export function PlayableFretboardPanel() {
     (e: React.PointerEvent) => {
       e.stopPropagation();
       const target = e.target as HTMLElement;
-      if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('a')) {
+      if (
+        target.closest('button') ||
+        target.closest('input') ||
+        target.closest('select') ||
+        target.closest('a')
+      ) {
         return;
       }
       setIsDragging(true);
@@ -297,7 +303,7 @@ export function PlayableFretboardPanel() {
         posY: pos.y,
       };
     },
-    [pos.x, pos.y]
+    [pos.x, pos.y],
   );
 
   // Global mouseup listener for drag sliding
@@ -350,7 +356,7 @@ export function PlayableFretboardPanel() {
 
       await audioPipeline.triggerPluck(freq, 0.65, stringIdx);
     },
-    [activeStrings]
+    [activeStrings],
   );
 
   // Strum a chord across all active fretted strings
@@ -382,7 +388,7 @@ export function PlayableFretboardPanel() {
         }, i * strumSpeed);
       });
     },
-    [triggerNote, strumSpeed]
+    [triggerNote, strumSpeed],
   );
 
   // Stable cell handlers so FretCell memoization is not defeated by
@@ -392,7 +398,7 @@ export function PlayableFretboardPanel() {
       isMouseDownRef.current = true;
       void triggerNote(stringIdx, fret);
     },
-    [triggerNote]
+    [triggerNote],
   );
 
   const handleFretMouseEnter = useCallback(
@@ -402,7 +408,7 @@ export function PlayableFretboardPanel() {
         void triggerNote(stringIdx, fret);
       }
     },
-    [triggerNote]
+    [triggerNote],
   );
 
   const handleFretMouseLeave = useCallback(() => {
@@ -472,8 +478,20 @@ export function PlayableFretboardPanel() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Drag Handle Grip Icon */}
-          <div style={{ display: 'flex', alignItems: 'center', cursor: isDragging ? 'grabbing' : 'grab' }}>
-            <svg width="12" height="16" viewBox="0 0 12 16" fill="none" style={{ opacity: 0.5, marginRight: 2 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              cursor: isDragging ? 'grabbing' : 'grab',
+            }}
+          >
+            <svg
+              width="12"
+              height="16"
+              viewBox="0 0 12 16"
+              fill="none"
+              style={{ opacity: 0.5, marginRight: 2 }}
+            >
               <circle cx="3" cy="3" r="1.5" fill="#a1a1aa" />
               <circle cx="9" cy="3" r="1.5" fill="#a1a1aa" />
               <circle cx="3" cy="8" r="1.5" fill="#a1a1aa" />
@@ -496,7 +514,16 @@ export function PlayableFretboardPanel() {
               fontSize: 15,
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fef3c7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#fef3c7"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M9 18V5l12-2v13" />
               <circle cx="6" cy="18" r="3" />
               <circle cx="18" cy="16" r="3" />
@@ -509,7 +536,9 @@ export function PlayableFretboardPanel() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
               <select
                 value={instrumentType}
-                onChange={(e) => setInstrumentType(e.target.value as 'guitar' | 'bass_4' | 'bass_5')}
+                onChange={(e) =>
+                  setInstrumentType(e.target.value as 'guitar' | 'bass_4' | 'bass_5')
+                }
                 style={{
                   backgroundColor: '#27272a',
                   color: '#38bdf8',
@@ -661,8 +690,7 @@ export function PlayableFretboardPanel() {
         style={{
           padding: '24px 20px',
           backgroundColor: '#1c130d',
-          backgroundImage:
-            'radial-gradient(ellipse at 50% 50%, #2a1c12 0%, #150d08 100%)',
+          backgroundImage: 'radial-gradient(ellipse at 50% 50%, #2a1c12 0%, #150d08 100%)',
           position: 'relative',
         }}
       >
@@ -797,7 +825,8 @@ export function PlayableFretboardPanel() {
                       backgroundColor: '#71717a',
                       backgroundImage:
                         'linear-gradient(90deg, #3f3f46 0%, #a1a1aa 45%, #71717a 80%, #27272a 100%)',
-                      boxShadow: '1px 0 2px rgba(0, 0, 0, 0.7), -1px 0 1px rgba(255, 255, 255, 0.15)',
+                      boxShadow:
+                        '1px 0 2px rgba(0, 0, 0, 0.7), -1px 0 1px rgba(255, 255, 255, 0.15)',
                       borderRadius: 1,
                       opacity: 0.85,
                     }}
@@ -815,8 +844,7 @@ export function PlayableFretboardPanel() {
                 left: 48,
                 width: 6,
                 backgroundColor: '#eab308',
-                backgroundImage:
-                  'linear-gradient(90deg, #854d0e 0%, #fef08a 50%, #ca8a04 100%)',
+                backgroundImage: 'linear-gradient(90deg, #854d0e 0%, #fef08a 50%, #ca8a04 100%)',
                 borderRadius: 2,
                 boxShadow: '0 0 6px rgba(0, 0, 0, 0.6)',
                 zIndex: 4,
@@ -899,12 +927,24 @@ export function PlayableFretboardPanel() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#fbbf24"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
             <path d="M9 18h6" />
             <path d="M10 22h4" />
           </svg>
-          <span>Click any fret to play. Press <code>1-6</code> for open strings, or <code>Space</code> to strum!</span>
+          <span>
+            Click any fret to play. Press <code>1-6</code> for open strings, or <code>Space</code>{' '}
+            to strum!
+          </span>
         </div>
       </div>
     </div>

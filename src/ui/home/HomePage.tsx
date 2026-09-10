@@ -64,7 +64,14 @@ export function HomePage() {
           {/* Brand Logo & Version */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
             <CordsBoxLogo size={30} />
-            <span style={{ fontSize: '17px', fontWeight: 800, letterSpacing: '-0.02em', color: '#ffffff' }}>
+            <span
+              style={{
+                fontSize: '17px',
+                fontWeight: 800,
+                letterSpacing: '-0.02em',
+                color: '#ffffff',
+              }}
+            >
               Cords Box
             </span>
             <span
@@ -105,7 +112,9 @@ export function HomePage() {
                   style={{
                     background: isActive ? '#27272a' : 'transparent',
                     color: isActive ? '#ffffff' : '#a1a1aa',
-                    border: isActive ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid transparent',
+                    border: isActive
+                      ? '1px solid rgba(255, 255, 255, 0.12)'
+                      : '1px solid transparent',
                     borderRadius: '6px',
                     padding: '7px 16px',
                     fontSize: '13px',

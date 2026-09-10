@@ -74,11 +74,18 @@ export function ConfirmDialog({
             background: 'linear-gradient(180deg, #27272a 0%, #18181b 100%)',
           }}
         >
-          <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: isDestructive ? '#ef4444' : '#f4f4f5' }}>
+          <h2
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              margin: 0,
+              color: isDestructive ? '#ef4444' : '#f4f4f5',
+            }}
+          >
             {title}
           </h2>
         </div>
-        
+
         <div style={{ padding: '24px', fontSize: 14, color: '#d4d4d8', lineHeight: 1.5 }}>
           {message}
         </div>
@@ -96,7 +103,11 @@ export function ConfirmDialog({
           <Button variant="secondary" onClick={onCancel} style={{ minWidth: 80 }}>
             {cancelLabel}
           </Button>
-          <Button variant={isDestructive ? 'danger' : 'primary'} onClick={onConfirm} style={{ minWidth: 80 }}>
+          <Button
+            variant={isDestructive ? 'danger' : 'primary'}
+            onClick={onConfirm}
+            style={{ minWidth: 80 }}
+          >
             {confirmLabel}
           </Button>
         </div>

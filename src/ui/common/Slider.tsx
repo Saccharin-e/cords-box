@@ -1,6 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 
-export type SliderProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
+export type SliderProps = Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  'onChange' | 'value'
+> & {
   label: React.ReactNode;
   value: number;
   min: number;
@@ -52,7 +55,7 @@ export function Slider({
     onChange(localVal);
     if (onCommit) onCommit();
   }
-  
+
   const formattedValue = React.useMemo(() => {
     if (unit === '%') return `${Math.round(localVal * 100)}%`;
     if (unit === 'px') return `${localVal}px`;
@@ -74,9 +77,9 @@ export function Slider({
         <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>{label}</span>
         <span
           className="inspector-mono"
-          style={{ 
-            color: readoutColor || accentColor, 
-            fontWeight: 700 
+          style={{
+            color: readoutColor || accentColor,
+            fontWeight: 700,
           }}
         >
           {formattedValue}

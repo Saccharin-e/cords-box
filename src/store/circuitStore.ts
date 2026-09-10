@@ -31,7 +31,11 @@ export interface CircuitStore {
   addEdge: (edge: CircuitEdge) => void;
   removeEdge: (edgeId: string) => void;
   addComponent: (component: Component) => void;
-  updateComponentValue: (componentId: string, value: Component['value'], skipHistory?: boolean) => void;
+  updateComponentValue: (
+    componentId: string,
+    value: Component['value'],
+    skipHistory?: boolean,
+  ) => void;
   updateComponentLabel: (componentId: string, label: string) => void;
   updateEdge: (
     edgeId: string,
@@ -101,9 +105,7 @@ export const useCircuitStore = create<CircuitStore>((set, get) => ({
   updateComponentValue: (componentId, value, skipHistory = false) => {
     get().graph.updateComponentValue(componentId, value);
     useCanvasStore.setState((s) => ({
-      instances: s.instances.map((inst) =>
-        inst.id === componentId ? { ...inst, value } : inst,
-      ),
+      instances: s.instances.map((inst) => (inst.id === componentId ? { ...inst, value } : inst)),
     }));
     get().solve();
     set((s) => ({ version: s.version + 1 }));

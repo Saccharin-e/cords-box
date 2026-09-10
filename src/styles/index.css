@@ -780,7 +780,9 @@ input[type='range']::-webkit-slider-thumb,
     0 0 4px var(--color-accent-amber);
   cursor: ew-resize;
   border: 1.5px solid var(--color-accent-amber);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 input[type='range']::-webkit-slider-thumb:hover,
@@ -802,7 +804,9 @@ input[type='range']::-moz-range-thumb,
     0 0 4px var(--color-accent-amber);
   cursor: ew-resize;
   border: 1.5px solid var(--color-accent-amber);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  transition:
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 /* ─── Diagnostics Panel ─────────────────────────────────────────────────────── */

@@ -105,10 +105,7 @@ export function PhysicalView({ width, height }: Props) {
 
   const trRef = useRef<Konva.Transformer>(null);
 
-  const activeEdges = useMemo(
-    () => solverResult?.activeEdges ?? new Set<string>(),
-    [solverResult],
-  );
+  const activeEdges = useMemo(() => solverResult?.activeEdges ?? new Set<string>(), [solverResult]);
   const wires = useMemo(
     () => buildWireVisuals(() => graph.getEdges(), instances, activeEdges),
     [graph, instances, activeEdges],
@@ -337,10 +334,12 @@ export function PhysicalView({ width, height }: Props) {
               const s = useCanvasStore.getState().scale;
               const px = useCanvasStore.getState().panX;
               const py = useCanvasStore.getState().panY;
-              useCanvasStore.getState().updateWiringCursor(
-                (moveEvt.clientX - r.left - px) / s,
-                (moveEvt.clientY - r.top - py) / s,
-              );
+              useCanvasStore
+                .getState()
+                .updateWiringCursor(
+                  (moveEvt.clientX - r.left - px) / s,
+                  (moveEvt.clientY - r.top - py) / s,
+                );
             });
           }
         };
@@ -642,11 +641,7 @@ export function PhysicalView({ width, height }: Props) {
         </Layer>
 
         {/* Wire layer (renders above hardware components) */}
-        <WireLayer
-          wires={wires}
-          selectedEdgeId={selectedEdgeId}
-          onSelectEdge={handleSelectEdge}
-        />
+        <WireLayer wires={wires} selectedEdgeId={selectedEdgeId} onSelectEdge={handleSelectEdge} />
 
         {/* Foreground card & documentation layer (Project Info Card & Text Boxes render on top of wires!) */}
         <Layer>

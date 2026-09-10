@@ -34,7 +34,9 @@ export interface SolverResult {
  */
 export function syncSwitchInternalEdges(graph: Graph): void {
   const components = graph.getComponents();
-  const switchComps = components.filter((c) => c.type.startsWith('switch_') || c.type === 'pot_pushpull');
+  const switchComps = components.filter(
+    (c) => c.type.startsWith('switch_') || c.type === 'pot_pushpull',
+  );
 
   for (const comp of switchComps) {
     const swState = graph.getSwitchState(comp.id);
@@ -135,18 +137,16 @@ export function solveSignalPaths(graph: Graph): SolverResult {
   // Find source nodes from the component schema, not an arbitrary id prefix.
   // The prefix fallback keeps older node-only fixtures/imports readable until
   // they are migrated to complete component records.
-  const sourceNodes = nodes.filter(
-    (node) => {
-      if (node.role !== 'hot' && node.role !== 'ground') return false;
-      const component = graph.getComponent(node.componentId);
-      if (!component) return node.componentId.startsWith('pickup');
-      return (
-        component.type === 'pickup_single_coil' ||
-        component.type === 'pickup_humbucker' ||
-        component.type === 'pickup_p90'
-      );
-    },
-  );
+  const sourceNodes = nodes.filter((node) => {
+    if (node.role !== 'hot' && node.role !== 'ground') return false;
+    const component = graph.getComponent(node.componentId);
+    if (!component) return node.componentId.startsWith('pickup');
+    return (
+      component.type === 'pickup_single_coil' ||
+      component.type === 'pickup_humbucker' ||
+      component.type === 'pickup_p90'
+    );
+  });
 
   // Find destination nodes (output jack terminals)
   const outputNodes = nodes.filter((n) => n.type === 'jack_terminal' && n.role === 'tip');

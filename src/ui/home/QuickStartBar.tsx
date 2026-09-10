@@ -72,7 +72,8 @@ export function QuickStartBar() {
           WDF Engine v2.0
         </span>
         <div style={{ fontSize: '13px', color: '#a1a1aa' }}>
-          Real-time Wave Digital Filter passive circuit physics, tone stacks & digital waveguide synthesis.
+          Real-time Wave Digital Filter passive circuit physics, tone stacks & digital waveguide
+          synthesis.
         </div>
       </div>
 
@@ -80,7 +81,9 @@ export function QuickStartBar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <Button
           variant="primary"
-          onClick={() => startProjectFromTemplate('guitar_sound_test_template', 'Stratocaster HSS Bench')}
+          onClick={() =>
+            startProjectFromTemplate('guitar_sound_test_template', 'Stratocaster HSS Bench')
+          }
           style={{
             padding: '7px 14px',
             fontSize: '12px',

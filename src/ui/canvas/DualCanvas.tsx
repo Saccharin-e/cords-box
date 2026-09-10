@@ -214,7 +214,12 @@ export function DualCanvas() {
   }
 
   return (
-    <section className="canvas-area" ref={containerRef} id="canvas-area" style={{ position: 'relative' }}>
+    <section
+      className="canvas-area"
+      ref={containerRef}
+      id="canvas-area"
+      style={{ position: 'relative' }}
+    >
       {/* Dot grid background */}
       <div className="canvas-area__bg" />
 
@@ -267,7 +272,14 @@ export function DualCanvas() {
             WIRING
           </span>
         )}
-        <div style={{ width: 1, height: 12, backgroundColor: 'rgba(255, 255, 255, 0.15)', margin: '0 2px' }} />
+        <div
+          style={{
+            width: 1,
+            height: 12,
+            backgroundColor: 'rgba(255, 255, 255, 0.15)',
+            margin: '0 2px',
+          }}
+        />
         <button
           className="canvas-tab"
           style={{

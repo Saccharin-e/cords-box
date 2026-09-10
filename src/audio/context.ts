@@ -6,6 +6,8 @@
  * JS AudioWorklet, with WASM bridge designed as drop-in replacement.
  */
 
+import guitarWorkletUrl from './processor.js?worker&url';
+
 export class AudioEngine {
   private context: AudioContext | null = null;
   private stateListeners = new Set<() => void>();
@@ -42,7 +44,7 @@ export class AudioEngine {
     }
     if (!this.workletReady && this.context.audioWorklet) {
       try {
-        await this.context.audioWorklet.addModule(new URL(`./processor.js?t=${Date.now()}`, import.meta.url).href);
+        await this.context.audioWorklet.addModule(guitarWorkletUrl);
         this.workletReady = true;
       } catch {
         // Worklet module fallback

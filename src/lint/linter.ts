@@ -36,11 +36,7 @@ function detectDeadShorts(graph: Graph): LintDiagnostic[] {
 
   // Build a low-resistance adjacency list (resistance < 1Ω) excluding
   // edges whose endpoints belong to pickup components (legitimate ~6kΩ).
-  const pickupCompTypes = new Set([
-    'pickup_single_coil',
-    'pickup_humbucker',
-    'pickup_p90',
-  ]);
+  const pickupCompTypes = new Set(['pickup_single_coil', 'pickup_humbucker', 'pickup_p90']);
   const pickupNodeIds = new Set<string>();
   for (const comp of graph.getComponents()) {
     if (pickupCompTypes.has(comp.type)) {
@@ -89,9 +85,7 @@ function detectDeadShorts(graph: Graph): LintDiagnostic[] {
         // Only flag if not already caught as a direct short
         const alreadyDirect = diagnostics.some(
           (d) =>
-            d.code === 'DEAD_SHORT' &&
-            d.nodeIds.includes(hot.id) &&
-            d.nodeIds.includes(current),
+            d.code === 'DEAD_SHORT' && d.nodeIds.includes(hot.id) && d.nodeIds.includes(current),
         );
         if (!alreadyDirect) {
           diagnostics.push({

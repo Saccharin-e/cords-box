@@ -168,7 +168,10 @@ export function parseMidiFileBuffer(buffer: ArrayBuffer): TabScore {
 
         if (metaType === 0x51 && metaLen === 3) {
           // Set Tempo Meta Event (microseconds per quarter note)
-          const mpqn = (data.getUint8(offset) << 16) | (data.getUint8(offset + 1) << 8) | data.getUint8(offset + 2);
+          const mpqn =
+            (data.getUint8(offset) << 16) |
+            (data.getUint8(offset + 1) << 8) |
+            data.getUint8(offset + 2);
           detectedBpm = Math.round(60000000 / mpqn);
         }
         offset += metaLen;

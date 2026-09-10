@@ -76,13 +76,22 @@ export function RecentProjects() {
               }}
             >
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '4px',
+                  }}
+                >
                   <span
                     style={{
                       fontSize: '9.5px',
                       fontWeight: 700,
                       color: slot.isCustom ? '#38bdf8' : '#71717a',
-                      backgroundColor: slot.isCustom ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255, 255, 255, 0.04)',
+                      backgroundColor: slot.isCustom
+                        ? 'rgba(56, 189, 248, 0.1)'
+                        : 'rgba(255, 255, 255, 0.04)',
                       padding: '1px 5px',
                       borderRadius: '3px',
                       textTransform: 'uppercase',

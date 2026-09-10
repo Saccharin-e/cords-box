@@ -1,0 +1,62 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install JavaScript dependencies
+        run: npm ci
+      - name: Install Rust WASM tools
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install wasm-pack --version 0.15.0 --locked
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Check formatting
+        run: npm run format:check
+      - name: Build production artifacts
+        run: npm run build
+      - name: Test rebuilt WASM and application
+        run: |
+          mkdir -p artifacts
+          npm test -- --reporter=default --reporter=json --outputFile=artifacts/vitest.json
+          npm run test:tooling
+      - name: Install test browser
+        run: npx puppeteer browsers install chrome --install-deps
+      - name: Browser audio acceptance
+        env:
+          BROWSER_NO_SANDBOX: '1'
+        run: npm run test:browser
+      - name: Record toolchain
+        if: always()
+        run: |
+          mkdir -p artifacts
+          node --version > artifacts/toolchain.txt
+          npm --version >> artifacts/toolchain.txt
+          rustc --version >> artifacts/toolchain.txt
+          wasm-pack --version >> artifacts/toolchain.txt
+          git rev-parse HEAD >> artifacts/toolchain.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-evidence
+          path: artifacts/
+          retention-days: 14

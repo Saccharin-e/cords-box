@@ -391,8 +391,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   activeFloatingPanel: null,
   setActiveFloatingPanel: (panel) => set({ activeFloatingPanel: panel }),
   inspectorWidth: 320,
-  setInspectorWidth: (width) =>
-    set({ inspectorWidth: Math.max(220, Math.min(650, width)) }),
+  setInspectorWidth: (width) => set({ inspectorWidth: Math.max(220, Math.min(650, width)) }),
 
   themeMode: 'dark',
   gridStyle: 'dots',

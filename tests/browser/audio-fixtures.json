@@ -1,0 +1,27 @@
+{
+  "sampleRates": [44100, 48000],
+  "durationSeconds": 1,
+  "pluckTime": 0.1,
+  "dampTime": 0.6,
+  "frequency": 220,
+  "velocity": 0.7,
+  "silencePeakLimit": 1e-8,
+  "minimumAttackRms": 1e-6,
+  "maximumTailRatio": 0.1,
+  "maximumParityError": 1e-7,
+  "reference": {
+    "pickupInductanceH": 2.4,
+    "pickupResistanceOhms": 6500,
+    "pickupWindingCapFarads": 1.2e-10,
+    "volumePotMaxOhms": 250000,
+    "volumePotPos": 0.37,
+    "volumePotTaper": "audio",
+    "tonePotMaxOhms": 250000,
+    "tonePotPos": 0.61,
+    "tonePotTaper": "linear",
+    "toneCapFarads": 4.7e-8,
+    "trebleBleedCapFarads": 1e-9,
+    "cableCapacitanceFarads": 5e-10,
+    "ampInputImpedanceOhms": 1000000
+  }
+}

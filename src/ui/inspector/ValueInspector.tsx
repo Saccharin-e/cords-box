@@ -234,7 +234,8 @@ export function ValueInspector() {
               </InspectorSection>
 
               {/* Type-Specific DIYLC Customizations */}
-              {(component.type === 'pickup_single_coil' || component.type === 'pickup_humbucker') && (
+              {(component.type === 'pickup_single_coil' ||
+                component.type === 'pickup_humbucker') && (
                 <PickupInspector compId={component.id} type={component.type} />
               )}
 
@@ -288,7 +289,9 @@ export function ValueInspector() {
               {/* Editable Custom Labels, Finish Colors & Terminal Lugs Inspector */}
               {component.type !== 'text_box' &&
                 component.type !== 'project_card' &&
-                !component.type.startsWith('shape_') && <CustomLabelsAndLugsInspector inst={inst} />}
+                !component.type.startsWith('shape_') && (
+                  <CustomLabelsAndLugsInspector inst={inst} />
+                )}
 
               {/* Layering Controls */}
               <div
@@ -390,7 +393,8 @@ export function ValueInspector() {
                 textAlign: 'center',
               }}
             >
-              Select any component or wire on the canvas to customize its physical & electrical specs.
+              Select any component or wire on the canvas to customize its physical & electrical
+              specs.
             </div>
           )}
         </div>
@@ -1060,8 +1064,6 @@ function WireInspector({
   );
 }
 
-
-
 /* ─── Custom Lug Labels & Color Theme Inspector ──────────────────────────── */
 function CustomLabelsAndLugsInspector({ inst }: { inst: any }) {
   const updateInstance = useCanvasStore((s) => s.updateInstance);
@@ -1082,7 +1084,9 @@ function CustomLabelsAndLugsInspector({ inst }: { inst: any }) {
       </InspectorRow>
 
       {/* Pickup Finish Theme */}
-      {(inst.type === 'pickup_single_coil' || inst.type === 'pickup_p90' || inst.type === 'pickup_humbucker') && (
+      {(inst.type === 'pickup_single_coil' ||
+        inst.type === 'pickup_p90' ||
+        inst.type === 'pickup_humbucker') && (
         <InspectorRow label="Finish Style">
           <select
             className="inspector-select"
@@ -1099,7 +1103,15 @@ function CustomLabelsAndLugsInspector({ inst }: { inst: any }) {
       {/* Terminal Lug Editors */}
       {shape.lugs.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#a1a1aa', textTransform: 'uppercase', marginBottom: 6 }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: '#a1a1aa',
+              textTransform: 'uppercase',
+              marginBottom: 6,
+            }}
+          >
             Terminal Lug Labels ({shape.lugs.length})
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1107,7 +1119,15 @@ function CustomLabelsAndLugsInspector({ inst }: { inst: any }) {
               const currentVal = inst.customLugLabels?.[lug.id] ?? lug.label;
               return (
                 <div key={lug.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 10, color: '#71717a', width: 60, flexShrink: 0, fontFamily: 'monospace' }}>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: '#71717a',
+                      width: 60,
+                      flexShrink: 0,
+                      fontFamily: 'monospace',
+                    }}
+                  >
                     {lug.id}
                   </span>
                   <input
@@ -1242,7 +1262,9 @@ function FreeShapeInspector({ inst }: { inst: any }) {
             type="number"
             className="inspector-input"
             value={Math.round(inst.width)}
-            onChange={(e) => updateInstance(inst.id, { width: Math.max(10, Number(e.target.value)) }, true)}
+            onChange={(e) =>
+              updateInstance(inst.id, { width: Math.max(10, Number(e.target.value)) }, true)
+            }
             onBlur={pushHistory}
             style={{ width: '100%' }}
           />
@@ -1253,7 +1275,9 @@ function FreeShapeInspector({ inst }: { inst: any }) {
             type="number"
             className="inspector-input"
             value={Math.round(inst.height)}
-            onChange={(e) => updateInstance(inst.id, { height: Math.max(10, Number(e.target.value)) }, true)}
+            onChange={(e) =>
+              updateInstance(inst.id, { height: Math.max(10, Number(e.target.value)) }, true)
+            }
             onBlur={pushHistory}
             style={{ width: '100%' }}
           />

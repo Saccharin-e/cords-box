@@ -148,10 +148,22 @@ export function CanvasControls() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
         {/* Undo / Redo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Button variant="icon" aria-label="Undo" onClick={undo} style={buttonStyle} title="Undo (Ctrl+Z)">
+          <Button
+            variant="icon"
+            aria-label="Undo"
+            onClick={undo}
+            style={buttonStyle}
+            title="Undo (Ctrl+Z)"
+          >
             <IconUndo />
           </Button>
-          <Button variant="icon" aria-label="Redo" onClick={redo} style={buttonStyle} title="Redo (Ctrl+Y)">
+          <Button
+            variant="icon"
+            aria-label="Redo"
+            onClick={redo}
+            style={buttonStyle}
+            title="Redo (Ctrl+Y)"
+          >
             <IconRedo />
           </Button>
         </div>
@@ -236,7 +248,13 @@ export function CanvasControls() {
           >
             <IconCopy />
           </Button>
-          <Button variant="icon" aria-label="Paste" onClick={pasteSelected} style={buttonStyle} title="Paste (Ctrl+V)">
+          <Button
+            variant="icon"
+            aria-label="Paste"
+            onClick={pasteSelected}
+            style={buttonStyle}
+            title="Paste (Ctrl+V)"
+          >
             <IconPaste />
           </Button>
           <Button

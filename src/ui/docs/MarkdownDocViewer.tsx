@@ -115,7 +115,12 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
                   }}
                 >
                   <thead>
-                    <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.04)', borderBottom: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                    <tr
+                      style={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                      }}
+                    >
                       {block.headers.map((h, hIdx) => (
                         <th
                           key={hIdx}
@@ -136,8 +141,12 @@ export function MarkdownDocViewer({ content }: MarkdownDocViewerProps) {
                       <tr
                         key={rIdx}
                         style={{
-                          borderBottom: rIdx === block.rows.length - 1 ? 'none' : '1px solid rgba(255, 255, 255, 0.04)',
-                          backgroundColor: rIdx % 2 === 1 ? 'rgba(255, 255, 255, 0.015)' : 'transparent',
+                          borderBottom:
+                            rIdx === block.rows.length - 1
+                              ? 'none'
+                              : '1px solid rgba(255, 255, 255, 0.04)',
+                          backgroundColor:
+                            rIdx % 2 === 1 ? 'rgba(255, 255, 255, 0.015)' : 'transparent',
                         }}
                       >
                         {row.map((cell, cIdx) => (
@@ -347,7 +356,10 @@ function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
     // Bullet lists
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
       const items: string[] = [];
-      while (i < lines.length && (lines[i].trim().startsWith('- ') || lines[i].trim().startsWith('* '))) {
+      while (
+        i < lines.length &&
+        (lines[i].trim().startsWith('- ') || lines[i].trim().startsWith('* '))
+      ) {
         items.push(lines[i].trim().slice(2));
         i++;
       }

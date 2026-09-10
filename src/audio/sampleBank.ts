@@ -29,7 +29,12 @@ export interface FoundSample {
 }
 
 export class SampleBank {
-  private zones: { buffer: AudioBuffer; rootMidi: number; lowVelocity: number; highVelocity: number }[] = [];
+  private zones: {
+    buffer: AudioBuffer;
+    rootMidi: number;
+    lowVelocity: number;
+    highVelocity: number;
+  }[] = [];
   private pendingLoad: Promise<void> | null = null;
   private ready = false;
 
@@ -106,10 +111,11 @@ export class SampleBank {
           try {
             const fileName = zone.file.split('/').pop() || zone.file;
             const response = await fetch(`${baseUrl}${fileName}`, { cache: 'no-cache' });
-            if (!response.ok) throw new Error(`Failed to fetch sample ${fileName} (${response.status})`);
+            if (!response.ok)
+              throw new Error(`Failed to fetch sample ${fileName} (${response.status})`);
             const audioData = await response.arrayBuffer();
             const buffer = await ctx.decodeAudioData(audioData);
-            
+
             loaded.push({
               buffer,
               rootMidi: zone.rootPitch,

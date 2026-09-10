@@ -53,8 +53,8 @@ export function deriveSynthPluckArticulation(
   articulation: string,
   frequency: number,
   stringIndex: number,
-  openFrequency: number =
-    useTuningStore.getState().currentPreset.strings[stringIndex]?.openFreq ?? 110,
+  openFrequency: number = useTuningStore.getState().currentPreset.strings[stringIndex]?.openFreq ??
+    110,
 ): SynthPluckArticulation {
   if (articulation === 'palm_mute' || articulation === 'mute') {
     return {
@@ -2195,11 +2195,7 @@ export class AudioPipeline {
       return false;
     }
     if (this.wdfWorkletNode) {
-      const synthArticulation = deriveSynthPluckArticulation(
-        articulation,
-        freq,
-        stringIndex,
-      );
+      const synthArticulation = deriveSynthPluckArticulation(articulation, freq, stringIndex);
       // A single enriched pluck message owns both source articulation and the
       // per-string post-waveguide mode. Older engines still accept its plain
       // frequency/velocity subset.

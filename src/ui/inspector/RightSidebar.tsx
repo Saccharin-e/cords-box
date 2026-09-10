@@ -28,7 +28,10 @@ export function RightSidebar() {
     let currentWidth = useCanvasStore.getState().inspectorWidth;
 
     const onMouseMove = (moveEvent: MouseEvent) => {
-      const calculatedWidth = Math.max(220, Math.min(650, window.innerWidth - moveEvent.clientX - 12));
+      const calculatedWidth = Math.max(
+        220,
+        Math.min(650, window.innerWidth - moveEvent.clientX - 12),
+      );
       currentWidth = calculatedWidth;
       document.documentElement.style.setProperty('--inspector-width', `${calculatedWidth}px`);
     };

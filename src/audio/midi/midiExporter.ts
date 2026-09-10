@@ -23,10 +23,8 @@ export function exportScoreToMidiBuffer(score: TabScore): ArrayBuffer {
   const mpqn = Math.round(60000000 / bpm);
 
   // Group events by string index 0..5
-  const stringEvents: { tick: number; type: 'on' | 'off'; note: number; vel: number }[][] = Array.from(
-    { length: 6 },
-    () => [],
-  );
+  const stringEvents: { tick: number; type: 'on' | 'off'; note: number; vel: number }[][] =
+    Array.from({ length: 6 }, () => []);
 
   for (const measure of score.measures) {
     for (const beat of measure.beats) {
@@ -52,8 +50,17 @@ export function exportScoreToMidiBuffer(score: TabScore): ArrayBuffer {
 
   // Track 0: Conductor Track (Tempo)
   const conductorBytes: number[] = [
-    0x00, 0xff, 0x51, 0x03, (mpqn >> 16) & 0xff, (mpqn >> 8) & 0xff, mpqn & 0xff, // Set Tempo
-    0x00, 0xff, 0x2f, 0x00, // End of Track
+    0x00,
+    0xff,
+    0x51,
+    0x03,
+    (mpqn >> 16) & 0xff,
+    (mpqn >> 8) & 0xff,
+    mpqn & 0xff, // Set Tempo
+    0x00,
+    0xff,
+    0x2f,
+    0x00, // End of Track
   ];
   trackBytes.push(conductorBytes);
 

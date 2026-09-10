@@ -5,6 +5,8 @@ import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  // AudioWorklet modules need their complete dependency graph in the build.
+  worker: { format: 'es' },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

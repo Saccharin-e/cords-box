@@ -105,7 +105,9 @@ export function TutorialGuideOverlay() {
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
           <Lightbulb size={13} color="#38bdf8" style={{ flexShrink: 0, marginTop: '2px' }} />
-          <span><strong style={{ color: '#e2e8f0' }}>Why:</strong> {currentStep.explanation}</span>
+          <span>
+            <strong style={{ color: '#e2e8f0' }}>Why:</strong> {currentStep.explanation}
+          </span>
         </div>
         {currentStep.tip && (
           <div style={{ color: '#d97706', paddingLeft: '19px' }}>
@@ -115,7 +117,14 @@ export function TutorialGuideOverlay() {
       </div>
 
       {/* Footer Navigation */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: '4px',
+        }}
+      >
         <Button
           variant="secondary"
           onClick={() => setTutorialStep(Math.max(0, activeTutorialStep - 1))}
@@ -144,7 +153,12 @@ export function TutorialGuideOverlay() {
                 width: '7px',
                 height: '7px',
                 borderRadius: '50%',
-                backgroundColor: idx === activeTutorialStep ? '#38bdf8' : idx < activeTutorialStep ? '#16a34a' : 'rgba(255, 255, 255, 0.2)',
+                backgroundColor:
+                  idx === activeTutorialStep
+                    ? '#38bdf8'
+                    : idx < activeTutorialStep
+                      ? '#16a34a'
+                      : 'rgba(255, 255, 255, 0.2)',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
               }}

@@ -119,7 +119,8 @@ export const PRESETS: PresetDefinition[] = [
         id: 'card_info',
         type: 'project_card',
         label: 'Sound Test Bench Specs',
-        textValue: 'HSS Stratocaster Test Harness\nTest notes, chords, volume roll-off & tone filtering in real time.',
+        textValue:
+          'HSS Stratocaster Test Harness\nTest notes, chords, volume roll-off & tone filtering in real time.',
         authorValue: 'Cords Box Lab',
         modelValue: 'HSS Sound Bench',
         revisionValue: 'v1.0',
@@ -251,7 +252,8 @@ export const PRESETS: PresetDefinition[] = [
         id: 'card_info',
         type: 'project_card',
         label: 'Custom Tele Wiring Specs',
-        textValue: 'Mahogany body · Roasted maple neck · Rosewood fretboard\nPhase-reversal push-pull vol · 4-way neck-first · Concentric tone+blend half-blender',
+        textValue:
+          'Mahogany body · Roasted maple neck · Rosewood fretboard\nPhase-reversal push-pull vol · 4-way neck-first · Concentric tone+blend half-blender',
         authorValue: 'Cords Box Lab',
         modelValue: 'Custom Tele',
         revisionValue: 'v1.0',
@@ -456,6 +458,10 @@ export const PRESETS: PresetDefinition[] = [
       makeEdge('e13', 'pot_vol_bridge_lug1', 'jack_out_sleeve', '#000000'),
       makeEdge('e14', 'pickup_neck_south_start', 'jack_out_sleeve', '#000000'),
       makeEdge('e15', 'pickup_bridge_south_start', 'jack_out_sleeve', '#000000'),
+      // As in the Tele/Strat harnesses, expose the volume pot's signal path
+      // to the connectivity solver. The WDF stage models its loaded taper.
+      makeEdge('e16', 'pot_vol_neck_lug3', 'pot_vol_neck_wiper', '#ffffff'),
+      makeEdge('e17', 'pot_vol_bridge_lug3', 'pot_vol_bridge_wiper', '#ff8c00'),
     ],
   },
   {

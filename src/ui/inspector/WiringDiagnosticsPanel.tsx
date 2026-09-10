@@ -173,8 +173,12 @@ export function WiringDiagnosticsPanel() {
                     style={{
                       padding: '6px 8px',
                       borderRadius: 6,
-                      backgroundColor: isError ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.08)',
-                      border: isError ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)',
+                      backgroundColor: isError
+                        ? 'rgba(239, 68, 68, 0.08)'
+                        : 'rgba(245, 158, 11, 0.08)',
+                      border: isError
+                        ? '1px solid rgba(239, 68, 68, 0.3)'
+                        : '1px solid rgba(245, 158, 11, 0.3)',
                       cursor: 'pointer',
                       display: 'flex',
                       flexDirection: 'column',
@@ -183,7 +187,13 @@ export function WiringDiagnosticsPanel() {
                     }}
                     title="Click to highlight affected component"
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
                       <span
                         style={{
                           fontSize: 9,
@@ -200,7 +210,13 @@ export function WiringDiagnosticsPanel() {
                       <span style={{ fontSize: 9, color: '#a1a1aa' }}>Click to select</span>
                     </div>
 
-                    <div style={{ fontSize: 11, color: isError ? '#fca5a5' : '#fef3c7', lineHeight: 1.3 }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: isError ? '#fca5a5' : '#fef3c7',
+                        lineHeight: 1.3,
+                      }}
+                    >
                       {diag.message}
                     </div>
                   </div>

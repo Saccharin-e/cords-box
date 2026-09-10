@@ -27,7 +27,8 @@ export function TutorialSection() {
           Interactive Wiring Tutorials
         </h2>
         <p style={{ margin: 0, fontSize: '13px', color: '#a1a1aa' }}>
-          Hands-on guided walkthroughs that load starter circuits into the studio workbench with live step verification.
+          Hands-on guided walkthroughs that load starter circuits into the studio workbench with
+          live step verification.
         </p>
       </div>
 
@@ -67,7 +68,14 @@ export function TutorialSection() {
               }}
             >
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '8px',
+                  }}
+                >
                   <span
                     style={{
                       fontSize: '10px',
@@ -92,19 +100,42 @@ export function TutorialSection() {
                     }}
                   >
                     <Clock size={12} />
-                    <span>{lesson.durationMinutes} mins · {lesson.steps.length} steps</span>
+                    <span>
+                      {lesson.durationMinutes} mins · {lesson.steps.length} steps
+                    </span>
                   </span>
                 </div>
 
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: 700, color: '#f4f4f5' }}>
+                <h3
+                  style={{
+                    margin: '0 0 4px 0',
+                    fontSize: '15px',
+                    fontWeight: 700,
+                    color: '#f4f4f5',
+                  }}
+                >
                   {lesson.title}
                 </h3>
 
-                <h4 style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: 600, color: '#38bdf8' }}>
+                <h4
+                  style={{
+                    margin: '0 0 8px 0',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#38bdf8',
+                  }}
+                >
                   {lesson.subtitle}
                 </h4>
 
-                <p style={{ margin: '0 0 12px 0', fontSize: '12px', lineHeight: 1.5, color: '#a1a1aa' }}>
+                <p
+                  style={{
+                    margin: '0 0 12px 0',
+                    fontSize: '12px',
+                    lineHeight: 1.5,
+                    color: '#a1a1aa',
+                  }}
+                >
                   {lesson.description}
                 </p>
 

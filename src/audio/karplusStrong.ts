@@ -56,8 +56,8 @@ function mulberry32(seed: number): () => number {
 }
 
 // Per-string physical data for dispersion — standard 10-46 set, steel
-const STRING_DIAMETERS_M = [0.001168, 0.000914, 0.000635, 0.000432, 0.000330, 0.000254];
-const STRING_TENSIONS_N  = [77.8, 76.5, 81.8, 73.8, 68.5, 72.1];
+const STRING_DIAMETERS_M = [0.001168, 0.000914, 0.000635, 0.000432, 0.00033, 0.000254];
+const STRING_TENSIONS_N = [77.8, 76.5, 81.8, 73.8, 68.5, 72.1];
 const SCALE_LENGTH_M = 0.648;
 const YOUNG_MODULUS_PA = 2.0e11;
 
@@ -169,7 +169,7 @@ export function renderKarplusStrong(
 
     // Loop-filter gain compensation: compute |H(ω₀)| for the one-pole and
     // scale by 1/|H(ω₀)| so the fundamental is lossless through the filter.
-    const w0 = 2 * Math.PI / targetN;
+    const w0 = (2 * Math.PI) / targetN;
     const oneMinusD = 1 - damping;
     const magSq = (oneMinusD * oneMinusD) / (1 - 2 * damping * Math.cos(w0) + damping * damping);
     const compensation = Math.min(1.15, 1 / Math.sqrt(magSq));

@@ -154,7 +154,9 @@ export function LayoutSlotsModal() {
                 }}
               >
                 {/* Slot Header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                >
                   {isEditing ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
                       <input
@@ -191,7 +193,9 @@ export function LayoutSlotsModal() {
                       </Button>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}
+                    >
                       <span
                         style={{
                           fontSize: 13,
@@ -270,10 +274,12 @@ export function LayoutSlotsModal() {
                 {/* Slot Details */}
                 <div style={{ fontSize: 11, color: '#a1a1aa', display: 'flex', gap: 12 }}>
                   <span>
-                    <Package size={14} /> <strong>{compCount}</strong> {compCount === 1 ? 'Component' : 'Components'}
+                    <Package size={14} /> <strong>{compCount}</strong>{' '}
+                    {compCount === 1 ? 'Component' : 'Components'}
                   </span>
                   <span>
-                    <Zap size={14} /> <strong>{edgeCount}</strong> {edgeCount === 1 ? 'Wire' : 'Wires'}
+                    <Zap size={14} /> <strong>{edgeCount}</strong>{' '}
+                    {edgeCount === 1 ? 'Wire' : 'Wires'}
                   </span>
                   <span style={{ color: '#71717a' }}>{formattedTime}</span>
                 </div>
@@ -368,8 +374,6 @@ export function LayoutSlotsModal() {
             );
           })}
         </div>
-
-
       </div>
     </div>
   );

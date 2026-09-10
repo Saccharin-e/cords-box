@@ -70,7 +70,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const now = new Date().toISOString();
     const metadata: CordsBoxProjectMetadata = {
       id: `project-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      title: templateTitle || `Custom ${templateId.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}`,
+      title:
+        templateTitle ||
+        `Custom ${templateId.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}`,
       description: `Project initialized from ${templateId} template`,
       templateOriginId: templateId,
       createdAt: now,

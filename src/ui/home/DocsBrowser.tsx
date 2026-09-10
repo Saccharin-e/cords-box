@@ -8,7 +8,13 @@ export function DocsBrowser() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
 
-  const categories = ['All', 'Hardware & Circuits', 'WDF DSP Physics', 'Audio & Tab Player', 'CAD Shortcuts'];
+  const categories = [
+    'All',
+    'Hardware & Circuits',
+    'WDF DSP Physics',
+    'Audio & Tab Player',
+    'CAD Shortcuts',
+  ];
 
   const filteredArticles = DOC_ARTICLES.filter((art) => {
     const matchesCat = selectedCategory === 'All' || art.category === selectedCategory;
@@ -21,18 +27,28 @@ export function DocsBrowser() {
     return matchesCat && matchesQuery;
   });
 
-  const activeArticle = DOC_ARTICLES.find((a) => a.id === selectedId) || filteredArticles[0] || DOC_ARTICLES[0];
+  const activeArticle =
+    DOC_ARTICLES.find((a) => a.id === selectedId) || filteredArticles[0] || DOC_ARTICLES[0];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* Header & Search */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+        }}
+      >
         <div>
           <h2 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: 700, color: '#f4f4f5' }}>
             Documentation Hub
           </h2>
           <p style={{ margin: 0, fontSize: '13px', color: '#a1a1aa' }}>
-            Reference manuals for guitar electronics, Wave Digital Filter physics, and synthesizer mechanics.
+            Reference manuals for guitar electronics, Wave Digital Filter physics, and synthesizer
+            mechanics.
           </p>
         </div>
 
@@ -78,7 +94,10 @@ export function DocsBrowser() {
             style={{
               background: selectedCategory === cat ? '#0284c7' : 'rgba(255, 255, 255, 0.04)',
               color: selectedCategory === cat ? '#ffffff' : '#a1a1aa',
-              border: selectedCategory === cat ? '1px solid #0284c7' : '1px solid rgba(255, 255, 255, 0.06)',
+              border:
+                selectedCategory === cat
+                  ? '1px solid #0284c7'
+                  : '1px solid rgba(255, 255, 255, 0.06)',
               borderRadius: '5px',
               padding: '5px 10px',
               fontSize: '11px',
@@ -118,7 +137,9 @@ export function DocsBrowser() {
           }}
         >
           {filteredArticles.length === 0 ? (
-            <div style={{ padding: '16px', fontSize: '12px', color: '#71717a', textAlign: 'center' }}>
+            <div
+              style={{ padding: '16px', fontSize: '12px', color: '#71717a', textAlign: 'center' }}
+            >
               No articles match your search.
             </div>
           ) : (
@@ -132,15 +153,31 @@ export function DocsBrowser() {
                     padding: '10px 12px',
                     borderRadius: '6px',
                     backgroundColor: isSelected ? '#27272a' : 'transparent',
-                    border: isSelected ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid transparent',
+                    border: isSelected
+                      ? '1px solid rgba(255, 255, 255, 0.12)'
+                      : '1px solid transparent',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease',
                   }}
                 >
-                  <div style={{ fontSize: '10px', fontWeight: 600, color: '#38bdf8', marginBottom: '2px' }}>
+                  <div
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      color: '#38bdf8',
+                      marginBottom: '2px',
+                    }}
+                  >
                     {art.category}
                   </div>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: isSelected ? '#ffffff' : '#d4d4d8', marginBottom: '4px' }}>
+                  <div
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: isSelected ? '#ffffff' : '#d4d4d8',
+                      marginBottom: '4px',
+                    }}
+                  >
                     {art.title}
                   </div>
                   <div style={{ fontSize: '11px', color: '#71717a', lineHeight: 1.4 }}>
@@ -163,7 +200,9 @@ export function DocsBrowser() {
         >
           {activeArticle && (
             <div>
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '14px' }}>
+              <div
+                style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '14px' }}
+              >
                 <span
                   style={{
                     fontSize: '10px',

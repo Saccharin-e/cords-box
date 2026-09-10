@@ -157,18 +157,17 @@ export function downloadCordsBoxFile(
 
   const cleanFilename =
     filename ||
-    (rawName.endsWith('.cdx') || rawName.endsWith('.cordsbox')
-      ? rawName
-      : `${rawName}.cdx`);
+    (rawName.endsWith('.cdx') || rawName.endsWith('.cordsbox') ? rawName : `${rawName}.cdx`);
 
   const jsonStr = JSON.stringify(project, null, 2);
   const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = cleanFilename.endsWith('.cdx') || cleanFilename.endsWith('.cordsbox')
-    ? cleanFilename
-    : `${cleanFilename}.cdx`;
+  a.download =
+    cleanFilename.endsWith('.cdx') || cleanFilename.endsWith('.cordsbox')
+      ? cleanFilename
+      : `${cleanFilename}.cdx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

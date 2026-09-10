@@ -150,13 +150,27 @@ export function ExportModal() {
               EXPORT CIRCUIT DESIGN
             </span>
           </div>
-          <Button variant="icon" aria-label="Close" onClick={toggleExportModal} style={closeBtnStyle}>
+          <Button
+            variant="icon"
+            aria-label="Close"
+            onClick={toggleExportModal}
+            style={closeBtnStyle}
+          >
             <X size={14} />
           </Button>
         </div>
 
         {error && (
-          <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '8px 12px', borderRadius: 6, marginBottom: 16, fontSize: 13 }}>
+          <div
+            style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              color: '#ef4444',
+              padding: '8px 12px',
+              borderRadius: 6,
+              marginBottom: 16,
+              fontSize: 13,
+            }}
+          >
             {error}
           </div>
         )}

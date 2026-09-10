@@ -31,7 +31,8 @@ export const TUTORIAL_LESSONS: TutorialLesson[] = [
         id: 'step_2',
         stepNumber: 2,
         title: 'Route Hot Leads to the 5-Way Blade Switch',
-        instruction: 'Connect the hot terminal of each pickup to its respective lug on the 5-way switch.',
+        instruction:
+          'Connect the hot terminal of each pickup to its respective lug on the 5-way switch.',
         explanation:
           'The 5-way blade switch selects which pickup coil feeds into the volume control. In positions 2 and 4, two coils connect in parallel for the iconic "quack" tone.',
         tip: 'Click on a component lug in Wiring Mode (W) to start drawing a wire.',
@@ -41,7 +42,8 @@ export const TUTORIAL_LESSONS: TutorialLesson[] = [
         id: 'step_3',
         stepNumber: 3,
         title: 'Connect the Common Switch Output to Master Volume',
-        instruction: 'Wire the common output lug of the 5-way switch to Lug 3 (Input) of the Volume Pot.',
+        instruction:
+          'Wire the common output lug of the 5-way switch to Lug 3 (Input) of the Volume Pot.',
         explanation:
           'A guitar volume pot acts as a variable voltage divider. Lug 1 is grounded, Lug 3 receives the selector switch signal, and the middle Lug 2 (Wiper) delivers the attenuated signal to the output.',
         targetComponentType: 'pot_volume',
@@ -50,7 +52,8 @@ export const TUTORIAL_LESSONS: TutorialLesson[] = [
         id: 'step_4',
         stepNumber: 4,
         title: 'Add the Master Tone Circuit & Capacitor',
-        instruction: 'Connect the Tone Pot and its .047µF capacitor across the volume input line to ground.',
+        instruction:
+          'Connect the Tone Pot and its .047µF capacitor across the volume input line to ground.',
         explanation:
           'The Tone Pot and capacitor form a variable low-pass RC filter. Rolling down the tone pot shunts higher harmonic frequencies to ground, darkening the guitar tone.',
         tip: 'Higher capacitor values (e.g. .047µF vs .022µF) create a deeper, warmer roll-off.',
@@ -60,7 +63,8 @@ export const TUTORIAL_LESSONS: TutorialLesson[] = [
         id: 'step_5',
         stepNumber: 5,
         title: 'Solder to the 1/4" Output Jack & Test Audio',
-        instruction: 'Connect Volume Lug 2 (Wiper) to Jack Tip, and bridge all grounds to Jack Sleeve.',
+        instruction:
+          'Connect Volume Lug 2 (Wiper) to Jack Tip, and bridge all grounds to Jack Sleeve.',
         explanation:
           'Your passive guitar circuit is complete! Press the "Sound Test Bench" button in the toolbar to strum the virtual strings and hear your circuit modeled through the Wave Digital Filter engine.',
         targetComponentType: 'output_jack',
@@ -92,7 +96,8 @@ export const TUTORIAL_LESSONS: TutorialLesson[] = [
         id: 'step_2',
         stepNumber: 2,
         title: 'Isolating the Neck Pickup Metal Cover',
-        instruction: 'Ensure the neck pickup cover has a dedicated ground wire separate from the coil negative.',
+        instruction:
+          'Ensure the neck pickup cover has a dedicated ground wire separate from the coil negative.',
         explanation:
           'When putting pickups in series, the negative lead of the neck pickup is lifted from ground and connected to the bridge hot lead. A separate ground wire keeps the metal cover shielded.',
         targetComponentType: 'pickup_single_coil',
@@ -132,7 +137,8 @@ export const TUTORIAL_LESSONS: TutorialLesson[] = [
         id: 'step_2',
         stepNumber: 2,
         title: 'Wiring a High-Pass Bypass Capacitor',
-        instruction: 'Connect a 1000pF (1nF) capacitor across Lug 3 (In) and Lug 2 (Wiper) of the volume pot.',
+        instruction:
+          'Connect a 1000pF (1nF) capacitor across Lug 3 (In) and Lug 2 (Wiper) of the volume pot.',
         explanation:
           'The small capacitor allows high-frequency audio to bypass the resistance divider, retaining glassy highs even at low volume levels.',
         targetComponentType: 'treble_bleed',
@@ -171,7 +177,8 @@ export const TUTORIAL_LESSONS: TutorialLesson[] = [
         id: 'step_2',
         stepNumber: 2,
         title: 'Wiring an X-Crossover on a DPDT Switch',
-        instruction: 'Cross-wire the outer lugs of the DPDT switch and connect the center poles to the pickup leads.',
+        instruction:
+          'Cross-wire the outer lugs of the DPDT switch and connect the center poles to the pickup leads.',
         explanation:
           'The DPDT switch acts as a polarity reverser, flipping the hot and ground leads of the neck pickup with one toggle.',
         targetComponentType: 'switch_dpdt',

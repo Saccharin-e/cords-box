@@ -22,7 +22,10 @@ export interface SavedLayoutData {
   components: Component[];
   nodes: CircuitNode[];
   edges: CircuitEdge[];
-  switchStates?: Record<string, { currentPosition: number; totalPositions: number; poles?: number }>;
+  switchStates?: Record<
+    string,
+    { currentPosition: number; totalPositions: number; poles?: number }
+  >;
 }
 
 export interface LayoutSlot {
@@ -156,7 +159,10 @@ export const useSlotStore = create<SlotStoreState>((set, get) => ({
     const nodes = graph.getNodes();
     const edges = graph.getEdges();
 
-    const switchStates: Record<string, { currentPosition: number; totalPositions: number; poles?: number }> = {};
+    const switchStates: Record<
+      string,
+      { currentPosition: number; totalPositions: number; poles?: number }
+    > = {};
     for (const comp of components) {
       const sw = graph.getSwitchState(comp.id);
       if (sw) switchStates[comp.id] = { ...sw };

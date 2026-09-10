@@ -22,7 +22,8 @@ export const DOC_ARTICLES: DocArticle[] = [
     id: 'doc_pickups',
     category: 'Hardware & Circuits',
     title: 'Guitar Pickups: Transducer Physics & RLC Modeling',
-    summary: 'Faraday induction, coil inductance, load resonance formulas, and magnetic saturation.',
+    summary:
+      'Faraday induction, coil inductance, load resonance formulas, and magnetic saturation.',
     tags: ['pickups', 'inductance', 'rlc', 'resonance', 'faraday', 'saturation'],
     contentMarkdown: `
 # Guitar Pickups: Transducer Physics & RLC Modeling
@@ -79,7 +80,8 @@ $$v_{\\text{out}}[n] = v_{\\text{in}}[n] - \\alpha \\cdot \\left(v_{\\text{in}}[
     id: 'doc_pots_tapers',
     category: 'Hardware & Circuits',
     title: 'Potentiometers, Taper Curves & Treble Bleed Networks',
-    summary: 'Transfer functions for audio vs linear tapers, volume dividers, and treble bleed networks.',
+    summary:
+      'Transfer functions for audio vs linear tapers, volume dividers, and treble bleed networks.',
     tags: ['potentiometer', 'taper', 'treble bleed', 'rc filter', 'voltage divider'],
     contentMarkdown: `
 # Potentiometers, Tapers & Treble Bleed Networks
@@ -119,7 +121,8 @@ $$Z_{\\text{bleed}}(s) = \\frac{R_{\\text{bleed}}}{1 + s \\cdot R_{\\text{bleed}
     id: 'doc_wdf_dsp',
     category: 'WDF DSP Physics',
     title: 'Wave Digital Filters: Passive Circuit Modeling in Real Time',
-    summary: 'Fettweis wave variables, bilinear transform, series and parallel adaptor scattering math.',
+    summary:
+      'Fettweis wave variables, bilinear transform, series and parallel adaptor scattering math.',
     tags: ['wdf', 'physics', 'wave variables', 'fettweis', 'scattering', 'tone stack'],
     contentMarkdown: `
 # Wave Digital Filter (WDF) Modeling Physics
@@ -159,7 +162,8 @@ Real 3-band amplifier tone stacks (Fender FMV, Marshall JCM800, Vox Top Boost) f
     id: 'doc_audio_tab_fretboard',
     category: 'Audio & Tab Player',
     title: 'Digital Waveguides, Tab Articulations & Pitch DSP',
-    summary: 'Karplus-Strong string delays, 1st-order Thiran allpass interpolation, and tab syntax.',
+    summary:
+      'Karplus-Strong string delays, 1st-order Thiran allpass interpolation, and tab syntax.',
     tags: ['karplus strong', 'waveguide', 'thiran', 'allpass', 'tab', 'whammy'],
     contentMarkdown: `
 # Digital Waveguide String Physics & Tab Player
@@ -193,7 +197,8 @@ $$H_{\\text{pickup}}(f) = \\left| \\sin\\left( \\frac{\\pi f \\cdot d_{\\text{pi
     id: 'doc_cad_shortcuts',
     category: 'CAD Shortcuts',
     title: 'CAD Workbench & Keyboard Shortcuts Reference',
-    summary: 'Productivity keybindings for wiring, component placement, slot management, and view controls.',
+    summary:
+      'Productivity keybindings for wiring, component placement, slot management, and view controls.',
     tags: ['shortcuts', 'hotkeys', 'cad', 'wiring', 'navigation'],
     contentMarkdown: `
 # CAD Workbench Keyboard Shortcuts Reference

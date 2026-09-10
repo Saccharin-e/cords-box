@@ -134,7 +134,10 @@ export function TemplateGallery() {
               style={{
                 background: filter === item.id ? '#27272a' : 'transparent',
                 color: filter === item.id ? '#ffffff' : '#a1a1aa',
-                border: filter === item.id ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid transparent',
+                border:
+                  filter === item.id
+                    ? '1px solid rgba(255, 255, 255, 0.1)'
+                    : '1px solid transparent',
                 borderRadius: '4px',
                 padding: '5px 10px',
                 fontSize: '11px',
@@ -207,7 +210,14 @@ export function TemplateGallery() {
               />
 
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: '8px',
+                  }}
+                >
                   <span
                     style={{
                       fontSize: '10px',
@@ -222,14 +232,30 @@ export function TemplateGallery() {
                   >
                     {meta.tag}
                   </span>
-                  <span style={{ fontSize: '11px', color: '#71717a' }}>{preset.components.length} components</span>
+                  <span style={{ fontSize: '11px', color: '#71717a' }}>
+                    {preset.components.length} components
+                  </span>
                 </div>
 
-                <h3 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: 700, color: '#f4f4f5' }}>
+                <h3
+                  style={{
+                    margin: '0 0 6px 0',
+                    fontSize: '15px',
+                    fontWeight: 700,
+                    color: '#f4f4f5',
+                  }}
+                >
                   {preset.name}
                 </h3>
 
-                <p style={{ margin: '0 0 12px 0', fontSize: '12px', lineHeight: 1.5, color: '#a1a1aa' }}>
+                <p
+                  style={{
+                    margin: '0 0 12px 0',
+                    fontSize: '12px',
+                    lineHeight: 1.5,
+                    color: '#a1a1aa',
+                  }}
+                >
                   {preset.description}
                 </p>
 
@@ -247,9 +273,15 @@ export function TemplateGallery() {
                     border: '1px solid rgba(255, 255, 255, 0.04)',
                   }}
                 >
-                  <div><strong style={{ color: '#a1a1aa' }}>Pickups:</strong> {meta.pickupConfig}</div>
-                  <div><strong style={{ color: '#a1a1aa' }}>Switching:</strong> {meta.switchType}</div>
-                  <div><strong style={{ color: '#a1a1aa' }}>Controls:</strong> {meta.potsConfig}</div>
+                  <div>
+                    <strong style={{ color: '#a1a1aa' }}>Pickups:</strong> {meta.pickupConfig}
+                  </div>
+                  <div>
+                    <strong style={{ color: '#a1a1aa' }}>Switching:</strong> {meta.switchType}
+                  </div>
+                  <div>
+                    <strong style={{ color: '#a1a1aa' }}>Controls:</strong> {meta.potsConfig}
+                  </div>
                 </div>
               </div>
 

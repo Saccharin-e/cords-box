@@ -1,3 +1,5 @@
+// Install the worklet-only UTF-8 decoder before evaluating generated bindings.
+import './workletEncoding.ts';
 import init, { DspEngine } from './wasm-pkg/dsp.js';
 import { WdfToneStack } from './wdf/toneStackCore.js';
 

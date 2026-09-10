@@ -76,14 +76,8 @@ export function SchematicView({ width, height }: Props) {
   const addComponent = useCircuitStore((s) => s.addComponent);
   const graph = useCircuitStore((s) => s.graph);
   const solverResult = useCircuitStore((s) => s.solverResult);
-  const activeEdges = useMemo(
-    () => solverResult?.activeEdges ?? new Set<string>(),
-    [solverResult],
-  );
-  const activeNodes = useMemo(
-    () => solverResult?.activeNodes ?? new Set<string>(),
-    [solverResult],
-  );
+  const activeEdges = useMemo(() => solverResult?.activeEdges ?? new Set<string>(), [solverResult]);
+  const activeNodes = useMemo(() => solverResult?.activeNodes ?? new Set<string>(), [solverResult]);
 
   const wires = useMemo(
     () => buildWireVisuals(() => graph.getEdges(), instances, activeEdges),
@@ -279,11 +273,7 @@ export function SchematicView({ width, height }: Props) {
         />
 
         {/* Wires first */}
-        <WireLayer
-          wires={wires}
-          selectedEdgeId={selectedEdgeId}
-          onSelectEdge={handleSelectEdge}
-        />
+        <WireLayer wires={wires} selectedEdgeId={selectedEdgeId} onSelectEdge={handleSelectEdge} />
 
         {/* Schematic symbols layer */}
         <Layer>

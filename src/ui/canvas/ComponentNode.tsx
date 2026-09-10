@@ -186,26 +186,34 @@ export const ComponentNode = memo(function ComponentNode({
       )}
 
       {/* Realistic Component Visual Graphic */}
-      {renderPhysicalComponent(instance, nodeW, nodeH, instance.customLabel || instance.label || shape.label)}
+      {renderPhysicalComponent(
+        instance,
+        nodeW,
+        nodeH,
+        instance.customLabel || instance.label || shape.label,
+      )}
 
       {/* Component Title Overlay Badge (Toggleable) */}
-      {showComponentLabels && instance.type !== 'text_box' && instance.type !== 'project_card' && !instance.type.startsWith('shape_') && (
-        <Text
-          x={4}
-          y={4}
-          width={nodeW - 8}
-          text={(instance.customLabel || instance.label || shape.label).toUpperCase()}
-          fontSize={8}
-          fontFamily="'JetBrains Mono', monospace"
-          fontStyle="bold"
-          fill={isSelected ? accentColor : '#e4e4e7'}
-          align="center"
-          shadowColor="#000"
-          shadowBlur={4}
-          shadowOpacity={0.9}
-          listening={false}
-        />
-      )}
+      {showComponentLabels &&
+        instance.type !== 'text_box' &&
+        instance.type !== 'project_card' &&
+        !instance.type.startsWith('shape_') && (
+          <Text
+            x={4}
+            y={4}
+            width={nodeW - 8}
+            text={(instance.customLabel || instance.label || shape.label).toUpperCase()}
+            fontSize={8}
+            fontFamily="'JetBrains Mono', monospace"
+            fontStyle="bold"
+            fill={isSelected ? accentColor : '#e4e4e7'}
+            align="center"
+            shadowColor="#000"
+            shadowBlur={4}
+            shadowOpacity={0.9}
+            listening={false}
+          />
+        )}
 
       {/* Component Lugs / Wire Terminals */}
       {shape.lugs.map((lug) => {
@@ -221,8 +229,8 @@ export const ComponentNode = memo(function ComponentNode({
 
         const handleLugMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
           e.cancelBubble = true;
-          const cx = 'clientX' in e.evt ? e.evt.clientX : e.evt.touches[0]?.clientX ?? 0;
-          const cy = 'clientY' in e.evt ? e.evt.clientY : e.evt.touches[0]?.clientY ?? 0;
+          const cx = 'clientX' in e.evt ? e.evt.clientX : (e.evt.touches[0]?.clientX ?? 0);
+          const cy = 'clientY' in e.evt ? e.evt.clientY : (e.evt.touches[0]?.clientY ?? 0);
           const startX = cx;
           const startY = cy;
 
@@ -320,10 +328,7 @@ export const ComponentNode = memo(function ComponentNode({
             startWiring(thisAnchor);
           } else {
             // Pending wire exists — check for self-wire
-            if (
-              pendingWire.from.componentId === instance.id &&
-              pendingWire.from.lugId === lug.id
-            ) {
+            if (pendingWire.from.componentId === instance.id && pendingWire.from.lugId === lug.id) {
               // Clicking the same lug we started from — cancel the wire
               useCanvasStore.getState().cancelWiring();
               // Re-enable wiring mode since user likely wants to keep wiring
@@ -361,12 +366,7 @@ export const ComponentNode = memo(function ComponentNode({
             />
 
             {/* Eyelet Solder Hole Center */}
-            <Circle
-              x={abs.x}
-              y={abs.y}
-              radius={2.5}
-              fill="#18181b"
-            />
+            <Circle x={abs.x} y={abs.y} radius={2.5} fill="#18181b" />
 
             {/* LARGE INVISIBLE HIT TARGET FOR EASY CLICKING, DRAGGING & HOVERING */}
             <Circle
@@ -463,7 +463,14 @@ function renderPhysicalComponent(
           />
           {/* Mounting Screw Holes */}
           <Circle x={18} y={h / 2} radius={3.5} fill="#71717a" stroke="#27272a" strokeWidth={1} />
-          <Circle x={w - 18} y={h / 2} radius={3.5} fill="#71717a" stroke="#27272a" strokeWidth={1} />
+          <Circle
+            x={w - 18}
+            y={h / 2}
+            radius={3.5}
+            fill="#71717a"
+            stroke="#27272a"
+            strokeWidth={1}
+          />
           {/* 6 Adjustable Screw Pole Pieces */}
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <Circle
@@ -492,7 +499,14 @@ function renderPhysicalComponent(
           />
           {/* Side Mounting Feet with Screw Holes */}
           <Circle x={10} y={h / 2} radius={3.5} fill="#d4d4d8" stroke="#27272a" strokeWidth={1} />
-          <Circle x={w - 10} y={h / 2} radius={3.5} fill="#d4d4d8" stroke="#27272a" strokeWidth={1} />
+          <Circle
+            x={w - 10}
+            y={h / 2}
+            radius={3.5}
+            fill="#d4d4d8"
+            stroke="#27272a"
+            strokeWidth={1}
+          />
 
           {/* Tape-Wrapped Bobbin Enclosure */}
           <Rect
@@ -532,12 +546,7 @@ function renderPhysicalComponent(
                 strokeWidth={1}
               />
               <Line
-                points={[
-                  30 + (i * (w - 60)) / 5 - 2.5,
-                  46,
-                  30 + (i * (w - 60)) / 5 + 2.5,
-                  46,
-                ]}
+                points={[30 + (i * (w - 60)) / 5 - 2.5, 46, 30 + (i * (w - 60)) / 5 + 2.5, 46]}
                 stroke="#18181b"
                 perfectDrawEnabled={false}
                 strokeWidth={1}
@@ -702,7 +711,14 @@ function renderPhysicalComponent(
             stroke="#71717a"
             strokeWidth={2}
           />
-          <Circle x={w / 2} y={h * 0.2} radius={8} fill="#eab308" stroke="#ca8a04" strokeWidth={1} />
+          <Circle
+            x={w / 2}
+            y={h * 0.2}
+            radius={8}
+            fill="#eab308"
+            stroke="#ca8a04"
+            strokeWidth={1}
+          />
 
           {/* DPDT Switch Blue Block Body Below */}
           <Rect
@@ -898,12 +914,32 @@ function renderPhysicalComponent(
           />
           {/* Toggle Bat Lever */}
           <Circle x={w / 2} y={h / 2} radius={12} fill="#93c5fd" />
-          <Line points={[w / 2, h / 2, w / 2, h * 0.2]} stroke="#ca8a04" strokeWidth={5} lineCap="round" perfectDrawEnabled={false} />
+          <Line
+            points={[w / 2, h / 2, w / 2, h * 0.2]}
+            stroke="#ca8a04"
+            strokeWidth={5}
+            lineCap="round"
+            perfectDrawEnabled={false}
+          />
           {/* 6 Protruding Solder Pins */}
           {[0.22, 0.53, 0.84].map((ry, rowIdx) => (
             <Group key={rowIdx}>
-              <Circle x={w * 0.28} y={h * ry} radius={4} fill="#e4e4e7" stroke="#1e293b" strokeWidth={1} />
-              <Circle x={w * 0.72} y={h * ry} radius={4} fill="#e4e4e7" stroke="#1e293b" strokeWidth={1} />
+              <Circle
+                x={w * 0.28}
+                y={h * ry}
+                radius={4}
+                fill="#e4e4e7"
+                stroke="#1e293b"
+                strokeWidth={1}
+              />
+              <Circle
+                x={w * 0.72}
+                y={h * ry}
+                radius={4}
+                fill="#e4e4e7"
+                stroke="#1e293b"
+                strokeWidth={1}
+              />
             </Group>
           ))}
         </Group>
@@ -913,7 +949,12 @@ function renderPhysicalComponent(
       return (
         <Group>
           {/* Axial Silver Lead Wires Extending Out Left & Right */}
-          <Line points={[0, h / 2, w, h / 2]} stroke="#d4d4d8" strokeWidth={2.5} perfectDrawEnabled={false} />
+          <Line
+            points={[0, h / 2, w, h / 2]}
+            stroke="#d4d4d8"
+            strokeWidth={2.5}
+            perfectDrawEnabled={false}
+          />
           {/* Orange Drop / Film Capacitor Body in Center */}
           <Rect
             x={w * 0.2}
@@ -940,7 +981,12 @@ function renderPhysicalComponent(
       return (
         <Group>
           {/* Axial Silver Lead Wires */}
-          <Line points={[0, h / 2, w, h / 2]} stroke="#d4d4d8" strokeWidth={2.5} perfectDrawEnabled={false} />
+          <Line
+            points={[0, h / 2, w, h / 2]}
+            stroke="#d4d4d8"
+            strokeWidth={2.5}
+            perfectDrawEnabled={false}
+          />
           {/* Ceramic Resistor Body */}
           <Rect
             x={w * 0.22}
@@ -986,8 +1032,22 @@ function renderPhysicalComponent(
             align="center"
           />
           {/* Battery Snap Terminals on Top */}
-          <Circle x={w * 0.35} y={h * 0.92} radius={5} fill="#a1a1aa" stroke="#3f3f46" strokeWidth={1} />
-          <Circle x={w * 0.65} y={h * 0.92} radius={6.5} fill="#d4d4d8" stroke="#3f3f46" strokeWidth={1} />
+          <Circle
+            x={w * 0.35}
+            y={h * 0.92}
+            radius={5}
+            fill="#a1a1aa"
+            stroke="#3f3f46"
+            strokeWidth={1}
+          />
+          <Circle
+            x={w * 0.65}
+            y={h * 0.92}
+            radius={6.5}
+            fill="#d4d4d8"
+            stroke="#3f3f46"
+            strokeWidth={1}
+          />
         </Group>
       );
 
@@ -1021,7 +1081,12 @@ function renderPhysicalComponent(
       return (
         <Group>
           {/* Axial Silver Lead Wires */}
-          <Line points={[0, h / 2, w, h / 2]} stroke="#d4d4d8" strokeWidth={2.5} perfectDrawEnabled={false} />
+          <Line
+            points={[0, h / 2, w, h / 2]}
+            stroke="#d4d4d8"
+            strokeWidth={2.5}
+            perfectDrawEnabled={false}
+          />
           {/* Treble Bleed Circuit Module */}
           <Rect
             x={w * 0.15}
@@ -1057,7 +1122,13 @@ function renderPhysicalComponent(
             fill={instance.fillColor || 'transparent'}
             stroke={instance.strokeColor || '#38bdf8'}
             strokeWidth={instance.strokeWidth ?? 1.5}
-            dash={instance.dashStyle === 'dashed' ? [6, 4] : instance.dashStyle === 'dotted' ? [2, 3] : [6, 4]}
+            dash={
+              instance.dashStyle === 'dashed'
+                ? [6, 4]
+                : instance.dashStyle === 'dotted'
+                  ? [2, 3]
+                  : [6, 4]
+            }
           />
           <Text
             x={10}
@@ -1098,8 +1169,18 @@ function renderPhysicalComponent(
             fill="#ffffff"
           />
           {/* Specs Lines */}
-          <Line points={[0, 26, w, 26]} stroke="#38bdf8" strokeWidth={1} perfectDrawEnabled={false} />
-          <Line points={[0, 85, w, 85]} stroke="#1e293b" strokeWidth={1} perfectDrawEnabled={false} />
+          <Line
+            points={[0, 26, w, 26]}
+            stroke="#38bdf8"
+            strokeWidth={1}
+            perfectDrawEnabled={false}
+          />
+          <Line
+            points={[0, 85, w, 85]}
+            stroke="#1e293b"
+            strokeWidth={1}
+            perfectDrawEnabled={false}
+          />
 
           <Text
             x={12}
@@ -1153,7 +1234,13 @@ function renderPhysicalComponent(
             fill={instance.fillColor || 'transparent'}
             stroke={instance.strokeColor || '#a855f7'}
             strokeWidth={instance.strokeWidth ?? 2}
-            dash={instance.dashStyle === 'dashed' ? [6, 4] : instance.dashStyle === 'dotted' ? [2, 3] : undefined}
+            dash={
+              instance.dashStyle === 'dashed'
+                ? [6, 4]
+                : instance.dashStyle === 'dotted'
+                  ? [2, 3]
+                  : undefined
+            }
           />
           <Text
             x={10}
@@ -1178,7 +1265,13 @@ function renderPhysicalComponent(
             fill={instance.fillColor || 'transparent'}
             stroke={instance.strokeColor || '#38bdf8'}
             strokeWidth={instance.strokeWidth ?? 2}
-            dash={instance.dashStyle === 'dashed' ? [4, 4] : instance.dashStyle === 'dotted' ? [2, 3] : undefined}
+            dash={
+              instance.dashStyle === 'dashed'
+                ? [4, 4]
+                : instance.dashStyle === 'dotted'
+                  ? [2, 3]
+                  : undefined
+            }
           />
           <Text
             x={0}
@@ -1201,7 +1294,13 @@ function renderPhysicalComponent(
             points={[0, h / 2, w, h / 2]}
             stroke={instance.strokeColor || '#e2e8f0'}
             strokeWidth={instance.strokeWidth ?? 2.5}
-            dash={instance.dashStyle === 'dashed' ? [6, 4] : instance.dashStyle === 'dotted' ? [2, 3] : undefined}
+            dash={
+              instance.dashStyle === 'dashed'
+                ? [6, 4]
+                : instance.dashStyle === 'dotted'
+                  ? [2, 3]
+                  : undefined
+            }
             perfectDrawEnabled={false}
           />
           <Text
@@ -1224,7 +1323,13 @@ function renderPhysicalComponent(
             points={[0, h / 2, w - 12, h / 2]}
             stroke={instance.strokeColor || '#eab308'}
             strokeWidth={instance.strokeWidth ?? 2.5}
-            dash={instance.dashStyle === 'dashed' ? [6, 4] : instance.dashStyle === 'dotted' ? [2, 3] : undefined}
+            dash={
+              instance.dashStyle === 'dashed'
+                ? [6, 4]
+                : instance.dashStyle === 'dotted'
+                  ? [2, 3]
+                  : undefined
+            }
             perfectDrawEnabled={false}
           />
           <Path

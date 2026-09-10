@@ -37,7 +37,9 @@ export class WebMidiManager {
   private isSupported = false;
   private isConnected = false;
   private midiAccess: WebMidiAccess | null = null;
-  private onNoteListeners = new Set<(midiNote: number, velocity: number, isNoteOn: boolean) => void>();
+  private onNoteListeners = new Set<
+    (midiNote: number, velocity: number, isNoteOn: boolean) => void
+  >();
 
   constructor() {
     this.isSupported = typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator;
@@ -51,7 +53,9 @@ export class WebMidiManager {
     return this.isConnected;
   }
 
-  public subscribeNoteEvent(cb: (midiNote: number, velocity: number, isNoteOn: boolean) => void): () => void {
+  public subscribeNoteEvent(
+    cb: (midiNote: number, velocity: number, isNoteOn: boolean) => void,
+  ): () => void {
     this.onNoteListeners.add(cb);
     return () => this.onNoteListeners.delete(cb);
   }
